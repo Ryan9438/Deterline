@@ -1,9 +1,12 @@
 # Deterline
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
 > ⚠️ 非官方粉丝作品 · Fan-made project.  
 > Not affiliated with Toby Fox or Fangamer. UNDERTALE is © Toby Fox.
+>
+> ⚠️ 本软件使用 AGPL-3.0 许可证。禁止任何形式的商业倒卖。
+> 未经作者书面授权，不得发布修改版本或衍生作品。
 
 《传说之下》(UNDERTALE) **全能修改器**——Deterline。支持存档属性编辑、**对话文本自由增删改查**、**GML 脚本反编译与重编译**、**房间布局编辑**、**自定义 NPC 支线**（头像 + 多段对话 + 选择分支 + 战斗 + 物品奖励）。
 
@@ -186,4 +189,9 @@ deterline/
 
 ## License
 
-MIT
+[GNU Affero General Public License v3.0](LICENSE)
+
+> 本软件为粉丝项目，与 Toby Fox 或 Fangamer 无关。
+> UNDERTALE 是 Toby Fox 的注册商标。
+>
+> 禁止任何形式的商业倒卖。未经作者书面授权，不得发布修改版本或衍生作品。

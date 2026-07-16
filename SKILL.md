@@ -16,6 +16,8 @@ description: >
 
 > ⚠️ 非官方粉丝作品 · Fan-made project.
 > Not affiliated with Toby Fox or Fangamer. UNDERTALE is © Toby Fox.
+> 
+> 本软件使用 AGPL-3.0 许可证。禁止商业倒卖，衍生发布需获书面授权。
 
 修改《传说之下》(UNDERTALE) 游戏存档 + 游戏数据的全能工具——Deterline。支持存档属性修改、**对话文本自由增删改查**、**GML 脚本反编译与重编译**、**房间布局编辑**、**自定义 NPC 支线**（头像 + 多段对话 + 选择分支 + 战斗 + 物品奖励）。
 
