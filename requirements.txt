@@ -1,0 +1,4 @@
+# Deterline — Python dependencies
+# Core functionality requires no external packages (stdlib only).
+# YAML support for quest compiler (future):
+# pyyaml>=6.0

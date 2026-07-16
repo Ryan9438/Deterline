@@ -1,151 +1,188 @@
-# undertale-save-editor
+# Deterline
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > ⚠️ 非官方粉丝作品 · Fan-made project.  
 > Not affiliated with Toby Fox or Fangamer. UNDERTALE is © Toby Fox.
 
-《传说之下》(UNDERTALE) 存档修改器。可以修改 `undertale.ini` 和 `file0` 中的角色属性、物品、BOSS 状态、路线标志等。
+《传说之下》(UNDERTALE) **全能修改器**——Deterline。支持存档属性编辑、**对话文本自由增删改查**、**GML 脚本反编译与重编译**、**房间布局编辑**、**自定义 NPC 支线**（头像 + 多段对话 + 选择分支 + 战斗 + 物品奖励）。
 
 ## 功能
 
-- 修改 LOVE、HP、ATK、DEF、GOLD、EXP、Kills
-- 物品栏编辑（8 格 + 手机选项 + 武器 + 护甲）
-- BOSS/遭遇战状态编辑（14 个 BOSS）
-- 按区域击杀数（遗迹/雪镇/瀑布/热域）
-- 中文房间名称支持（244 个已命名房间）
-- 屠杀线标志一键重置
-- 真和平路线旗标设置
+### 📁 存档编辑
+- 修改 LOVE、HP、ATK、DEF、GOLD、EXP、Kills、Room
+- 物品栏编辑（8 格 + 武器 + 护甲，换武器自动同步 AT/DF）
+- BOSS 状态编辑（14 个 BOSS）+ 区域击杀数
+- 中文房间名支持（244 个已命名房间）
+- 屠杀线标志一键重置、真和平路线旗标设置
 - Omega Flowey / 系统信息文件创建
-- 装备武器/护甲时自动同步 AT/DF
-- 每次修改前自动创建 `.bak` 备份
-- Undo: `python run.py --action undo --value ini|file0` 从备份恢复
+
+### 💬 对话编辑（需 UTMT CLI）
+- 对话字符串自由**新增/删除/修改**（无长度限制）
+- 按内容搜索/批量替换
+- 所有文本的中央数据库（`textdata_en`，16457 行 GML）管理
+
+### 📜 脚本编辑（需 UTMT CLI）
+- **反编译** 6272 个游戏脚本为可读 GML 源码
+- **修改后重新编译**回字节码
+- **追加/前置代码**不覆盖原有逻辑（`append-code` / `prepend-code`）
+- 创建全新脚本并自动注册
+- 跨所有脚本搜索变量引用（`search-vars`）
+- 源码搜索替换（`find-replace-code`，已修复转义问题）
+
+### 🏗️ 房间布局编辑（需 UTMT CLI）
+- 在任意房间生成任意对象实例（`spawn-obj`，保留完整 AI/碰撞/交互）
+- 按实例 ID 或对象类型移除（`remove-obj` / `remove-obj --all`）
+- 查看房间内全部对象及其事件（`room-objects`）
+
+### 🎭 头像/对话系统（需 UTMT CLI）
+- 9 个内置角色头像（`facechoice=1-9`：Toriel/Sans/Papyrus/Undyne/...）
+- 对话文本控制符完整支持（`\F`头像 `\E`表情 `\C`选择 `\T`速度 `\R\G\B`颜色）
+- 批量导入对话（`batch-add-textentry` from JSON）
+- 添加对话时可选自动插入头像控制符（`add-textentry --face 3 --emotion 1`）
+
+### 🤖 自定义 NPC 支线（需 UTMT CLI）
+- **距离自动触发对话**（`distance_to_object`，无需 Z 键）
+- **多阶段状态机**（`flag[510]`，0→1→2→...）
+- **YES/NO 选择分支** + 2 帧窗口截获机制
+- **物品奖励**（`scr_itemget`）+ **战斗触发**（`battlegroup`）
+- **任务管理**（`quest-init` / `quest-status`）
+- 完整三段式 NPC 模板见 [SKILL.md](SKILL.md)
 
 ## 快速开始
 
+### 安装
+
+选择你的平台，运行一次即可：
+
+| 平台 | 入口 | 说明 |
+|------|------|------|
+| **macOS** | 双击 `Install.app` | 检测环境 → 没装齐则补全 → 秒装 Agent Skill |
+| **Windows** | 双击 `install.bat` | 同上 |
+| **Linux** | `bash install.sh` | 同上 |
+| **已有 Python** | `python3 install.py` | 同上 |
+
+所有入口最终都调用同一个 `install.py`，安装脚本会自动处理：
+- Agent Skill 安装（符号链接）
+- .NET SDK 检测与安装
+- UndertaleModTool CLI 克隆与编译
+- `UTMT_CLI` 环境变量配置
+
+### 快速上手
+
+安装完成后：
+
 ```bash
-# 查看当前 LOVE
+# 存档编辑（零依赖，立即可用）
 python run.py --action get --key Love
+python run.py --action set --key HP --value 50 --file file0
+python run.py --action set --key Room --value "托丽尔的家"
 
-# 修改 LOVE 为 20
-python run.py --action set --key LOVE --value 20
+# 对话编辑（需 UTMT CLI）
+python run.py --action add-textentry --key "obj_quest" --value "* Hello!/%%" --face 3 --file data_win
 
-# 查看完整存档状态
-python run.py --action list --file file0
+# 脚本编辑（需 UTMT CLI）
+python run.py --action list-codes --file data_win --limit 5
+python run.py --action append-code --key "gml_Object_obj_dummy1_Step_0" --value "// custom code" --file data_win
 
-# 装备真刀（自动同步攻击力）
-python run.py --action set --key WEAPON --value 51 --file file0
+# 房间布局编辑（需 UTMT CLI）
+python run.py --action spawn-obj --value "room_asrielroom" --key "obj_dummy1" --x 160 --y 120 --file data_win
 
-# 重置屠杀线标志
-python run.py --action reset-flags
+# 任务管理
+python run.py --action quest-status
+python run.py --action quest-init
 ```
 
-> 所有命令也支持 `python scripts/modify_save.py` 直接调用，参数完全一致。
+完整命令列表见 [COMMANDS.md](COMMANDS.md)，Agent Skill 文档见 [SKILL.md](SKILL.md)。
 
-完整用法见 [SKILL.md](SKILL.md)。
+## 系统要求
+
+| 组件 | 存档编辑 | 对话/脚本编辑 |
+|---|---|---|
+| **Python 3.10+** | ✅ 必需 | ✅ 必需 |
+| **.NET 10 SDK** | ❌ 不需要 | ✅ 必需（安装脚本自动处理） |
+| **UndertaleModTool CLI** | ❌ 不需要 | ✅ 必需（安装脚本自动处理） |
+
+### 一键安装
+
+```bash
+# 交互式安装（推荐）
+python install.py
+
+# 或快速自动安装（跳过确认）
+python install.py --all
+```
+
+安装脚本会自动：
+1. 安装 Deterline Skill 到已检测到的 Agent（OpenCode / Claude Code / Cursor / Codex）
+2. 检测并安装 .NET SDK（如未安装）
+3. 克隆并编译 UndertaleModTool CLI
+4. 配置 `UTMT_CLI` 环境变量
+
+**macOS 用户**也可双击 `Install.app` 启动安装。
+
+### 单独安装组件
+
+```bash
+python install.py --skill   # 仅安装 Agent Skill
+python install.py --dotnet  # 仅安装 .NET SDK
+python install.py --utmt    # 仅编译 UTMT CLI
+python install.py --env     # 仅配置环境变量
+```
 
 ## 系统兼容性
 
 | 平台 | 支持 | 说明 |
 |---|---|---|
-| macOS | ✅ | 自动识别 `~/Library/Application Support/com.tobyfox.undertale/` |
+| macOS | ✅ | 自动识别存档路径 |
 | Windows | ✅ | 自动识别 `%LOCALAPPDATA%\UNDERTALE\` |
-| Linux | ⚠️ 手动 | 需用 `--dir` 参数指定存档路径 |
+| Linux | ⚠️ 手动 | 需 `--dir` 参数指定路径 |
 
 ## Agent 兼容性
 
-| 平台 | 支持 | 说明 |
-|---|---|---|
-| OpenCode | ✅ | Agent Skill 原生支持，自动发现 |
-| Codex | ✅ | 兼容 Agent Skill 标准 |
-| Claude Code | ✅ | 兼容 `.claude/skills/` 目录结构 |
-| Cursor | ✅ | 兼容 `.agents/skills/` 目录结构 |
-| 终端直接运行 | ✅ | 无需 Agent，`python run.py` 直接使用 |
+| 平台 | 支持 |
+|---|---|
+| OpenCode | ✅ Agent Skill 原生支持，自动发现 |
+| Codex | ✅ 兼容 Agent Skill 标准 |
+| Claude Code | ✅ 兼容 `.claude/skills/` |
+| Cursor | ✅ 兼容 `.agents/skills/` |
+| 终端直接运行 | ✅ `python run.py` |
 
 ### 一键安装到 Agent
 
 ```bash
 python install.py
-# 或
-python run.py --install
 ```
 
-脚本自动检测 OpenCode / Claude Code / Cursor / Codex 并安装。
+或双击 `Install.app`（macOS）。
 
-也支持手动复制：
-
-```bash
-# OpenCode
-cp -r undertale-save-editor ~/.config/opencode/skills/
-# Claude Code
-cp -r undertale-save-editor ~/.claude/skills/
-# Cursor
-cp -r undertale-save-editor ~/.agents/skills/
-```
-
-作为 Skill 安装后，Agent 会自动发现并调用，你也可以在终端直接使用 `python run.py`。
-
-## 系统要求
-
-- **Python 3.10+**（没有的话去 [python.org](https://python.org) 下载安装）
-- UNDERTALE 至少运行过一次（产生存档文件）
-
-> **Windows 用户**：安装 Python 时请勾选 **"Add Python to PATH"**，否则终端无法识别 `python` 命令。
-
-## 典型用法示例
-
-```bash
-# 角色属性
-python run.py --action get --key LOVE
-python run.py --action set --key HP --value 50 --file file0
-
-# 金钱
-python run.py --action get --key GOLD --file file0
-python run.py --action set --key GOLD --value 9999 --file file0
-
-# 传送（支持中文房间名）
-python run.py --action set --key Room --value "安黛因竞技场"
-python run.py --action get --key Room
-
-# 物品
-python run.py --action set --key WEAPON --value 50 --file file0  # 磨损的刀
-python run.py --action set --key INV1 --value 11 --file file0    # 奶油肉桂派
-
-# BOSS 状态
-python run.py --action set --key TORIEL --value 5 --file file0   # 已宽恕
-python run.py --action set --key PAPYRUS --value 1 --file file0  # 已击杀
-
-# 搜索
-python run.py --action find --value 42 --file file0
-
-# 路线
-python run.py --action reset-flags
-```
+Skill 通过符号链接安装，工作区修改自动同步。
 
 ## 文件结构
 
 ```
-undertale-save-editor/
-├── Install.app/        ← macOS 双击一键安装
-├── install.bat         ← Windows 双击一键安装
-├── install.py          ← 跨平台安装脚本
-├── run.py              ← 快捷入口（python run.py --action ...）
-├── SKILL.md            ← Agent Skill 完整文档
+deterline/
+├── run.py              ← 快捷入口
+├── SKILL.md            ← Agent Skill 完整文档（2.0.0）
 ├── COMMANDS.md         ← 常用指令速查
 ├── README.md
-├── LICENSE             ← MIT
-├── .gitignore
-└── scripts/
-    ├── modify_save.py  ← 核心脚本
-    ├── rooms.json      ← 244 个房间名映射
-    └── rooms_reverse.json
+├── scripts/
+│   ├── modify_save.py  ← 核心脚本（存档 + 对话 + 代码编辑）
+│   └── rooms.json      ← 244 个房间名映射
 ```
 
 ## 注意事项
 
-- 修改前会自动备份文件为 `*.bak`，改坏了可从备份恢复
-- file0 字段位置因存档进度而异，不确定位置时用 `find` 搜索
-- LOVE、Kills、Room 同时存在于 INI 和 file0，建议两边同步修改
+- 修改 `game.ios` 前自动创建时间戳备份（`.bak.YYYYMMDD_HHMMSS`）
+- `global.flag[]` 索引范围 0-511，超出会崩溃。自定义事件仅用 `flag[510]` 和 `flag[511]`
+- 对话文本格式：`* ` 前缀必需、`/` 翻页、`/%%` 末页、`&` 换行、`^N` 暂停
+- 英文版不支持中文，中文字符显示为空白 `*`
+- `spawn-obj` 修改的是 `game.ios` 的房间布局数据，不是存档。新实例在重新进入房间时加载
+- `replace-code` 会覆盖整个脚本；`append-code` / `prepend-code` 不覆盖原逻辑
+- LOVE、Kills、Room 同时存在于 INI 和 file0，`set --key Room` 自动同步
+- `facechoice` 范围 0-9（0=无头像, 1=Toriel, 2=Flowey, 3=Sans, ...），**不要用 10+**
+- **`--sandbox` 模式**：在 `game.ios.sandbox` 副本上操作，原文件不受影响。确认后用 `sandbox-restore` 恢复
+- **安装 UTMT CLI 后**才能使用 `--file data_win` 相关命令
 
 ## License
 

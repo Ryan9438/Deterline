@@ -1,7 +1,7 @@
 #!/bin/bash
-# Deterline 一键安装入口 (macOS)
+# Deterline 一键安装入口 (Linux)
 # 健康检查 → 有全套依赖则仅装 Skill，否则装全部
-cd "$(cd "$(dirname "$0")/../../.." && pwd)" || exit 1
+cd "$(dirname "$0")" || exit 1
 
 echo "============================================"
 echo "  Deterline — 一键安装"
@@ -18,19 +18,17 @@ done
 
 if [ -z "$PYTHON" ]; then
     echo "→ Python 3 未安装，正在安装..."
-    if ! command -v brew &> /dev/null; then
-        echo "→ 正在安装 Homebrew..."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
-            echo "✗ 安装失败，请手动安装 Python: https://www.python.org/downloads/"
-            read -p "按回车退出..."
-            exit 1
-        }
-    fi
-    brew install python || {
-        echo "✗ Python 安装失败"
+    if command -v apt &> /dev/null; then
+        sudo apt update && sudo apt install -y python3 || exit 1
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install -y python3 || exit 1
+    elif command -v pacman &> /dev/null; then
+        sudo pacman -Sy --noconfirm python || exit 1
+    else
+        echo "✗ 请手动安装 Python: https://www.python.org/downloads/"
         read -p "按回车退出..."
         exit 1
-    }
+    fi
     PYTHON="python3"
     echo "✓ Python 安装完成"
 else
@@ -52,7 +50,6 @@ else
     echo "  ✗ .NET SDK — 需要安装"
 fi
 
-# 查找 UTMT dll
 if [ -d "$HOME/UndertaleModTool" ]; then
     dll=$(find "$HOME/UndertaleModTool" -name "UndertaleModCli.dll" -path "*/Release/net*" 2>/dev/null | head -1)
     if [ -n "$dll" ]; then

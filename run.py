@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UNDERTALE Save Editor — 快捷入口。
+"""Deterline — UNDERTALE Save Editor 快捷入口。
 
 用法:
   python run.py --action get --key Love
@@ -7,6 +7,7 @@
   python run.py --install      ← 一键安装到本地 Agent
 """
 
+import os
 import sys
 import subprocess
 from pathlib import Path
@@ -14,6 +15,14 @@ from pathlib import Path
 
 def main():
     args = sys.argv[1:]
+
+    # 检查 UTMT_CLI (只有 data_win 命令需要)
+    if any(a == "data_win" for a in args):
+        utmt = os.environ.get("UTMT_CLI", "")
+        if not utmt or not Path(utmt).exists():
+            print("警告: UTMT_CLI 未设置或路径不存在", file=sys.stderr)
+            print("  data_win 命令需要 UndertaleModTool CLI", file=sys.stderr)
+            print("  设置: export UTMT_CLI=/path/to/UndertaleModCli.dll", file=sys.stderr)
 
     # --install 单独处理
     if "--install" in args:

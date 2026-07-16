@@ -8,3 +8,6 @@ __pycache__/
 
 # Backups (created by the tool)
 *.bak
+
+# Temp files
+*.new

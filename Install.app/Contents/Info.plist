@@ -5,7 +5,7 @@
     <key>CFBundleExecutable</key>
     <string>install</string>
     <key>CFBundleIdentifier</key>
-    <string>com.undertale-save-editor.install</string>
+    <string>com.deterline.install</string>
     <key>CFBundleName</key>
     <string>Install</string>
     <key>CFBundlePackageType</key>
