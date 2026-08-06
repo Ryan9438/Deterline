@@ -5,8 +5,7 @@
 > ⚠️ 非官方粉丝作品 · Fan-made project.  
 > Not affiliated with Toby Fox or Fangamer. UNDERTALE is © Toby Fox.
 >
-> ⚠️ 本软件使用 AGPL-3.0 许可证。禁止任何形式的商业倒卖。
-> 未经作者书面授权，不得发布修改版本或衍生作品。
+> ⚠️ 本软件使用 AGPL-3.0 许可证。
 
 《传说之下》(UNDERTALE) **全能修改器**——Deterline。支持存档属性编辑、**对话文本自由增删改查**、**GML 脚本反编译与重编译**、**房间布局编辑**、**自定义 NPC 支线**（头像 + 多段对话 + 选择分支 + 战斗 + 物品奖励）。
 
@@ -33,10 +32,15 @@
 - 跨所有脚本搜索变量引用（`search-vars`）
 - 源码搜索替换（`find-replace-code`，已修复转义问题）
 
-### 🏗️ 房间布局编辑（需 UTMT CLI）
-- 在任意房间生成任意对象实例（`spawn-obj`，保留完整 AI/碰撞/交互）
-- 按实例 ID 或对象类型移除（`remove-obj` / `remove-obj --all`）
+### 🏗️ 房间编辑（P4-2，需 UTMT CLI）
+- 创建新房间（`create-room`）、查看房间属性（`room-info`）
+- 修改房间尺寸/标题/背景色（`set-room-prop`）
+- 配置摄像机视角（**View 必须 320×240，port 640×480**，`set-room-view`）
+- 运行时背景 + 视差注入（`gml-bg`，替代 `set-room-bg`）
+- 在任意房间生成/移除对象实例（`spawn-obj` / `remove-obj`）
+- 清除房间 Tile（`remove-tile`）
 - 查看房间内全部对象及其事件（`room-objects`）
+- 自定义背景资产注入（`create-bg-asset` + `bg_generator.py` 像素绘制）
 
 ### 🎭 头像/对话系统（需 UTMT CLI）
 - 9 个内置角色头像（`facechoice=1-9`：Toriel/Sans/Papyrus/Undyne/...）
@@ -91,6 +95,10 @@ python run.py --action append-code --key "gml_Object_obj_dummy1_Step_0" --value 
 # 房间布局编辑（需 UTMT CLI）
 python run.py --action spawn-obj --value "room_asrielroom" --key "obj_dummy1" --x 160 --y 120 --file data_win
 
+# 房间编辑（P4-2，需 UTMT CLI）
+python run.py --action create-room --value "room_myarea" --width 640 --height 480 --file data_win
+python run.py --action gml-bg --value room_myarea --bg "bg_my" --slot 0 --speedx 0.5 --file data_win
+
 # 任务管理
 python run.py --action quest-status
 python run.py --action quest-init
@@ -112,8 +120,20 @@ python run.py --action quest-init
 # 交互式安装（推荐）
 python install.py
 
-# 或快速自动安装（跳过确认）
+# 智能模式：环境体检 → 就绪则仅装 Skill，否则自动补全全部组件
+python install.py --auto
+
+# 或快速自动安装全部（跳过确认）
 python install.py --all
+
+# 只读环境体检（不修改任何文件）
+python install.py --check
+
+# 更新/修复（重指向 Skill 链接、重建 UTMT）
+python install.py --update
+
+# 卸载（删除 Skill 链接与环境变量）
+python install.py --uninstall
 ```
 
 安装脚本会自动：
@@ -122,7 +142,7 @@ python install.py --all
 3. 克隆并编译 UndertaleModTool CLI
 4. 配置 `UTMT_CLI` 环境变量
 
-**macOS 用户**也可双击 `Install.app` 启动安装。
+**macOS 用户**也可双击 `Install.app` 启动安装（所有平台入口最终都调用同一个 `install.py`）。
 
 ### 单独安装组件
 
@@ -131,6 +151,7 @@ python install.py --skill   # 仅安装 Agent Skill
 python install.py --dotnet  # 仅安装 .NET SDK
 python install.py --utmt    # 仅编译 UTMT CLI
 python install.py --env     # 仅配置环境变量
+python install.py --yes     # 配合以上命令自动确认所有提示
 ```
 
 ## 系统兼容性
@@ -166,12 +187,15 @@ Skill 通过符号链接安装，工作区修改自动同步。
 ```
 deterline/
 ├── run.py              ← 快捷入口
-├── SKILL.md            ← Agent Skill 完整文档（2.0.0）
+├── SKILL.md            ← Agent Skill 完整文档（2.1.0）
 ├── COMMANDS.md         ← 常用指令速查
+├── QUESTIONNAIRE_WORKFLOW.md ← 问卷工作流（Agent 必读）
 ├── README.md
 ├── scripts/
-│   ├── modify_save.py  ← 核心脚本（存档 + 对话 + 代码编辑）
-│   └── rooms.json      ← 244 个房间名映射
+│   ├── modify_save.py  ← 核心脚本（存档 + 对话 + 代码 + 房间编辑）
+│   ├── bg_generator.py ← 像素背景生成器（5 种图案）
+│   ├── rooms.json      ← 244 个房间名映射
+│   └── rooms_reverse.json
 ```
 
 ## 注意事项
@@ -186,6 +210,8 @@ deterline/
 - `facechoice` 范围 0-9（0=无头像, 1=Toriel, 2=Flowey, 3=Sans, ...），**不要用 10+**
 - **`--sandbox` 模式**：在 `game.ios.sandbox` 副本上操作，原文件不受影响。确认后用 `sandbox-restore` 恢复
 - **安装 UTMT CLI 后**才能使用 `--file data_win` 相关命令
+- **房间 View 必须为 320×240（port 640×480）**——`create-room` 自动使用此设置。设成 640×480 会导致视角跟随失效（`view_xview` 被钳位到 0）
+- **运行时背景请用 `gml-bg` 而不是 `set-room-bg`**——Undertale 运行时忽略 ROOM 数据的 Backgrounds 设置，`gml-bg` 通过 GML 注入生效
 
 ## License
 
@@ -193,5 +219,3 @@ deterline/
 
 > 本软件为粉丝项目，与 Toby Fox 或 Fangamer 无关。
 > UNDERTALE 是 Toby Fox 的注册商标。
->
-> 禁止任何形式的商业倒卖。未经作者书面授权，不得发布修改版本或衍生作品。

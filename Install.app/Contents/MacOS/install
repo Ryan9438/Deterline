@@ -1,7 +1,13 @@
 #!/bin/bash
 # Deterline 一键安装入口 (macOS)
-# 健康检查 → 有全套依赖则仅装 Skill，否则装全部
+# 全部逻辑委托给 install.py（环境体检 → 智能分叉）
 cd "$(cd "$(dirname "$0")/../../.." && pwd)" || exit 1
+
+if [ ! -f "install.py" ]; then
+    echo "✗ 错误: 未找到 install.py，请从项目根目录运行此脚本。"
+    read -p "按回车退出..."
+    exit 1
+fi
 
 echo "============================================"
 echo "  Deterline — 一键安装"
@@ -37,53 +43,9 @@ else
     echo "✓ 检测到 $PYTHON"
 fi
 
-# ── 2. 健康检查 ─────────────────────────────
+# ── 2. 委托 install.py（体检 → 智能分叉）────────
 echo ""
-echo "→ 检查环境..."
-
-dotnet_ok=false
-utmt_ok=false
-env_ok=false
-
-if command -v dotnet &> /dev/null; then
-    dotnet_ok=true
-    echo "  ✓ .NET SDK"
-else
-    echo "  ✗ .NET SDK — 需要安装"
-fi
-
-# 查找 UTMT dll
-if [ -d "$HOME/UndertaleModTool" ]; then
-    dll=$(find "$HOME/UndertaleModTool" -name "UndertaleModCli.dll" -path "*/Release/net*" 2>/dev/null | head -1)
-    if [ -n "$dll" ]; then
-        utmt_ok=true
-        echo "  ✓ UndertaleModTool CLI"
-        if [ "$UTMT_CLI" = "$dll" ]; then
-            env_ok=true
-            echo "  ✓ UTMT_CLI 环境变量"
-        else
-            echo "  ✗ UTMT_CLI 环境变量 — 需要配置"
-        fi
-    else
-        echo "  ✗ UndertaleModTool CLI — 需要编译"
-    fi
-else
-    echo "  ✗ UndertaleModTool CLI — 需要下载"
-fi
-
-# ── 3. 智能分叉 ─────────────────────────────
-echo ""
-if $dotnet_ok && $utmt_ok && $env_ok; then
-    echo "✓ 环境完整，仅安装 Agent Skill..."
-    echo ""
-    $PYTHON install.py --skill
-    echo ""
-    echo "✓ 完成！所有组件已就绪。"
-else
-    echo "→ 需要安装依赖组件..."
-    echo ""
-    $PYTHON install.py --all
-fi
+$PYTHON install.py --auto
 
 echo ""
 read -p "按回车退出..."

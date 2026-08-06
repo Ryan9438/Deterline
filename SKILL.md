@@ -1,15 +1,65 @@
 ---
 name: deterline
 description: >
-  Modify UNDERTALE game saves — change LOVE, Kills, Room, HP, ATK, DEF, Gold,
-  edit undertale.ini or file0, reset genocide route flags, jump to any room,
-  modify dialogue text, edit GML code, add custom dialogue events, spawn NPCs,
-  create side quests, or inspect game objects.
+  Deterline is an all-in-one modding tool for UNDERTALE (传说之下).
+  It edits save files: HP, LOVE, gold, weapons, armor, boss status, room
+  teleport, genocide reset.  It creates and edits rooms with custom
+  backgrounds (pixel art, gradients, parallax), tile floors, and camera
+  views.  It replaces sprites and textures: export PNG, edit in PIL,
+  replace back, recolor via HSV, duplicate sprites, generate pixel
+  backgrounds programmatically.  It adds custom NPCs with dialogue,
+  character portraits (facechoice 1-9), multi-page text, YES/NO choice
+  boxes, state machines, battles, and item rewards.  It edits GML scripts:
+  decompile to source, replace an entire script, append or prepend code
+  without breaking original logic, create new scripts, and cross-search
+  variable references across all 6272 scripts.  It manages dialogue text
+  with no length limits via the textdata_en central database (16457
+  lines).  It sets up bidirectional portals between rooms with spawn
+  points.  It isolates experiments via named snapshots (backup/restore).
+  Core constraint: dialogue text must be English/ASCII only (the game's
+  bitmap font has no Chinese glyphs).  Uses UndertaleModTool CLI (dotnet)
+  for data_win commands; ini/file0 commands work without it.
+  Users may ask in Chinese or English to: modify saves (改存档, 改属性,
+  换武器, 传送到某房间, 重置屠杀线), create new rooms (建房间, 做新场景,
+  做地图), change backgrounds (换背景, 设置背景, 加背景), replace sprites
+  or textures (换精灵, 改贴图, 导出图片, 导入图片, 换色, 改颜色), add
+  NPCs with dialogue (加对话, 改对话, 加NPC, 做支线, 触发战斗, 给物品),
+  set up portals (放传送门, 开门), create side quests (做任务), recolor
+  sprites (换色, 调色), generate backgrounds (生成背景, 像素背景), export
+  and import images (导出精灵, 替换纹理), or any UNDERTALE modding task.
   Trigger keywords:
-  undertale, save, LOVE, Kills, Room, HP, ATK, DEF, Gold, file0,
-  undertale.ini, genocide, flags, reset, item, boss, weapon, armor,
-  dialogue, GML, script, text, textdata, sans, judgement, room objects,
-  spawn, npc, quest, battle, face, portrait, sandbox.
+  deterline, Deterline, modify_save, run.py, install.py,
+  bg_generator, UndertaleModTool, UTMT, game.ios, data.win,
+  undertale, UNDERTALE, 传说之下,
+  save, 存档, 存檔, save file, save editor, 修改器,
+  HP, LOVE, ATK, DEF, GOLD, EXP, Kills, Room, file0, undertale.ini,
+  weapon, armor, equip, item, boss, 武器, 护甲, 装备, 物品, 金钱, 属性,
+  genocide, murder, reset, flags, systeminfo, teleport, 传送, 重置, 屠杀,
+  dialogue, textdata, textentry, STRG, batch-add-textentry,
+  guided-add-dialogue, 对话, 文本, 文字, 加对话, 改对话,
+  face, portrait, emotion, facechoice, 头像, 表情,
+  room, create-room, room-info, room-objects, 房间, 场景, 地图, 建房间,
+  background, bg, gml-bg, create-bg-asset, tile, remove-tile,
+  set-room-view, set-room-prop, view, parallax, 背景, 地板, 瓷砖, 视差,
+  spawn, spawn-obj, remove, remove-obj, 生成, 移除, 放置,
+  sprite, texture, TXTR, TPAG, SPRT, 精灵, 纹理, 贴图, 图片, 图像,
+  export, replace, recolor, colorize, duplicate, duplicate-sprite,
+  export-sprite, export-texture, replace-sprite, replace-texture,
+  dump-sprites, preview-sprite, colorize-sprite, 导出, 替换, 换色, 复制,
+  GML, script, code, decompile, decompile-code, 脚本, 代码,
+  append-code, prepend-code, replace-code, create-script,
+  find-replace-code, search-vars, search-sctext, search-strings,
+  npc, quest, battlegroup, battle, create-battle, quest-init, quest-status,
+  支线, 任务, 战斗, NPC,
+  door, portal, create-door, list-doors, remove-door, 传送门, 门,
+  experiment, snapshot, sandbox, backup, undo, 快照, 备份, 恢复, 回滚,
+  sans, papyrus, toriel, flowey, undyne, alphys, asgore, mettaton, asriel,
+  dialoguer, OBJ_WRITER, msg, scr, scr_msgup, choice, YES, NO,
+  global.flag, flag, murderlv, judgement, 审判,
+  string, add-string, set-string, delete-string, search-strings,
+  room-list, list-backups, reset-all, auto-snapshot,
+  sandbox-restore, experiment-snapshot, experiment-list, experiment-restore,
+  ASCII, ascii, 英文, 中文限制, 字体
 ---
 
 # Deterline
@@ -17,13 +67,13 @@ description: >
 > ⚠️ 非官方粉丝作品 · Fan-made project.
 > Not affiliated with Toby Fox or Fangamer. UNDERTALE is © Toby Fox.
 > 
-> 本软件使用 AGPL-3.0 许可证。禁止商业倒卖，衍生发布需获书面授权。
+> 本软件使用 AGPL-3.0 许可证。
 
 修改《传说之下》(UNDERTALE) 游戏存档 + 游戏数据的全能工具——Deterline。支持存档属性修改、**对话文本自由增删改查**、**GML 脚本反编译与重编译**、**房间布局编辑**、**自定义 NPC 支线**（头像 + 多段对话 + 选择分支 + 战斗 + 物品奖励）。
 
 ## 技能版本
 
-2.0.0
+2.1.0
 
 ## 适用平台
 
@@ -58,6 +108,17 @@ description: >
 3. UndertaleModTool CLI 克隆与编译
 4. `UTMT_CLI` 环境变量配置
 
+所有平台入口最终都调用同一个 `install.py`：
+
+```bash
+python install.py             # 交互式安装（推荐）
+python install.py --auto      # 智能模式：体检 → 就绪仅装 Skill，否则自动补全全部
+python install.py --all       # 自动安装全部（跳过确认）
+python install.py --check     # 只读环境体检（不修改任何文件）
+python install.py --update    # 更新/修复（重指向 Skill 链接、重建 UTMT）
+python install.py --uninstall # 卸载（删除 Skill 链接与环境变量）
+```
+
 ### 单独安装组件
 
 ```bash
@@ -65,6 +126,7 @@ python install.py --skill   # 仅安装 Agent Skill
 python install.py --dotnet  # 仅安装 .NET SDK
 python install.py --utmt    # 仅编译 UTMT CLI
 python install.py --env     # 仅配置环境变量
+python install.py --yes     # 配合以上命令自动确认所有提示
 ```
 
 ## 文件结构
@@ -78,12 +140,14 @@ deterline/
 ├── Install.app/          ← macOS 安装入口
 ├── SKILL.md              ← 技能描述文件（本文档）
 ├── COMMANDS.md           ← 常用指令速查
+├── QUESTIONNAIRE_WORKFLOW.md ← 问卷工作流（Agent 必读）
 ├── README.md
 ├── LICENSE
 ├── requirements.txt
 ├── .gitignore
 └── scripts/
-    ├── modify_save.py    ← 核心修改脚本
+    ├── modify_save.py    ← 核心修改脚本（房间编辑、GML 注入）
+    ├── bg_generator.py   ← 像素背景生成器（PIL，5 种图案）
     ├── rooms.json        ← 244 个房间 ID ↔ 中文名称映射
     └── rooms_reverse.json
 ```
@@ -176,6 +240,93 @@ deterline/
 - 生成的实例保留完整的对象行为（碰撞、事件、交互、AI）
 - 可用 `--sandbox` 做安全测试，确认无误后 `sandbox-restore` 恢复
 
+### 🎨 精灵/对象编辑（`--file data_win`）— P4-1
+
+浏览和修改游戏对象的 Sprite 引用，用已有精灵更换 NPC 动作。
+
+| 命令 | 功能 |
+|------|------|
+| `list-sprites --limit 30` | 列出所有精灵（名称、尺寸、帧数、类型） |
+| `search-sprite --value "sans"` | 按名称搜索精灵 |
+| `get-obj --key "obj_sans_actor"` | 查看对象属性：当前精灵、尺寸、可见性、深度、父类、事件数 |
+| `set-obj-sprite --key "obj_sans_actor" --value "spr_sans_dangerous"` | **切换对象的 Sprite 引用**（用已有精灵换动作，全局影响所有实例） |
+
+**注意事项**：
+- `set-obj-sprite` 修改对象定义，影响该对象的所有实例（全局）
+- 精灵尺寸一致（如 25x32 ↔ 25x32）时碰撞盒无偏移风险
+- 用 `search-sprite` 和 `get-obj` 先确认可用精灵和目标对象
+- 建议用 `--sandbox` 测试
+
+### 🏗️ 房间编辑（P4-2）
+
+创建、查看和修改游戏房间。**关键约束：View 必须 320×240（port 640×480，2x 缩放）**。设成 640×480 会导致视角跟随失效。
+
+| 命令 | 功能 |
+|------|------|
+| `create-room --value "room_myarea" --width 640 --height 480` | 创建新房间（View 自动 320×240） |
+| `room-info --value room_myarea` | 显示房间全部属性 |
+| `set-room-prop --value room_myarea --caption "标题"` | 修改房间属性（可选 `--width`/`--height`/`--speed`） |
+| `set-room-view --view-w 320 --view-h 240 --port-w 640 --port-h 480 --follow obj_mainchara` | 配置摄像机 |
+| `room-objects --value "torielroom"` | 列出房间内的对象 + 事件 |
+| `spawn-obj --value "room_xxx" --key "obj_dummy1" --x 160 --y 120` | 在房间生成对象 |
+| `remove-obj --value "room_xxx" --key "obj_solidtall" --all` | 移除指定类型的全部对象 |
+| `remove-tile --value room_xxx` | 清除房间全部 Tile |
+| `gml-bg --value room_xxx --bg "bg_asset" --slot 0 --speedx 0.5` | **注入运行时背景 GML + 视差**（替代 set-room-bg） |
+| `bg_generator.py` | PIL 像素背景生成（独立脚本，5 种图案） |
+| `create-bg-asset --value "bg_my" --image "bg.png"` | 将 PNG 注入为游戏背景资产 |
+| `list-game-bgs` | 列出所有可用背景资产 |
+
+**房间改造工作流（已验证）**：
+```
+1. remove-obj --all + remove-tile 清空房间
+2. set-room-prop --width 640 --height 480     ← 房间 > View 才有滚动空间
+3. set-room-view --view-w 320 --view-h 240    ← View=320×240！不可用 640×480
+    --port-w 640 --port-h 480
+    --follow obj_mainchara
+4. spawn-obj 主角 + 碰撞墙
+5. 直接 CSX 铺设 Tile 地面
+6. gml-bg 注入运行时背景 + 视差
+7. set --key Room "房间ID" → 进入验证
+```
+
+**注意事项**：
+- `set-room-bg` 修改 ROOM 数据但 Undertale 运行时忽略背景设置，请用 `gml-bg`
+- View 的 width/height 必须是 320×240（经过 S2 大量实验验证）
+- `remove-tile` 不传 `--instance` 时清除所有 Tile
+- `gml-bg` 将代码注入 `obj_mainchara_Step_0`，代码每帧执行设置背景和视差
+
+### 🖼️ 纹理替换（`--file data_win`）— P4-1-1
+
+导出精灵纹理为 PNG → 编辑 → 替换回游戏，实现**自定义美术内容**。
+
+| 命令 | 功能 |
+|------|------|
+| `list-textures --limit 10` | 列出 26 张嵌入纹理图谱（名称、尺寸） |
+| `export-sprite --key "spr_sans_d" --value "out.png" --frame 0` | 导出精灵单帧为 PNG |
+| `export-sprite --key "spr_sans_d" --value "out_dir/"` | 导出精灵全部帧到目录 |
+| `replace-sprite --key "spr_sans_d" --value "edit.png" --frame 0` | **替换精灵单帧纹理**（合成回纹理图谱对应区域） |
+| `export-texture --key "Texture 0" --value "out_dir/"` | 导出单个纹理图谱为 PNG |
+| `export-texture --value "out_dir/"` | 导出全部 26 个纹理图谱到目录 |
+| `replace-texture --key "Texture 0" --value "tex.png"` | **替换整个纹理图谱**（影响该图谱上所有精灵） |
+| `dump-sprites --value "out_dir/"` | 批量导出全部 2583 个精灵（UTMT CLI 内置） |
+
+**纹理替换工作流**：
+```
+export-sprite --key "spr_sans_d" --value "sans.png" --frame 0
+  → (用 PIL / Photoshop / Aseprite 编辑 PNG)
+replace-sprite --key "spr_sans_d" --value "sans_edit.png" --frame 0 --sandbox
+  → 进游戏验证
+sandbox-restore  (不满意就恢复)
+```
+
+**技术细节**：
+- 2583 个精灵共享 26 张纹理图谱（Texture 0~25）
+- 每张纹理图谱 1024x1024 ~ 2048x2048 像素
+- `replace-sprite` 只替换精灵在纹理图谱上对应 SourceX/Y/Width/Height 的区域，不影响同图谱其他精灵
+- 编辑 PNG 会自动 Resize 匹配原尺寸
+- 替换后通过 `GMImage` 自动处理格式转换（QOI/BZ2 等）
+- 已验证无损循环：`export-texture → replace-texture → export-texture` MD5 完全一致
+
 ---
 
 ### 🔒 沙箱模式
@@ -193,8 +344,6 @@ python run.py --action sandbox-restore
 沙箱自动创建 `game.ios.sandbox` 作为工作副本，所有操作只影响副本。
 
 ---
-
-
 
 ## 关键架构发现
 
@@ -294,6 +443,78 @@ global.flag[202] >= 20  →  遗迹清理完成 (mrd=1)
 
 - `global.flag[]` 数组大小 = 512（索引 0-511，超出即崩溃）
 - 修改 `scr_murderlv` 可直接控制路线判定（`replace-code`）
+
+### 视角系统（P4-2 关键发现）
+
+**View 必须 320×240（port 640×480，2x 缩放）**。这是 Undertale 所有房间的标准。设成 640×480 会导致：
+- 房间 ≤ View → 引擎钳位 `view_xview` 到 0，视角看似"不跟随"
+- 房间 > View → 画面缩放比异常（2x 变成 1x），人物变小
+
+视角跟随由 GMS1 引擎自动处理，只需确保 `Views[0].ObjectId = obj_mainchara`（`create-room` / `set-room-view` 默认设置）。不需要手写 GML 代码控制视角。
+
+### NPC 动画系统（实验 13/14 发现）
+
+**对象动画控制链**：
+```
+Create_0: dsprite = spr_sans_d; rsprite = spr_sans_r; lsprite = spr_sans_l;
+          image_speed = 0.334; fun = 0;
+  ↓
+Step_0:   scr_depth(...);
+          if (fun == 0) {
+            myinteract = 0;
+            if (speed == 0) { image_index = 0; image_speed = 0; }
+            if (speed > 0) { image_speed = 0.2; }
+          }
+  ↓
+scr_npcdir(n):  如果 myinteract == 0 → sprite_index = dsprite/rsprite/lsprite/usprite (行走)
+                如果 myinteract == (1+n) → sprite_index = dtsprite/rtsprite/ltsprite/utsprite (静止交互)
+```
+
+**安全 NPC 改造手法**（append-code / prepend-code 不覆盖原逻辑）：
+```
+Step 头部 prepend:  hspeed/方向控制          ← 不影响原 Step 的动画判断
+Step 尾部 append:   sprite_index/fun 覆盖    ← 覆盖 scr_npcdir 的结果
+Create 尾部 append:  初始化自定义变量         ← 不干扰原 Create 逻辑
+```
+
+**方向精灵命名约定**（4 帧 = 行走动画，1-2 帧 = 静止）：
+| 命名 | 含义 |
+|------|------|
+| `spr_char_d` | 朝下（面向镜头）4 帧 |
+| `spr_char_u` | 朝上（背向镜头）4 帧 |
+| `spr_char_r` | 朝右 4 帧 |
+| `spr_char_l` | 朝左 4 帧 |
+| `spr_char_dt` / `ut` / `rt` / `lt` | 静止帧（1-2 帧） |
+| 后缀 `_dark` / `_stark` | 黑暗区域变体 |
+
+**巡逻 NPC 实现要素**（已验证：Sans 在地下室走廊左右行走）：
+- `hspeed` = GameMaker 内置水平速度，自动每帧 `x += hspeed`
+- 设 `hspeed ≠ 0` 后 `speed > 0` → 原 Step 自动启动 `image_speed = 0.2`
+- 方向精灵切换：手动 `sprite_index = rsprite` / `lsprite`
+- 边界检测 + 反转 hspeed + 切换方向精灵 → 完整的巡逻行为
+
+### 纹理系统架构（P4-1-1 发现）
+
+**三层结构**：
+```
+EmbeddedTexture (TXTR)   — 26 张，实际的图像数据（PNG/QOI）
+  ↓
+TexturePageItem (TPAG)   — 6550 个，定义精灵在纹理图谱上的裁剪区域
+  ↓
+Sprite (SPRT)            — 2583 个，逻辑精灵，每帧指向一个 TexturePageItem
+```
+
+**关键属性**（TexturePageItem）：
+- `SourceX/Y/Width/Height`：精灵在纹理图谱上的像素区域
+- `TargetX/Y/Width/Height`：精灵在渲染包围盒中的位置
+- `BoundingWidth/Height`：精灵的渲染包围盒尺寸
+- `TexturePage`：引用所属的 EmbeddedTexture
+
+**替换单精灵纹理原理**（`replace-sprite`）：
+1. 找目标 Sprite → 获取帧的 TextureEntry → TexturePageItem
+2. 用 Magick.NET 将编辑 PNG 合成回纹理图谱的 `(SourceX, SourceY)` 位置
+3. 更新 EmbeddedTexture 的图像数据
+4. 同图谱上其他精灵不受影响（不同 SourceX/Y 区域）
 
 ### 自定义 NPC 完整工作流
 
@@ -439,6 +660,35 @@ script_execute(scr_depth);
 
 ---
 
+## 实验验证记录
+
+### 实验 13：厨房旋转 Papyrus（P4-1 精灵替换）
+- `spawn-obj` 在厨房生成 `obj_papyrus_room` → `set-obj-sprite` 为 `spr_papyrus_spin`
+- 需在 Step 末尾 `append-code` 设 `fun=1` 解除 `image_index` 锁定，覆盖 `scr_npcdir` 的方向设置
+- **教训**：坐标避免与已有对象（`obj_bigpie`）重叠；须了解目标对象的 Step 事件逻辑
+
+### 实验 14：地下室 Sans 巡逻（P4-1 动画 NPC）
+- `spawn-obj` + `prepend-code` 实现自主移动
+- 利用原对象已预设的 `rsprite/lsprite` 和 `image_speed` 自动控制
+- 设 `hspeed` 后原 Step 的 `if (speed > 0) image_speed = 0.2` 自动工作
+
+### 实验 A：Sans 走路变红（纹理替换管线验证）
+- `export-sprite` → PIL 红蓝通道互换 → `replace-sprite`
+- 确认精灵 frame 0/2 共享同纹理区域（SourceX/Y 相同）
+- 结果：Sans 走路时红 X 闪烁（帧 0/2 有红 X，帧 1/3 无）
+
+### 实验 B：对话框心形变青（UI 元素替换验证）
+- `export-sprite` → PIL 全像素改色 → `replace-sprite`（帧 0 和帧 1）
+- 跨纹理图谱（Texture 2）操作成功
+- 结果：对话文本继续指示从红色心变为青色心
+
+### 实验 C：纹理图谱无损循环验证
+- `export-texture` → `replace-texture`（同一文件）→ `export-texture`
+- 导出→回写→重导出 MD5 完全一致
+- **结论**：`replace-texture` 无损，可安全用于纹理图谱级替换
+
+---
+
 ## 已知可靠的交互模式
 
 ### ✅ 距离自动触发
@@ -499,6 +749,11 @@ game_restart();            // 重启游戏
 | `undo --value data_win` | 恢复 `game.ios` 到修改前状态（用 `.bak.时间戳` 可恢复到指定版本） |
 | `remove-obj --instance ID` | 精确移除单个实例，不影响其他对象 |
 | **沙箱模式** `--sandbox` | 在 `game.ios.sandbox` 副本上操作，原文件不受影响。用 `sandbox-restore` 恢复 |
+| **精灵搜索推荐** `search-sprite` | 找不到精灵时自动推荐相似名称 |
+| **对象搜索推荐** `get-obj` | 找不到对象时自动推荐相似名称 |
+| **多匹配提示** | 名称模糊匹配时打印 `(found N matches, using: ...)` |
+| **`replace-sprite` 自动 Resize** | 编辑 PNG 自动缩放匹配源精灵尺寸 |
+| **`filename` 起名建议** | 文件名不合预期时自动修正 |
 
 ## 注意事项
 
@@ -515,5 +770,38 @@ game_restart();            // 重启游戏
 11. `global.msc = 0`：`SCR_TEXT(0)` 是空操作，不会覆盖 `global.msg[]`
 12. `global.msc = -1`：`scr_msgup` 自增到 0，2 帧窗口截获 `\C` 选择
 13. 使用头像时 `facechoice` 设为内置角色（1-9），**不要自定义 face 对象**
-14. 跨平台：macOS/Windows 路径自动识别
-15. Skill 通过符号链接安装，工作区修改自动同步到 opencode
+14. **房间 View 必须 320×240（port 640×480）**。设成 640×480 会导致视角跟随失效，2x 缩放异常。`create-room` 自动使用此设置
+15. `set-room-bg` 修改 ROOM chunk 数据，但 Undertale 运行时会忽略背景设置（改完进游戏看不到变化）。请用 `gml-bg` 注入运行时背景
+16. `gml-bg` 将代码注入 `obj_mainchara_Step_0`，每帧执行设置背景和视差。一次注入永久生效，直到代码被清除
+17. 跨平台：macOS/Windows 路径自动识别
+18. Skill 通过符号链接安装，工作区修改自动同步到 OpenCode
+19. `set-obj-sprite` 修改对象定义，影响所有实例。如需实例级只改一个 NPC，用 GML `sprite_index` 运行时赋值
+20. `replace-sprite` 修改纹理图谱对应区域，帧 0 和帧 2 可能共享同纹理区域（SourceX/Y 相同）
+21. `replace-texture` 替换整个纹理图谱，影响该图谱上所有精灵。确认无误再操作
+22. 纹理编辑后 PNG 会自动 Resize 匹配原精灵尺寸，但建议保持原尺寸编辑以保真
+23. 英文版 Undertale 的字体精灵不包含中文字形，替换文字纹理无法解决中文显示问题
+
+## 工作流（Agent 必读）
+
+在每次执行修改操作前，必须先打开 `QUESTIONNAIRE_WORKFLOW.md`，按照其中的决策树向用户逐步收集参数。禁止凭猜测执行操作。
+
+### 标准流程
+
+```
+用户请求 → Agent 打开 QUESTIONNAIRE_WORKFLOW.md
+         → 匹配入口分类（1-9）
+         → 按问卷逐项向用户提问
+         → 用户提供参数
+         → 映射到 CLI 命令
+         → 确认汇总 → 执行
+         → 如果失败，用 `experiment-restore` 回滚
+```
+
+### 必须遵循的规则
+
+1. **不要跳过问卷步骤**。即使用户说"随便"或"你决定"，也必须至少问一遍所有参数，用户可以给默认值但必须确认
+2. **每个参数问清楚再继续**。比如加对话时必须问：key、文本内容（英文）、头像角色、头像表情
+3. **遇到模糊指令时使用问卷纠偏**。例如用户说"加个对话" → 问卷强制补问 key/内容/头像
+4. **所有文本必须是纯 ASCII**。检查无中文字符后再执行
+5. **先快照再执行**。任何写操作前先 `experiment-snapshot`
+6. **执行后验证**。用对应的 `list-*` / `room-objects` / `decompile-code` 命令验证结果

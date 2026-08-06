@@ -16,6 +16,21 @@
 | **已有 Python** | `python3 install.py` | 同上 |
 
 安装脚本自动安装：Agent Skill + .NET SDK + UndertaleModTool CLI + 环境变量。
+所有入口最终都调用同一个 `install.py`。
+
+```bash
+python install.py             # 交互式安装（推荐）
+python install.py --auto      # 智能模式：体检 → 就绪仅装 Skill，否则自动补全全部
+python install.py --all       # 自动安装全部（跳过确认）
+python install.py --check     # 只读环境体检（不修改任何文件）
+python install.py --update    # 更新/修复（重指向 Skill 链接、重建 UTMT）
+python install.py --uninstall # 卸载（删除 Skill 链接与环境变量）
+python install.py --skill     # 仅安装 Agent Skill
+python install.py --dotnet    # 仅安装 .NET SDK
+python install.py --utmt      # 仅编译 UTMT CLI
+python install.py --env       # 仅配置环境变量
+python install.py --yes       # 配合以上命令自动确认所有提示
+```
 
 ---
 

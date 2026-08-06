@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Deterline — UNDERTALE Save Editor (modify undertale.ini and file0)."""
+"""Deterline — UNDERTALE Save Editor (modify undertale.ini and file0).
+
+使用提示:
+  - 每次实验前用 experiment-snapshot 创建命名快照
+  - 实验会永久修改 game.ios，后续实验继承所有前置修改
+"""
+
+__version__ = "2.1.0"
 
 import argparse
 import configparser
@@ -12,6 +19,13 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+
+# BG generator (P4-2) — optional, for create-bg-asset with --generate
+try:
+    from scripts.bg_generator import generate_gradient, generate_stripes, generate_checkerboard, generate_dotted, generate_starfield
+    _HAS_BG_GENERATOR = True
+except ImportError:
+    _HAS_BG_GENERATOR = False
 
 # ============================================================
 # Constants
@@ -35,6 +49,13 @@ SANS_EMOTIONS: dict[int, str] = {
 DISTANCE_TRIGGER = 50
 QUEST_STATE_INIT = 0
 
+ROOM_BG_WARNING = (
+    "注意: Undertale 运行时忽略 ROOM Backgrounds 数据。",
+    "      背景实际渲染由 obj_backgrounder_* 的 GML 代码控制。",
+    "      请改用 `gml-bg` 命令注入运行时背景 GML。",
+    "      对 ROOM 数据的修改（本命令）可能不生效。",
+)
+
 # ============================================================
 # Custom Exceptions
 # ============================================================
@@ -54,6 +75,7 @@ class NotFoundError(DeterlineError):
 
 SANDBOX_ACTIVE = False
 SANDBOX_ORIGINAL: Path | None = None
+AUTO_SNAPSHOT = False
 
 # ============================================================
 # Path Detection
@@ -99,14 +121,21 @@ def find_game_data_file(override: str | None = None) -> Path:
         if p.exists():
             return p
         raise FileNotFoundError(f"游戏数据文件不存在: {override}")
+    # Priority 1: Steam app bundle (game reads from here on Steam launch)
     p = Path("~/Library/Application Support/Steam/steamapps/common/"
              "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
     if p.exists():
         return p
-    # Also check for data.win in the same directory
+    # Priority 2: data.win in Steam bundle
     p2 = p.with_name("data.win")
     if p2.exists():
         return p2
+    # Priority 3: configurable fallback via DETERLINE_GAME_FILE env var
+    env_path = os.environ.get("DETERLINE_GAME_FILE", "")
+    if env_path:
+        p3 = Path(env_path).expanduser()
+        if p3.exists():
+            return p3
     raise FileNotFoundError(
         "未找到 UNDERTALE 游戏数据文件 (game.ios/data.win)。\n"
         "  macOS 默认: ~/Library/Application Support/Steam/.../Resources/game.ios\n"
@@ -204,6 +233,20 @@ def validate_flag_index(idx: int) -> None:
         print(f"警告: global.flag[{idx}] 超出有效范围 (0-511)，游戏可能崩溃", file=sys.stderr)
 
 
+def _validate_ascii_text(text: str, label: str = "文本") -> None:
+    """Reject non-ASCII characters (Chinese etc.) — Undertale US font can't render them."""
+    for i, ch in enumerate(text):
+        if ord(ch) > 127:
+            ctx_start = max(0, i - 10)
+            ctx_end = min(len(text), i + 10)
+            ctx = text[ctx_start:ctx_end]
+            raise ValidationError(
+                f"{label} 含有非 ASCII 字符（位置 {i}）: ...{ctx}...\n"
+                f"Undertale 英文版字体不支持中文/日文等非 ASCII 字符，将显示为空白。\n"
+                f"请全部使用英文 (ASCII) 字符。"
+            )
+
+
 def _csx_verbatim_escape(value: str) -> str:
     """Escape a string for embedding as a C# verbatim string literal (@\"...\").
 
@@ -220,8 +263,14 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
     If save=False, the script runs as read-only (no output file).
     In sandbox mode, operates on game_file.sandbox instead.
     """
-    global SANDBOX_ACTIVE, SANDBOX_ORIGINAL
+    global SANDBOX_ACTIVE, SANDBOX_ORIGINAL, AUTO_SNAPSHOT
     cli = _find_utmt_cli()
+
+    if save and AUTO_SNAPSHOT and not SANDBOX_ACTIVE:
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        snap_path = game_file.with_name(f"game.ios.snap.auto_{ts}")
+        shutil.copy2(str(game_file), str(snap_path))
+        print(f"📸 自动快照: {snap_path.name}", file=sys.stderr)
 
     target = game_file
     if save and SANDBOX_ACTIVE:
@@ -238,17 +287,44 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
         csx_path = f.name
 
     try:
-        cmd = ["dotnet", cli, "load", str(target), "-s", csx_path]
+        if save and not SANDBOX_ACTIVE:
+            backup_file(target)
+
+        # Save to temp file first (workaround: .app bundle prevents direct File.Move)
+        saved_to_temp = False
+        temp_output = None
         if save:
-            if not SANDBOX_ACTIVE:
-                backup_file(target)
-            cmd.extend(["-o", str(target)])
+            import tempfile as _tf
+            temp_output = _tf.NamedTemporaryFile(suffix=".ios", delete=False).name
+            cmd = ["dotnet", cli, "load", str(target), "-s", csx_path, "-o", temp_output]
+        else:
+            cmd = ["dotnet", cli, "load", str(target), "-s", csx_path]
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
+            if temp_output and os.path.exists(temp_output):
+                os.unlink(temp_output)
             raise RuntimeError(
                 f"UTMT CLI 执行失败 (返回码 {result.returncode}):\n{result.stderr}"
             )
+
+        # Copy temp output to target (bypass .app bundle File.Move issue)
+        if save and temp_output and os.path.exists(temp_output):
+            if os.path.getsize(temp_output) == 0:
+                os.unlink(temp_output)
+                raise RuntimeError("UTMT CLI 输出了空文件，保存已取消")
+            import shutil as _shutil
+            _shutil.copy2(temp_output, str(target))
+            # Also sync to Steam app bundle (game reads from there on Steam launch)
+            steam_path = Path("~/Library/Application Support/Steam/steamapps/common/"
+                             "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
+            if steam_path.exists() and str(steam_path.resolve()) != str(Path(target).resolve()):
+                _shutil.copy2(temp_output, str(steam_path))
+            os.unlink(temp_output)
+            saved_to_temp = True
+
+        if result.stderr.strip():
+            print(f"[UTMT stderr] {result.stderr.strip()}", file=sys.stderr)
         return result.stdout
     except subprocess.TimeoutExpired:
         raise RuntimeError("UTMT CLI 执行超时 (120 秒)")
@@ -260,6 +336,12 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
         )
     finally:
         Path(csx_path).unlink(missing_ok=True)
+
+
+def _bool_or_none(s: str | None) -> bool | None:
+    if s is None:
+        return None
+    return s.lower() in ("true", "1", "yes", "y")
 
 
 def _parse_msg(output: str) -> list[str]:
@@ -329,6 +411,21 @@ def _load_rooms() -> None:
     except (FileNotFoundError, json.JSONDecodeError):
         ROOMS = {}
     _ROOMS_LOADED = True
+
+
+def _update_rooms_json(room_id: str, name: str) -> None:
+    """Add or update a room entry in rooms.json."""
+    _load_rooms()
+    p = Path(__file__).resolve().parent / "rooms.json"
+    if room_id in ROOMS:
+        return
+    ROOMS[room_id] = name
+    try:
+        with open(str(p), "w", encoding="utf-8") as f:
+            json.dump(ROOMS, f, ensure_ascii=False, indent=2)
+        print(f"  rooms.json 已更新: [{room_id}] {name}")
+    except OSError as e:
+        print(f"  警告: rooms.json 写入失败 ({e})", file=sys.stderr)
 
 
 def resolve_room(val: str) -> str:
@@ -1119,6 +1216,7 @@ def cmd_strg_get(game_file: Path, key: int) -> None:
 
 
 def cmd_strg_set(game_file: Path, key: int, value: str) -> None:
+    _validate_ascii_text(value, "对话文本")
     esc = _csx_escape(value)
     csx = f'''
 var old = Data.Strings[{key}].Content;
@@ -1131,6 +1229,7 @@ ScriptMessage("[{key}] " + old + " → " + Data.Strings[{key}].Content);
 
 
 def cmd_strg_add(game_file: Path, value: str) -> None:
+    _validate_ascii_text(value, "对话文本")
     esc = _csx_escape(value)
     csx = f'''
 var s = Data.Strings.MakeString("{esc}");
@@ -1280,7 +1379,63 @@ try {{
             print(line)
 
 
-def cmd_code_replace(game_file: Path, code_name: str, value: str, value_is_file: bool = False) -> None:
+def _decompile_to_lines(game_file: Path, code_name: str) -> list[str] | None:
+    """Decompile a code entry and return lines as list[str] (multi-line safe)."""
+    esc = _csx_escape(code_name)
+    csx = f'''
+var code = Data.Code.ByName("{esc}");
+if (code == null) {{
+    ScriptMessage("ERROR: not found");
+    return;
+}}
+try {{
+    string gml = GetDecompiledText(code);
+    var lines = gml.Split(new[] {{ "\\r\\n", "\\r", "\\n" }}, StringSplitOptions.None);
+    for (int i = 0; i < lines.Length; i++) {{
+        ScriptMessage("GML_LINE:" + i + ":" + lines[i]);
+    }}
+    ScriptMessage("GML_COUNT:" + lines.Length);
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+}}
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    lines_out = _parse_msg(out)
+    count_line = next((l for l in lines_out if l.startswith("GML_COUNT:")), None)
+    if count_line is None:
+        err = [l for l in lines_out if l.startswith("ERROR:")]
+        if err:
+            print(err[0], file=sys.stderr)
+        return None
+    total = int(count_line.split(":")[1])
+    line_map: dict[int, str] = {}
+    for l in lines_out:
+        if l.startswith("GML_LINE:"):
+            _, idx_str, rest = l.split(":", 2)
+            line_map[int(idx_str)] = rest
+    return [line_map[i] for i in range(total)]
+
+
+def _get_decompiled_code(game_file: Path, code_name: str) -> str | None:
+    """Decompile a code entry and return its full source text."""
+    lines = _decompile_to_lines(game_file, code_name)
+    return None if lines is None else "\n".join(lines)
+
+
+def _print_diff(name: str, old: str, new: str) -> None:
+    """Print a simple diff between old and new GML code."""
+    old_lines = old.splitlines()
+    new_lines = new.splitlines()
+    print(f"--- {name} (old)")
+    print(f"++ GML  (new)")
+    # Simple line-by-line diff
+    import difflib
+    for line in difflib.unified_diff(old_lines, new_lines, n=2,
+                                       fromfile=f"old/{name}", tofile=f"new/{name}"):
+        print(line)
+
+
+def cmd_code_replace(game_file: Path, code_name: str, value: str, value_is_file: bool = False, show_diff: bool = False) -> None:
     """Replace an entire code entry with new GML content.
 
     value can be:
@@ -1295,6 +1450,13 @@ def cmd_code_replace(game_file: Path, code_name: str, value: str, value_is_file:
         if not p.exists():
             raise NotFoundError(f"文件不存在: {value}")
         gml = p.read_text(encoding="utf-8")
+
+    if show_diff:
+        old_code = _get_decompiled_code(game_file, code_name)
+        if old_code is not None:
+            _print_diff(code_name, old_code, gml)
+
+    if value_is_file:
         esc_gml = _csx_verbatim_escape(gml)
         csx = f'''
 var code = Data.Code.ByName("{esc}");
@@ -1359,57 +1521,32 @@ def cmd_code_find_replace(game_file: Path, code_name: str, old: str, new_val: st
     Uses Python-side string replacement (not QueueFindReplace) to avoid
     CSX escaping issues. Writes modified GML to a temp file.
     """
-    esc = _csx_escape(code_name)
-    # Decompile in C#, send back as tagged lines
-    dump_csx = f'''
-var code = Data.Code.ByName("{esc}");
-if (code == null) {{
-    ScriptMessage("ERROR: Code entry not found: {esc}");
-    return;
-}}
-if (code.ParentEntry != null) {{
-    ScriptMessage("SKIP: child entry, use parent instead");
-    return;
-}}
-try {{
-    string gml = GetDecompiledText(code);
-    var lines = gml.Split(new[] {{ "\\r\\n", "\\r", "\\n" }}, StringSplitOptions.None);
-    for (int i = 0; i < lines.Length; i++) {{
-        ScriptMessage("GML_LINE:" + i + ":" + lines[i]);
-    }}
-    ScriptMessage("GML_COUNT:" + lines.Length);
-}} catch (Exception ex) {{
-    ScriptMessage("ERROR: " + ex.Message);
-}}
-'''
-    out = _run_utmt(dump_csx, game_file, save=False)
-    lines = _parse_msg(out)
-    
-    errors = [l for l in lines if l.startswith("ERROR:") or l.startswith("SKIP:")]
-    if errors:
-        for e in errors:
-            print(e, file=sys.stderr)
+    gml_lines = _decompile_to_lines(game_file, code_name)
+    if gml_lines is None:
         return
-    
-    # Reconstruct GML from tagged lines
-    count_line = next((l for l in lines if l.startswith("GML_COUNT:")), None)
-    if count_line is None:
-        raise RuntimeError("无法获取反编译结果")
-    
-    total = int(count_line.split(":")[1])
-    gml_lines = []
-    for i in range(total):
-        tag = f"GML_LINE:{i}:"
-        for l in lines:
-            if l.startswith(tag):
-                gml_lines.append(l[len(tag):])
-                break
     
     gml = "\n".join(gml_lines)
     
     # Do the replacement
     replaced_count = gml.count(old)
     if replaced_count == 0:
+        print(f"错误: 未找到匹配: '{old}'", file=sys.stderr)
+        print(f"代码 {code_name} 的反编译内容如下 (前 10 行 / 后 5 行):", file=sys.stderr)
+        for i, ln in enumerate(gml_lines[:10]):
+            print(f"  {i+1:>4}: {ln[:120]}", file=sys.stderr)
+        if len(gml_lines) > 15:
+            print(f"  ... (共 {len(gml_lines)} 行)", file=sys.stderr)
+            for i, ln in enumerate(gml_lines[-5:]):
+                print(f"  {len(gml_lines)-4+i:>4}: {ln[:120]}", file=sys.stderr)
+        # Fuzzy match suggestion
+        import difflib
+        all_text = "\n".join(gml_lines)
+        words = all_text.replace("{", " ").replace("}", " ").replace("(", " ").replace(")", " ").replace(";", " ").replace("\n", " ").split()
+        close = difflib.get_close_matches(old, words, n=3, cutoff=0.3)
+        if close:
+            print(f"您是否想找: {close}", file=sys.stderr)
+        print("提示: 反编译输出的格式可能与源码不同（缩进、花括号位置等）。", file=sys.stderr)
+        print("      先用 decompile-code 查看实际格式，再调整 --old 的值。", file=sys.stderr)
         raise NotFoundError(f"未找到匹配: '{old}'")
     
     new_gml = gml.replace(old, new_val)
@@ -1428,7 +1565,7 @@ try {{
 
 
 def cmd_code_append(game_file: Path, code_name: str, value: str) -> None:
-    """Append GML code to the end of an existing code entry."""
+    """Append GML code to the end of an existing code entry (reliable version)."""
     esc = _csx_escape(code_name)
     verb = _csx_verbatim_escape(value)
     csx = f'''
@@ -1442,13 +1579,15 @@ if (code.ParentEntry != null) {{
     return;
 }}
 try {{
+    string existingGml = GetDecompiledText(code);
+    string newGml = existingGml + "\\n" + @"{verb}";
     CodeImportGroup importGroup = new(Data)
     {{
         MainThreadAction = MainThreadAction
     }};
-    importGroup.QueueAppend(code, @"{verb}");
+    importGroup.QueueReplace(code, newGml);
     importGroup.Import();
-    ScriptMessage("OK: Appended to " + "{esc}");
+    ScriptMessage("OK: Appended to " + "{esc}" + " (len " + newGml.Length + ")");
 }} catch (Exception ex) {{
     ScriptMessage("ERROR: " + ex.Message);
 }}
@@ -1500,6 +1639,83 @@ try {{
         elif line.startswith("OK:"):
             print(line)
         else:
+            print(line)
+
+
+# ============================================================
+# gml-bg (Auto-generate runtime background GML injection)
+# ============================================================
+
+def cmd_gml_bg(game_file: Path, room_name: str, bg_asset: str,
+               slot: int = 0, speedx: float | None = None,
+               speedy: float | None = None) -> None:
+    """Generate and inject GML code to set a runtime background for a room.
+    Uses background_index[slot] + background_x[] parallax calculation.
+    """
+    esc_room = _csx_escape(room_name)
+    # Resolve bg_asset: if numeric, use as index; if string, use as name
+    if bg_asset.isdigit():
+        bg_ref = bg_asset
+    else:
+        bg_ref = _csx_escape(bg_asset)
+    flag_name = f"det_bg_{esc_room}_{slot}"
+
+    sx = speedx if speedx is not None else 0.0
+    sy = speedy if speedy is not None else 0.0
+
+    gml = f'''if (room == {esc_room})
+{{
+if (!variable_global_exists("{flag_name}"))
+{{
+global.{flag_name} = 1;
+background_visible[{slot}] = true;
+background_index[{slot}] = {bg_ref};
+background_htiled[{slot}] = true;
+}}
+background_x[{slot}] = floor(view_xview[0] - (view_xview[0] * {sx}));
+background_y[{slot}] = floor(view_yview[0] - (view_yview[0] * {sy}));
+}}'''
+
+    # Inject into obj_mainchara_Step_0 (exists in all rooms, use append-code)
+    cmd_code_append(game_file, "gml_Object_obj_mainchara_Step_0", gml)
+
+
+def cmd_remove_tile(game_file: Path, room_name: str,
+                    instance: int | None = None) -> None:
+    """Remove tiles from a room. If --instance given, removes only that tile.
+    Otherwise removes ALL tiles from the room."""
+    esc_room = _csx_escape(room_name)
+
+    if instance is not None:
+        # Remove single tile by instance ID
+        csx = f'''
+var room = Data.Rooms.ByName("{esc_room}");
+if (room == null) {{ ScriptMessage("ERROR: Room not found"); return; }}
+int removed = 0;
+for (int i = room.Tiles.Count - 1; i >= 0; i--) {{
+    if (room.Tiles[i].InstanceID == {instance}) {{
+        room.Tiles.RemoveAt(i);
+        removed++;
+        break;
+    }}
+}}
+ScriptMessage("OK: Removed " + removed + " tile(s) from " + "{esc_room}");
+'''
+    else:
+        # Remove all tiles
+        csx = f'''
+var room = Data.Rooms.ByName("{esc_room}");
+if (room == null) {{ ScriptMessage("ERROR: Room not found"); return; }}
+int count = room.Tiles.Count;
+room.Tiles.Clear();
+ScriptMessage("OK: Cleared " + count + " tiles from " + "{esc_room}");
+'''
+
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
             print(line)
 
 
@@ -1561,8 +1777,7 @@ def cmd_textdata_add(game_file: Path, key: str, value: str,
     """
     _validate_facechoice(face)
     value = _inject_face_control(value, face, emotion)
-
-    # Validate dialogue format
+    _validate_ascii_text(value, f"对话条目 '{key}'")
     if not any(value.rstrip("\n\r ").endswith(s) for s in ["/", "/%%", "%%%", "\\C ", "\\C", "/%"]):
         print("警告: 对话文本应使用标准格式结尾", file=sys.stderr)
         print("  中间页: 以 / 结尾", file=sys.stderr)
@@ -1614,6 +1829,33 @@ try {{
             print(line, file=sys.stderr)
         elif line.startswith("OK:"):
             print(line)
+
+
+def cmd_guided_add_dialogue(game_file: Path, key: str, text: str,
+                            face: int = 0, emotion: int = 0) -> None:
+    """Guided dialogue creation — prints structured step-by-step progress.
+    
+    Designed for Agent use. Each step validates and reports success/failure.
+    Maps to the "加对话" questionnaire module (QUESTIONNAIRE_WORKFLOW.md §2).
+    """
+    steps = [
+        ("Step 1/4", "文本 key", key, lambda: _csx_escape(key)),
+        ("Step 2/4", "对话内容", text, lambda: (_validate_ascii_text(text, "对话"), text)),
+        ("Step 3/4", "头像角色", f"{FACE_CHOICES.get(face, '?')} ({face})", lambda: _validate_facechoice(face)),
+        ("Step 4/4", "头像表情", f"{SANS_EMOTIONS.get(emotion, '?')} ({emotion})", lambda: None),
+    ]
+    for tag, label, val, validate in steps:
+        try:
+            validate()
+            print(f"  {tag} {label}: {val} ✅")
+        except (ValidationError, DeterlineError) as e:
+            print(f"  {tag} {label}: ❌ {e}")
+            return
+
+    print(f"  → 执行 add-textentry...")
+    cmd_textdata_add(game_file, key, text, face=face, emotion=emotion)
+    print(f"  ✅ 对话条目 '{key}' 已添加")
+    print(f"  💡 参考: 用 search-textdata --value \"{key}\" --file data_win 验证")
 
 
 def cmd_textdata_delete(game_file: Path, key: str) -> None:
@@ -1861,6 +2103,19 @@ if (objDef == null) {{
     if (found > 0) ScriptMessage("HINT: Did you mean: " + suggest);
     return;
 }}
+// Check for nearby objects (overlap warning)
+int nearCount = 0;
+int nearThreshold = 30;
+foreach (var go in room.GameObjects) {{
+    int dx = go.X - {x};
+    int dy = go.Y - {y};
+    if (dx * dx + dy * dy < nearThreshold * nearThreshold) {{
+        nearCount++;
+        if (nearCount <= 3) ScriptMessage("WARN: Near existing obj " + (go.ObjectDefinition?.Name?.Content ?? "?") + " at (" + go.X + "," + go.Y + ")");
+    }}
+}}
+if (nearCount > 0) ScriptMessage("(found " + nearCount + " objects within " + nearThreshold + "px)");
+
 uint newId = Data.GeneralInfo.LastObj++;
 room.GameObjects.Add(new UndertaleRoom.GameObject() {{
     InstanceID = newId,
@@ -1877,6 +2132,8 @@ ScriptMessage("OK: Spawned [" + newId + "] " + objName + " in " + rName + " at (
         if line.startswith("ERROR:"):
             print(line, file=sys.stderr)
         elif line.startswith("HINT:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("WARN:"):
             print(line, file=sys.stderr)
         elif line.startswith("OK:"):
             print(line)
@@ -1980,6 +2237,463 @@ ScriptMessage("OK: Removed " + removed + " instance(s) of " + objName + " from "
 
 
 # ============================================================
+# P4-2 Room Commands (create, info, edit, background, assets)
+# ============================================================
+
+def _resolve_room_csx(esc_room: str) -> str:
+    """Return CSX snippet that resolves a room name to a 'room' variable.
+    Tries exact ByName first, then fuzzy search.
+    """
+    return f'''
+var room = Data.Rooms.ByName("{esc_room}");
+if (room == null) {{
+    for (int r = 0; r < Data.Rooms.Count; r++) {{
+        if (Data.Rooms[r].Name.Content.IndexOf("{esc_room}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            room = Data.Rooms[r];
+            break;
+        }}
+    }}
+}}
+if (room == null) {{
+    ScriptMessage("ERROR: Room not found: {esc_room}");
+    return;
+}}
+'''
+
+
+def cmd_room_info(game_file: Path, room_name: str) -> None:
+    """Show detailed properties of a room."""
+    esc = _csx_escape(room_name)
+    csx = f'''
+var room = Data.Rooms.ByName("{esc}");
+if (room == null) {{
+    for (int r = 0; r < Data.Rooms.Count; r++) {{
+        if (Data.Rooms[r].Name.Content.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            room = Data.Rooms[r];
+            break;
+        }}
+    }}
+}}
+if (room == null) {{
+    ScriptMessage("ERROR: Room not found: {esc}");
+    return;
+}}
+
+ScriptMessage("=== Room Info ===");
+ScriptMessage("Name:       " + room.Name.Content);
+ScriptMessage("Size:       " + room.Width + " x " + room.Height);
+ScriptMessage("Speed:      " + room.Speed);
+ScriptMessage("Caption:    " + (room.Caption?.Content ?? ""));
+ScriptMessage("Persistent: " + room.Persistent);
+ScriptMessage("Flags:      " + (uint)room.Flags);
+ScriptMessage("BG Color:   " + room.BackgroundColor.ToString("X8"));
+ScriptMessage("DrawBGColor: " + room.DrawBackgroundColor);
+
+for (int i = 0; i < (room.Backgrounds?.Count ?? 0); i++) {{
+    var bg = room.Backgrounds[i];
+    string bgName = bg?.BackgroundDefinition?.Name?.Content ?? "(none)";
+    ScriptMessage("  BG[" + i + "]: enabled=" + bg.Enabled + " bg=" + bgName + " fg=" + bg.Foreground+" speed=("+bg.SpeedX+","+bg.SpeedY+") tiled=("+bg.TiledHorizontally+","+bg.TiledVertically+")");
+}}
+
+for (int i = 0; i < (room.Views?.Count ?? 0); i++) {{
+    var v = room.Views[i];
+    if (!v.Enabled) continue;
+    string follow = "(none)";
+    if (v.ObjectId != null) {{
+        try {{
+            follow = v.ObjectId.Name?.Content ?? "(unnamed)";
+        }} catch {{
+            follow = "(unknown)";
+        }}
+    }}
+    if (follow == "") follow = "(none)";
+    ScriptMessage("  View[" + i + "]: (" + v.ViewX + "," + v.ViewY + ") " + v.ViewWidth + "x" + v.ViewHeight + " port=" + v.PortWidth + "x" + v.PortHeight + " follow=" + follow);
+}}
+
+ScriptMessage("Objects:    " + (room.GameObjects?.Count ?? 0));
+ScriptMessage("Tiles:      " + (room.Tiles?.Count ?? 0));
+
+if (room.GameObjects != null) {{
+    foreach (var go in room.GameObjects) {{
+        string objName = go.ObjectDefinition?.Name?.Content ?? "(unknown)";
+        ScriptMessage("  [" + go.InstanceID + "] " + objName + " at (" + go.X + "," + go.Y + ")");
+    }}
+}}
+
+// Check RoomOrder
+bool inOrder = false;
+if (Data.GeneralInfo.RoomOrder != null) {{
+    foreach (var entry in Data.GeneralInfo.RoomOrder) {{
+        if (entry?.Resource?.Name?.Content == room.Name.Content) {{
+            inOrder = true;
+            break;
+        }}
+    }}
+}}
+ScriptMessage("In RoomOrder: " + inOrder);
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        print(line)
+
+
+def cmd_create_room(game_file: Path, room_name: str,
+                    width: int | None = None, height: int | None = None,
+                    speed: int | None = None, caption: str = "",
+                    bg_color: str = "000000") -> None:
+    """Create a new room with default View (follows obj_mainchara).
+    IMPORTANT: View is fixed at 320x240 (port 640x480, 2x scale).
+    This is Undertale's standard — View=640x480 causes perspective to break.
+    Room dimensions default to 640x480 (larger than View = scroll works)."""
+    if width is None: width = 640
+    if height is None: height = 480
+    if speed is None: speed = 30
+    # Use standard Undertale View size (320x240, port 640x480)
+    view_w = 320
+    view_h = 240
+    esc_name = _csx_escape(room_name)
+    esc_cap = _csx_escape(caption)
+    # Parse bg_color: hex RGB -> C# hex literal string
+    bg_color = bg_color.lstrip("#")
+    try:
+        rgb = int(bg_color, 16)
+    except ValueError:
+        print(f"错误: 无效的 bg-color: {bg_color}", file=sys.stderr)
+        return
+    argb_hex = f"0x{0xFF000000 | (rgb & 0xFFFFFF):08X}"
+
+    csx = f'''
+var existing = Data.Rooms.ByName("{esc_name}");
+if (existing != null) {{
+    ScriptMessage("ERROR: Room already exists: {esc_name}");
+    return;
+}}
+
+var room = new UndertaleRoom();
+room.Name = Data.Strings.MakeString("{esc_name}");
+room.Caption = Data.Strings.MakeString("{esc_cap}");
+room.Width = {width};
+room.Height = {height};
+room.Speed = {speed};
+room.Flags = UndertaleRoom.RoomEntryFlags.EnableViews | UndertaleRoom.RoomEntryFlags.ClearViewBackground;
+room.DrawBackgroundColor = true;
+room.BackgroundColor = {argb_hex};
+
+// Disable all 8 default backgrounds
+for (int i = 0; i < 8; i++) {{
+    room.Backgrounds[i].Enabled = false;
+}}
+
+// Configure View 0 (camera follow)
+room.Views[0].Enabled = true;
+room.Views[0].ViewX = 0; room.Views[0].ViewY = 0;
+room.Views[0].ViewWidth = {view_w}; room.Views[0].ViewHeight = {view_h};
+room.Views[0].PortX = 0; room.Views[0].PortY = 0;
+room.Views[0].PortWidth = {view_w * 2}; room.Views[0].PortHeight = {view_h * 2};
+room.Views[0].BorderX = 32; room.Views[0].BorderY = 32;
+
+var playerObj = Data.GameObjects.ByName("obj_mainchara");
+if (playerObj != null) {{
+    room.Views[0].ObjectId = playerObj;
+}}
+
+// Add to data
+Data.Rooms.Add(room);
+Data.GeneralInfo.RoomOrder.Add(new UndertaleResourceById<UndertaleRoom, UndertaleChunkROOM>() {{ Resource = room }});
+
+string followName = playerObj?.Name?.Content ?? "(none)";
+ScriptMessage("OK: Created room '" + room.Name.Content + "' (" + room.Width + "x" + room.Height + ")");
+ScriptMessage("  Index: " + (Data.Rooms.Count - 1) + "  View follows: " + followName);
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+        else:
+            print(line)
+    _update_rooms_json(room_name, caption or room_name)
+
+
+def cmd_set_room_bg(game_file: Path, room_name: str, index: int = 0,
+                    enable: bool | None = None,
+                    bg_name: str | None = None,
+                    foreground: bool | None = None,
+                    x: int | None = None, y: int | None = None,
+                    speedx: float | None = None, speedy: float | None = None,
+                    tiled_h: bool | None = None,
+                    tiled_v: bool | None = None,
+                    stretch: bool | None = None) -> None:
+    """Configure a background layer in a room."""
+    for warn_line in ROOM_BG_WARNING:
+        print(warn_line, file=sys.stderr)
+    esc_room = _csx_escape(room_name)
+    # Build CSX parts
+    parts = []
+    parts.append(f'''
+var room = Data.Rooms.ByName("{esc_room}");
+if (room == null) {{
+    for (int r = 0; r < Data.Rooms.Count; r++) {{
+        if (Data.Rooms[r].Name.Content.IndexOf("{esc_room}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            room = Data.Rooms[r];
+            break;
+        }}
+    }}
+}}
+if (room == null) {{
+    ScriptMessage("ERROR: Room not found: {esc_room}");
+    return;
+}}
+''')
+
+    stmts = ""
+    if enable is True:
+        stmts += f"room.DrawBackgroundColor = false;\n"
+    if enable is not None:
+        stmts += f"room.Backgrounds[{index}].Enabled = " + ("true" if enable else "false") + ";\n"
+    if bg_name is not None:
+        if bg_name.lower() == "none":
+            stmts += f"room.Backgrounds[{index}].BackgroundDefinition = null;\n"
+        else:
+            esc_bg = _csx_escape(bg_name)
+            stmts += f'''
+var bgDef = Data.Backgrounds.ByName("{esc_bg}");
+if (bgDef != null) {{
+    room.Backgrounds[{index}].BackgroundDefinition = bgDef;
+}} else {{
+    ScriptMessage("WARN: Background not found: {esc_bg}");
+}}
+'''
+    if foreground is not None:
+        stmts += f"room.Backgrounds[{index}].Foreground = " + ("true" if foreground else "false") + ";\n"
+    if x is not None:
+        stmts += f"room.Backgrounds[{index}].X = {x};\n"
+    if y is not None:
+        stmts += f"room.Backgrounds[{index}].Y = {y};\n"
+    if speedx is not None:
+        stmts += f"room.Backgrounds[{index}].SpeedX = (int){speedx};\n"
+    if speedy is not None:
+        stmts += f"room.Backgrounds[{index}].SpeedY = (int){speedy};\n"
+    if tiled_h is not None:
+        stmts += f"room.Backgrounds[{index}].TiledHorizontally = " + ("true" if tiled_h else "false") + ";\n"
+    if tiled_v is not None:
+        stmts += f"room.Backgrounds[{index}].TiledVertically = " + ("true" if tiled_v else "false") + ";\n"
+    if stretch is not None:
+        stmts += f"room.Backgrounds[{index}].Stretch = " + ("true" if stretch else "false") + ";\n"
+
+    if not stmts:
+        print("错误: 没有指定要修改的属性", file=sys.stderr)
+        return
+
+    parts.append(stmts)
+    parts.append(f'ScriptMessage("OK: Updated BG[{index}] for " + room.Name.Content);')
+    csx = ''.join(parts)
+
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("WARN:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+        else:
+            print(line)
+
+
+def cmd_set_room_prop(game_file: Path, room_name: str,
+                      width: int | None = None, height: int | None = None,
+                      speed: int | None = None, caption: str | None = None,
+                      bg_color: str | None = None,
+                      persistent: bool | None = None) -> None:
+    """Modify room properties (width, height, speed, etc.)."""
+    esc_room = _csx_escape(room_name)
+    esc_cap = _csx_escape(caption or "")
+    parts = [_resolve_room_csx(esc_room)]
+
+    assigns = ""
+    if width is not None:
+        assigns += f"room.Width = {width}; room.Views[0].ViewWidth = {width}; room.Views[0].PortWidth = {width};\n"
+    if height is not None:
+        assigns += f"room.Height = {height}; room.Views[0].ViewHeight = {height}; room.Views[0].PortHeight = {height};\n"
+    if speed is not None:
+        assigns += f"room.Speed = {speed};\n"
+    if caption is not None:
+        assigns += f'room.Caption = Data.Strings.MakeString("{esc_cap}");\n'
+    if bg_color is not None:
+        bg_color = bg_color.lstrip("#")
+        try:
+            rgb = int(bg_color, 16)
+        except ValueError:
+            print(f"错误: 无效的 bg-color: {bg_color}", file=sys.stderr)
+            return
+        argb_hex = f"0x{0xFF000000 | (rgb & 0xFFFFFF):08X}"
+        assigns += f"room.BackgroundColor = {argb_hex};\n"
+    if persistent is not None:
+        assigns += f"room.Persistent = " + ("true" if persistent else "false") + ";\n"
+
+    if not assigns:
+        print("错误: 没有指定要修改的属性", file=sys.stderr)
+        return
+
+    parts.append(f'''{assigns}
+ScriptMessage("OK: Updated properties for " + room.Name.Content);
+''')
+    csx = ''.join(parts)
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+
+
+def cmd_set_room_view(game_file: Path, room_name: str, index: int = 0,
+                      enable: bool | None = None,
+                      view_w: int | None = None, view_h: int | None = None,
+                      port_w: int | None = None, port_h: int | None = None,
+                      follow: str | None = None,
+                      border_x: int | None = None,
+                      border_y: int | None = None) -> None:
+    """Configure a camera view in a room."""
+    esc_room = _csx_escape(room_name)
+    parts = [_resolve_room_csx(esc_room)]
+
+    assigns = ""
+    if enable is not None:
+        assigns += f"room.Views[{index}].Enabled = " + ("true" if enable else "false") + ";\n"
+    if view_w is not None:
+        assigns += f"room.Views[{index}].ViewWidth = {view_w};\n"
+    if view_h is not None:
+        assigns += f"room.Views[{index}].ViewHeight = {view_h};\n"
+    if port_w is not None:
+        assigns += f"room.Views[{index}].PortWidth = {port_w};\n"
+    if port_h is not None:
+        assigns += f"room.Views[{index}].PortHeight = {port_h};\n"
+    if follow is not None:
+        esc_follow = _csx_escape(follow)
+        assigns += f'''
+var followObj = Data.GameObjects.ByName("{esc_follow}");
+if (followObj != null) {{
+    room.Views[{index}].ObjectId = followObj;
+}} else {{
+    ScriptMessage("WARN: Object not found: {esc_follow}");
+}}
+'''
+    if border_x is not None:
+        assigns += f"room.Views[{index}].BorderX = {border_x};\n"
+    if border_y is not None:
+        assigns += f"room.Views[{index}].BorderY = {border_y};\n"
+
+    if not assigns:
+        print("错误: 没有指定要修改的视图属性", file=sys.stderr)
+        return
+
+    parts.append(f'''{assigns}
+ScriptMessage("OK: Updated View[{index}] for " + room.Name.Content);
+''')
+    csx = ''.join(parts)
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("WARN:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+
+
+def cmd_list_game_bgs(game_file: Path, filter_str: str = "") -> None:
+    """List all background assets available in the game data."""
+    esc = _csx_escape(filter_str)
+    csx = f'''
+int found = 0;
+for (int i = 0; i < Data.Backgrounds.Count; i++) {{
+    var bg = Data.Backgrounds[i];
+    string name = bg.Name?.Content ?? "(unnamed)";
+    if ("{esc}".Length == 0 || name.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+        string texName = bg.Texture?.Name?.Content ?? "(no tex)";
+        int tw = (int)(bg.Texture?.SourceWidth ?? 0);
+        int th = (int)(bg.Texture?.SourceHeight ?? 0);
+        ScriptMessage("[" + i + "] " + name + "  tex=" + texName + " (" + tw + "x" + th + ")");
+        found++;
+    }}
+}}
+if (found == 0) {{
+    ScriptMessage("(no matching backgrounds)");
+}} else {{
+    ScriptMessage("(total: " + found + " matching, " + Data.Backgrounds.Count + " total)");
+}}
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        print(line)
+
+
+def cmd_create_bg_asset(game_file: Path, bg_name: str, png_path: str) -> None:
+    """Create a new background asset from a PNG file.
+    Injects a new UndertaleBackground + EmbeddedTexture + TexturePageItem.
+    """
+    esc_bg = _csx_escape(bg_name)
+    png_path = str(Path(png_path).expanduser().resolve())
+    if not Path(png_path).exists():
+        print(f"错误: PNG 文件不存在: {png_path}", file=sys.stderr)
+        return
+
+    csx = f'''
+string bgName = "{esc_bg}";
+string pngPath = @"{_csx_verbatim_escape(png_path)}";
+
+var existing = Data.Backgrounds.ByName(bgName);
+if (existing != null) {{
+    ScriptMessage("ERROR: Background already exists: " + bgName);
+    return;
+}}
+
+byte[] pngBytes;
+try {{ pngBytes = System.IO.File.ReadAllBytes(pngPath); }}
+catch (System.Exception ex) {{ ScriptMessage("ERROR: " + ex.Message); return; }}
+
+var tex = new UndertaleModLib.Models.UndertaleEmbeddedTexture();
+tex.Name = Data.Strings.MakeString(bgName + "_tex");
+tex.TextureData = new UndertaleModLib.Models.UndertaleEmbeddedTexture.TexData();
+tex.TextureData.Image = UndertaleModLib.Util.GMImage.FromPng(pngBytes);
+Data.EmbeddedTextures.Add(tex);
+
+var mgk = new ImageMagick.MagickImage(pngBytes);
+int imgW = (int)mgk.Width;
+int imgH = (int)mgk.Height;
+mgk.Dispose();
+
+var item = new UndertaleModLib.Models.UndertaleTexturePageItem();
+item.Name = Data.Strings.MakeString(bgName + "_item");
+item.SourceX = 0; item.SourceY = 0;
+item.SourceWidth = (ushort)imgW; item.SourceHeight = (ushort)imgH;
+item.TargetX = 0; item.TargetY = 0;
+item.TargetWidth = (ushort)imgW; item.TargetHeight = (ushort)imgH;
+item.BoundingWidth = (ushort)imgW; item.BoundingHeight = (ushort)imgH;
+item.TexturePage = tex;
+Data.TexturePageItems.Add(item);
+
+var bg = new UndertaleModLib.Models.UndertaleBackground();
+bg.Name = Data.Strings.MakeString(bgName);
+bg.Transparent = false; bg.Smooth = false; bg.Preload = true;
+bg.Texture = item;
+Data.Backgrounds.Add(bg);
+
+ScriptMessage("OK: Created background '" + bgName + "' (" + imgW + "x" + imgH + ")");
+ScriptMessage("  Use: set-room-bg --bg \\"" + bgName + "\\" --index N");
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+
+
+# ============================================================
 # SCR_TEXT Case Viewer (search for text cases in SCR_TEXT)
 # ============================================================
 
@@ -2070,8 +2784,767 @@ def cmd_quest_status(save_dir: Path) -> None:
 # Batch Textdata Import
 # ============================================================
 
+# ============================================================
+# Handler Extraction (A6: clean up obj_time_Step_2)
+# ============================================================
+
+DETECTED_PATTERNS: list[tuple[str, str]] = [
+    ("global.choice != -1", "选择框结果处理 (实验 5/7)"),
+    ("global.flag[510]", "自定义 flag 510"),
+    ("global.flag[511]", "自定义 flag 511"),
+    ("ini_write_real", "存档写入 (实验 5)"),
+    ("ossafe_savedata_save", "存档保存 (实验 5)"),
+    ("global.msc = -1", "对话系统覆盖 (实验 7)"),
+    ('msg[0] = "', "自定义对话消息"),
+    ("scr_msgup", "手动消息更新"),
+]
+
+
+def cmd_handler_extract(game_file: Path, apply: bool = False) -> None:
+    """Analyze and optionally extract custom logic from obj_time_Step_2."""
+    CODE_NAME = "gml_Object_obj_time_Step_2"
+    HANDLER_STEP = "gml_Object_obj_deterline_handler_Step_0"
+    HANDLER_CREATE = "gml_Object_obj_deterline_handler_Create_0"
+
+    lines = _decompile_to_lines(game_file, CODE_NAME)
+    if lines is None:
+        print(f"错误: 无法反编译 {CODE_NAME}", file=sys.stderr)
+        return
+
+    print(f"--- 分析 {CODE_NAME} ---")
+    print(f"总行数: {len(lines)}")
+
+    # Single-pass O(n) scan
+    matched_lines: set[int] = set()
+    for i, ln in enumerate(lines):
+        for pattern, desc in DETECTED_PATTERNS:
+            if pattern in ln:
+                matched_lines.add(i)
+
+    if not matched_lines:
+        print("\n未检测到已知的自定义注入模式。代码可能是干净的。")
+        print("代码前 15 行:")
+        for i, ln in enumerate(lines[:15]):
+            print(f"  {i+1:>4}: {ln[:120]}")
+        return
+
+    # Print diagnostics with context
+    for pattern, desc in DETECTED_PATTERNS:
+        count = sum(1 for ln in lines if pattern in ln)
+        if count > 0:
+            print(f"\n  [{pattern}]  {desc} ({count} 处)")
+            for i, ln in enumerate(lines):
+                if pattern in ln:
+                    start = max(0, i - 1)
+                    end = min(len(lines), i + 2)
+                    for j in range(start, end):
+                        marker = "→" if j == i else " "
+                        if j not in matched_lines or j == i:
+                            print(f"    {marker} {j+1:>4}: {ln[:120]}")
+
+    print(f"\n--- 诊断结果 ---")
+    print(f"检测到 {len(matched_lines)} 行涉及自定义逻辑")
+
+    if not apply:
+        print(f"\n使用 --apply 可提取自定义逻辑到独立对象:")
+        print(f"  1. 创建 {HANDLER_STEP} — 包含检测到的代码")
+        print(f"  2. 创建 {HANDLER_CREATE} — 初始化 handler 状态")
+        print(f"  3. 清理 {CODE_NAME} — 移除注入的自定义代码")
+        print(f"  4. 将 obj_deterline_handler 生成到需要的房间")
+        return
+
+    # ── --apply: 真正提取 matched_lines 到 handler ──
+    sorted_matched = sorted(matched_lines)
+
+    # Extract: group consecutive matched lines into blocks
+    blocks: list[list[int]] = []
+    current: list[int] = []
+    for idx in sorted_matched:
+        if not current or idx == current[-1] + 1:
+            current.append(idx)
+        else:
+            blocks.append(current)
+            current = [idx]
+    if current:
+        blocks.append(current)
+
+    # Build handler Step code from extracted blocks
+    handler_parts: list[str] = []
+    handler_parts.append("// Deterline extracted handler (from obj_time_Step_2)")
+    handler_parts.append("// Runs every step via obj_deterline_handler")
+    handler_parts.append("if (!variable_global_exists(\"deterline_handler_active\")) {")
+    handler_parts.append("    global.deterline_handler_active = true;")
+    handler_parts.append("")
+    for block in blocks:
+        handler_parts.append(f"    // Extracted block (lines {block[0]+1}-{block[-1]+1})")
+        for idx in block:
+            handler_parts.append(f"    {lines[idx]}")
+        handler_parts.append("")
+    handler_parts.append("    global.choice = -1;")
+    handler_parts.append("}")
+    handler_text = "\n".join(handler_parts)
+
+    # Build clean obj_time_Step_2 (skip matched lines)
+    clean_lines = [ln for i, ln in enumerate(lines) if i not in matched_lines]
+    clean_text = "\n".join(clean_lines).strip()
+    if not clean_text:
+        clean_text = "// obj_time_Step_2 — cleaned by handler-extract"
+
+    # Inject both into game
+    esc_handler = _csx_escape(HANDLER_STEP)
+    esc_create = _csx_escape(HANDLER_CREATE)
+    esc_orig = _csx_escape(CODE_NAME)
+    verb_handler = _csx_verbatim_escape(handler_text)
+    verb_create = _csx_verbatim_escape(
+        "global.deterline_handler_active = true;"
+    )
+    verb_clean = _csx_verbatim_escape(clean_text)
+
+    csx = f'''
+try {{
+    CodeImportGroup importGroup = new(Data)
+    {{
+        AutoCreateAssets = true,
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace("{esc_handler}", @"{verb_handler}");
+    importGroup.QueueReplace("{esc_create}", @"{verb_create}");
+    importGroup.QueueReplace("{esc_orig}", @"{verb_clean}");
+    importGroup.Import();
+    ScriptMessage("OK: Created " + "{esc_handler}");
+    ScriptMessage("OK: Created " + "{esc_create}");
+    ScriptMessage("OK: Cleaned " + "{esc_orig}");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+}}
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+
+    extracted_count = len(sorted_matched)
+    print(f"\n已完成: 提取 {extracted_count} 行到 handler，清理了原代码。")
+    print(f"将 obj_deterline_handler 生成到需要的房间:")
+    print(f"  spawn-obj --value <room> --key obj_deterline_handler --x 0 --y 0 --file data_win")
+
+
+# ============================================================
+# Door System (S3 — Room Connectivity)
+# ============================================================
+
+DOOR_GOTO_BACK_SCRIPT = '''/// door_goto_back()
+/// Return to the previous room
+if (global.deterline_lastroom >= 0)
+{
+    global.deterline_pending_x = global.deterline_lastx;
+    global.deterline_pending_y = global.deterline_lasty;
+    room_goto(global.deterline_lastroom);
+}
+'''
+
+DOOR_CREATE_BASE = '''/// obj_deterline_door — Create event
+var _rn = room_get_name(room);
+if (variable_global_exists("deterline_pending_x") && global.deterline_pending_x >= 0)
+{
+    if (instance_exists(obj_mainchara))
+    {
+        obj_mainchara.x = global.deterline_pending_x;
+        obj_mainchara.y = global.deterline_pending_y;
+    }
+    global.deterline_pending_x = -1;
+}
+'''
+DOOR_CREATE_BRANCH = '''
+if (_rn == "{room}" && x == {x} && y == {y}) {{
+    target_room = {target_idx};
+    spawn_x = {sx};
+    spawn_y = {sy};
+    exit;
+}}'''
+
+DOOR_CREATE_FALLBACK = '''
+target_room = -1;
+spawn_x = 0;
+spawn_y = 0;
+'''
+
+DOOR_STEP_CODE = '''/// obj_deterline_door — Step event
+if (target_room >= 0 && instance_exists(obj_mainchara))
+{
+    if (point_distance(x, y, obj_mainchara.x, obj_mainchara.y) < 80)
+    {
+        global.deterline_lastroom = room;
+        global.deterline_lastx = obj_mainchara.x;
+        global.deterline_lasty = obj_mainchara.y;
+        global.deterline_lastdir = obj_mainchara.image_index;
+        global.deterline_pending_x = spawn_x;
+        global.deterline_pending_y = spawn_y;
+        room_goto(target_room);
+    }
+}
+'''
+
+
+def cmd_create_door(game_file: Path, cur_room: str, target_room: str,
+                    x: int, y: int, spawn_x: int, spawn_y: int) -> None:
+    """Create a teleport door in cur_room that leads to target_room."""
+    OBJ_CREATE = "gml_Object_obj_deterline_door_Create_0"
+    OBJ_STEP = "gml_Object_obj_deterline_door_Step_0"
+
+    esc_cur = _csx_escape(cur_room)
+    esc_target = _csx_escape(target_room)
+
+    # Look up target room numeric index via CSX
+    idx_csx = f'''
+var r = Data.Rooms.ByName("{esc_target}");
+if (r == null) {{
+    for (int i = 0; i < Data.Rooms.Count; i++) {{
+        if (Data.Rooms[i].Name.Content.IndexOf("{esc_target}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            r = Data.Rooms[i];
+            break;
+        }}
+    }}
+}}
+if (r != null) {{
+    ScriptMessage("IDX:" + Data.Rooms.IndexOf(r));
+}} else {{
+    ScriptMessage("IDX:-1");
+}}
+'''
+    idx_out = _run_utmt(idx_csx, game_file, save=False)
+    target_idx = -1
+    for line in _parse_msg(idx_out):
+        if line.startswith("IDX:"):
+            target_idx = int(line.split(":")[1])
+            break
+    if target_idx < 0:
+        raise NotFoundError(f"目标房间不存在: {target_room}")
+
+    # Read existing Create_0 code or start from base
+    existing_create = _get_decompiled_code(game_file, OBJ_CREATE)
+    if existing_create and existing_create.strip():
+        existing_create = existing_create.strip()
+        # Check if this door branch already exists
+        marker = f'_rn == "{esc_cur}" && x == {x} && y == {y}'
+        if marker in existing_create:
+            print(f"警告: 在 ({x},{y}) 已有门", file=sys.stderr)
+    else:
+        existing_create = DOOR_CREATE_BASE.strip()
+
+    # Append new branch before fallback
+    new_branch = DOOR_CREATE_BRANCH.format(room=esc_cur, x=x, y=y,
+                                            target_idx=target_idx, sx=spawn_x, sy=spawn_y)
+    # Remove any existing fallback, we'll add it at the end
+    if existing_create.endswith(DOOR_CREATE_FALLBACK.strip()):
+        existing_create = existing_create[:-len(DOOR_CREATE_FALLBACK.strip())].rstrip()
+    new_create = existing_create + new_branch + DOOR_CREATE_FALLBACK
+
+    verb_back = _csx_verbatim_escape(DOOR_GOTO_BACK_SCRIPT)
+    verb_create = _csx_verbatim_escape(new_create)
+    verb_step = _csx_verbatim_escape(DOOR_STEP_CODE)
+
+    esc_name_create = _csx_escape(OBJ_CREATE)
+    esc_name_step = _csx_escape(OBJ_STEP)
+    esc_name_back = _csx_escape("gml_Script_deterline_door_back")
+
+    csx = f'''
+try {{
+    CodeImportGroup importGroup = new(Data)
+    {{
+        AutoCreateAssets = true,
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace("{esc_name_back}", @"{verb_back}");
+    importGroup.QueueReplace("{esc_name_create}", @"{verb_create}");
+    importGroup.QueueReplace("{esc_name_step}", @"{verb_step}");
+    importGroup.Import();
+    ScriptMessage("OK: Scripts created/updated");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+    return;
+}}
+
+var room = Data.Rooms.ByName("{esc_cur}");
+if (room == null) {{
+    for (int r = 0; r < Data.Rooms.Count; r++) {{
+        if (Data.Rooms[r].Name.Content.IndexOf("{esc_cur}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            room = Data.Rooms[r];
+            break;
+        }}
+    }}
+}}
+if (room == null) {{
+    ScriptMessage("ERROR: Room not found: {esc_cur}");
+    return;
+}}
+
+var doorObj = Data.GameObjects.ByName("obj_deterline_door");
+if (doorObj == null) {{
+    ScriptMessage("ERROR: obj_deterline_door was not created");
+    return;
+}}
+
+// Assign visible sprite so player can find the door
+var cactusSpr = Data.Sprites.ByName("spr_cactus");
+if (cactusSpr != null) {{
+    doorObj.Sprite = cactusSpr;
+}}
+
+uint newId = Data.GeneralInfo.LastObj++;
+room.GameObjects.Add(new UndertaleRoom.GameObject() {{
+    InstanceID = newId,
+    ObjectDefinition = doorObj,
+    X = {x},
+    Y = {y}
+}});
+ScriptMessage("OK: Door [" + newId + "] created in " + room.Name.Content + " -> " + "{esc_target}");
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+    _update_rooms_json(target_room, target_room)
+
+
+# ============================================================
+# Pit System (S3 — Fall / Pit Hazards)
+# ============================================================
+
+PIT_CREATE_BASE = '''/// obj_deterline_pit — Create event
+var _rn = room_get_name(room);
+'''
+PIT_CREATE_BRANCH = '''
+if (_rn == "{room}" && x == {x} && y == {y}) {{
+    target_room = {target_idx};
+    spawn_x = {sx};
+    spawn_y = {sy};
+    exit;
+}}'''
+PIT_CREATE_FALLBACK = '''
+target_room = -1;
+spawn_x = 0;
+spawn_y = 0;
+'''
+
+PIT_STEP_CODE = '''/// obj_deterline_pit — Step event
+if (target_room >= 0 && instance_exists(obj_mainchara))
+{
+    if (place_meeting(x, y, obj_mainchara))
+    {
+        global.deterline_lastroom = room;
+        global.deterline_lastx = obj_mainchara.x;
+        global.deterline_lasty = obj_mainchara.y;
+        global.deterline_lastdir = obj_mainchara.image_index;
+        global.deterline_pending_x = spawn_x;
+        global.deterline_pending_y = spawn_y;
+        room_goto(target_room);
+    }
+}
+'''
+
+
+def cmd_create_pit(game_file: Path, cur_room: str, target_room: str,
+                   x: int, y: int, spawn_x: int, spawn_y: int) -> None:
+    """Create a pit/hazard in cur_room that teleports player to target_room."""
+    OBJ_CREATE = "gml_Object_obj_deterline_pit_Create_0"
+    OBJ_STEP = "gml_Object_obj_deterline_pit_Step_0"
+
+    esc_cur = _csx_escape(cur_room)
+    esc_target = _csx_escape(target_room)
+
+    # Look up target room numeric index
+    idx_csx = f'''
+var r = Data.Rooms.ByName("{esc_target}");
+if (r == null) {{
+    for (int i = 0; i < Data.Rooms.Count; i++) {{
+        if (Data.Rooms[i].Name.Content.IndexOf("{esc_target}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            r = Data.Rooms[i];
+            break;
+        }}
+    }}
+}}
+if (r != null) {{
+    ScriptMessage("IDX:" + Data.Rooms.IndexOf(r));
+}} else {{
+    ScriptMessage("IDX:-1");
+}}
+'''
+    idx_out = _run_utmt(idx_csx, game_file, save=False)
+    target_idx = -1
+    for line in _parse_msg(idx_out):
+        if line.startswith("IDX:"):
+            target_idx = int(line.split(":")[1])
+            break
+    if target_idx < 0:
+        raise NotFoundError(f"目标房间不存在: {target_room}")
+
+    # Read existing Create_0 or start from base
+    existing_create = _get_decompiled_code(game_file, OBJ_CREATE)
+    if existing_create and existing_create.strip():
+        existing_create = existing_create.strip()
+        marker = f'_rn == "{esc_cur}" && x == {x} && y == {y}'
+        if marker in existing_create:
+            print(f"警告: 在 ({x},{y}) 已有坑", file=sys.stderr)
+    else:
+        existing_create = PIT_CREATE_BASE.strip()
+
+    new_branch = PIT_CREATE_BRANCH.format(room=esc_cur, x=x, y=y,
+                                           target_idx=target_idx, sx=spawn_x, sy=spawn_y)
+    if existing_create.endswith(PIT_CREATE_FALLBACK.strip()):
+        existing_create = existing_create[:-len(PIT_CREATE_FALLBACK.strip())].rstrip()
+    new_create = existing_create + new_branch + PIT_CREATE_FALLBACK
+
+    verb_create = _csx_verbatim_escape(new_create)
+    verb_step = _csx_verbatim_escape(PIT_STEP_CODE)
+    esc_name_create = _csx_escape(OBJ_CREATE)
+    esc_name_step = _csx_escape(OBJ_STEP)
+
+    csx = f'''
+try {{
+    CodeImportGroup importGroup = new(Data)
+    {{
+        AutoCreateAssets = true,
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace("{esc_name_create}", @"{verb_create}");
+    importGroup.QueueReplace("{esc_name_step}", @"{verb_step}");
+    importGroup.Import();
+    ScriptMessage("OK: Scripts created/updated");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+    return;
+}}
+
+var room = Data.Rooms.ByName("{esc_cur}");
+if (room == null) {{
+    for (int r = 0; r < Data.Rooms.Count; r++) {{
+        if (Data.Rooms[r].Name.Content.IndexOf("{esc_cur}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            room = Data.Rooms[r];
+            break;
+        }}
+    }}
+}}
+if (room == null) {{
+    ScriptMessage("ERROR: Room not found: {esc_cur}");
+    return;
+}}
+
+var pitObj = Data.GameObjects.ByName("obj_deterline_pit");
+if (pitObj == null) {{
+    ScriptMessage("ERROR: obj_deterline_pit was not created");
+    return;
+}}
+
+var pitSpr = Data.Sprites.ByName("spr_markerX");
+if (pitSpr == null) {{
+    pitSpr = Data.Sprites.ByName("spr_stardrop");
+}}
+if (pitSpr != null) {{
+    pitObj.Sprite = pitSpr;
+}}
+
+uint newId = Data.GeneralInfo.LastObj++;
+room.GameObjects.Add(new UndertaleRoom.GameObject() {{
+    InstanceID = newId,
+    ObjectDefinition = pitObj,
+    X = {x},
+    Y = {y}
+}});
+ScriptMessage("OK: Pit [" + newId + "] created in " + room.Name.Content + " -> " + "{esc_target}");
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+    _update_rooms_json(target_room, target_room)
+
+
+# ============================================================
+# Battle System (Direction B — custom encounter triggers)
+# ============================================================
+
+BATTLE_CREATE_BASE = '''/// obj_deterline_battle — Create event
+var _rn = room_get_name(room);
+'''
+BATTLE_CREATE_BRANCH = '''
+if (_rn == "{room}" && x == {x} && y == {y}) {{
+    battlegroup_id = {bg_id};
+    border = {border};
+    exit;
+}}'''
+BATTLE_CREATE_FALLBACK = '''
+battlegroup_id = -1;
+border = 0;
+'''
+
+BATTLE_STEP_CODE = '''/// obj_deterline_battle — Step event
+if (battlegroup_id >= 0 && instance_exists(obj_mainchara))
+{
+    if (place_meeting(x, y, obj_mainchara) && global.interact == 0)
+    {
+        global.battlegroup = battlegroup_id;
+        global.border = border;
+        instance_create(0, 0, obj_battleblcon);
+        instance_destroy();
+    }
+}
+'''
+
+
+def cmd_create_battle(game_file: Path, cur_room: str,
+                      battlegroup_id: int, border: int = 0,
+                      x: int = 320, y: int = 240) -> None:
+    """Create a battle trigger in cur_room."""
+    OBJ_CREATE = "gml_Object_obj_deterline_battle_Create_0"
+    OBJ_STEP = "gml_Object_obj_deterline_battle_Step_0"
+
+    esc_cur = _csx_escape(cur_room)
+
+    existing_create = _get_decompiled_code(game_file, OBJ_CREATE)
+    if existing_create and existing_create.strip():
+        existing_create = existing_create.strip()
+        marker = f'_rn == "{esc_cur}" && x == {x} && y == {y}'
+        if marker in existing_create:
+            print(f"警告: 在 ({x},{y}) 已有战斗", file=sys.stderr)
+    else:
+        existing_create = BATTLE_CREATE_BASE.strip()
+
+    new_branch = BATTLE_CREATE_BRANCH.format(room=esc_cur, x=x, y=y,
+                                              bg_id=battlegroup_id, border=border)
+    if existing_create.endswith(BATTLE_CREATE_FALLBACK.strip()):
+        existing_create = existing_create[:-len(BATTLE_CREATE_FALLBACK.strip())].rstrip()
+    new_create = existing_create + new_branch + BATTLE_CREATE_FALLBACK
+
+    verb_create = _csx_verbatim_escape(new_create)
+    verb_step = _csx_verbatim_escape(BATTLE_STEP_CODE)
+    esc_name_create = _csx_escape(OBJ_CREATE)
+    esc_name_step = _csx_escape(OBJ_STEP)
+
+    csx = f'''
+try {{
+    CodeImportGroup importGroup = new(Data)
+    {{
+        AutoCreateAssets = true,
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace("{esc_name_create}", @"{verb_create}");
+    importGroup.QueueReplace("{esc_name_step}", @"{verb_step}");
+    importGroup.Import();
+    ScriptMessage("OK: Scripts created/updated");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+    return;
+}}
+
+var room = Data.Rooms.ByName("{esc_cur}");
+if (room == null) {{
+    for (int r = 0; r < Data.Rooms.Count; r++) {{
+        if (Data.Rooms[r].Name.Content.IndexOf("{esc_cur}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            room = Data.Rooms[r];
+            break;
+        }}
+    }}
+}}
+if (room == null) {{
+    ScriptMessage("ERROR: Room not found: {esc_cur}");
+    return;
+}}
+
+var batObj = Data.GameObjects.ByName("obj_deterline_battle");
+if (batObj == null) {{
+    ScriptMessage("ERROR: obj_deterline_battle was not created");
+    return;
+}}
+
+var markerSpr = Data.Sprites.ByName("spr_markerB");
+if (markerSpr != null) {{
+    batObj.Sprite = markerSpr;
+}}
+
+uint newId = Data.GeneralInfo.LastObj++;
+room.GameObjects.Add(new UndertaleRoom.GameObject() {{
+    InstanceID = newId,
+    ObjectDefinition = batObj,
+    X = {x},
+    Y = {y}
+}});
+ScriptMessage("OK: Battle trigger [" + newId + "] in " + room.Name.Content + " (group " + {battlegroup_id} + ")");
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+
+
+def cmd_list_doors(game_file: Path, room_name: str) -> None:
+    """List all Deterline doors in a room."""
+    OBJ_CREATE = "gml_Object_obj_deterline_door_Create_0"
+    create_code = _get_decompiled_code(game_file, OBJ_CREATE)
+    if create_code is None:
+        print("该房间没有传送门", file=sys.stderr)
+        return
+
+    # Find branches matching this room
+    lines = create_code.split("\n")
+    print(f"--- {room_name} 的传送门 ---")
+    found = 0
+    import re
+    for i, ln in enumerate(lines):
+        m = re.search(r'_rn == "([^"]+)"\s*&&\s*x == (\d+)\s*&&\s*y == (\d+)', ln)
+        if m:
+            rn_part = m.group(1)
+            x_part = int(m.group(2))
+            y_part = int(m.group(3))
+            target_line = ""
+            for j in range(i, min(i + 6, len(lines))):
+                if lines[j].strip().startswith("target_room "):
+                    target_line = lines[j].strip()
+                    break
+            target_val = target_line.split("=")[1].strip().rstrip(";")
+            if rn_part.lower() != room_name.lower():
+                continue
+            found += 1
+            print(f"  [{found}] ({x_part},{y_part}) → 房间 {target_val}")
+
+    if found == 0:
+        print("该房间没有传送门实例", file=sys.stderr)
+        return
+
+    # Also check for actual instances in the room
+    esc = _csx_escape(room_name)
+    csx = f'''
+int found = 0;
+for (int r = 0; r < Data.Rooms.Count; r++) {{
+    if (Data.Rooms[r].Name.Content.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+        foreach (var go in Data.Rooms[r].GameObjects) {{
+            string on = go.ObjectDefinition?.Name?.Content ?? "";
+            if (on == "obj_deterline_door") {{
+                ScriptMessage("  Instance[" + go.InstanceID + "] obj_deterline_door at (" + go.X + "," + go.Y + ")");
+                found++;
+            }}
+        }}
+        break;
+    }}
+}}
+if (found == 0) ScriptMessage("  (no instances in room data)");
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        print(line)
+
+
+def cmd_remove_door(game_file: Path, room_name: str,
+                    x: int | None, y: int | None,
+                    remove_all: bool = False) -> None:
+    """Remove a Deterline door by coordinates, or all doors with --all."""
+    OBJ_CREATE = "gml_Object_obj_deterline_door_Create_0"
+    esc_room = _csx_escape(room_name)
+
+    # Step 1: Remove from Create_0 code
+    create_code = _get_decompiled_code(game_file, OBJ_CREATE)
+    if create_code is None:
+        print("该房间没有传送门", file=sys.stderr)
+        return
+
+    lines = create_code.split("\n")
+    new_lines: list[str] = []
+    skip_block = False
+    removed_count = 0
+    i = 0
+    import re
+    while i < len(lines):
+        ln = lines[i]
+        dore = re.search(r'_rn == "([^"]+)"\s*&&\s*x == (\d+)\s*&&\s*y == (\d+)', ln)
+        if dore:
+            rn_part = dore.group(1)
+            x_part = int(dore.group(2))
+            y_part = int(dore.group(3))
+            match = False
+            if remove_all and rn_part == esc_room:
+                match = True
+            elif not remove_all and x is not None and y is not None:
+                if rn_part == esc_room and x_part == x and y_part == y:
+                    match = True
+            if match:
+                removed_count += 1
+                i += 1
+                while i < len(lines) and 'exit;' not in lines[i]:
+                    i += 1
+                # Skip exit; and the closing } that follows
+                i += 2
+                continue
+        if not skip_block:
+            new_lines.append(ln)
+        i += 1
+
+    if removed_count == 0:
+        if x is not None:
+            print(f"错误: 未找到 ({x},{y}) 处的门", file=sys.stderr)
+        else:
+            print("该房间没有传送门", file=sys.stderr)
+        return
+
+    new_create = "\n".join(new_lines)
+    verb_create = _csx_verbatim_escape(new_create)
+    esc_create = _csx_escape(OBJ_CREATE)
+
+    # Step 2: Remove instances from room data
+    instance_cond = ""
+    if not remove_all and x is not None and y is not None:
+        instance_cond = f"go.X == {x} && go.Y == {y}"
+    else:
+        instance_cond = "true"
+
+    csx = f'''
+// Remove instances
+for (int r = 0; r < Data.Rooms.Count; r++) {{
+    if (Data.Rooms[r].Name.Content.IndexOf("{esc_room}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+        for (int i = Data.Rooms[r].GameObjects.Count - 1; i >= 0; i--) {{
+            var go = Data.Rooms[r].GameObjects[i];
+            string on = go.ObjectDefinition?.Name?.Content ?? "";
+            if (on == "obj_deterline_door" && ({instance_cond})) {{
+                Data.Rooms[r].GameObjects.RemoveAt(i);
+            }}
+        }}
+        break;
+    }}
+}}
+
+// Update Create_0 code
+try {{
+    CodeImportGroup importGroup = new(Data)
+    {{
+        AutoCreateAssets = true,
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace("{esc_create}", @"{verb_create}");
+    importGroup.Import();
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+    return;
+}}
+ScriptMessage("OK: Removed " + {removed_count} + " door(s) from " + "{esc_room}");
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+    print(f"已从 Create_0 中移除 {removed_count} 条分支")
+
+
 def cmd_batch_textdata(game_file: Path, json_path: str,
-                        face: int = 0, emotion: int = 0) -> None:
+                       face: int = 0, emotion: int = 0) -> None:
     """Batch import dialogue entries from a JSON file.
 
     JSON format: [{"key": "...", "text": "..."}, ...]
@@ -2106,6 +3579,701 @@ def cmd_batch_textdata(game_file: Path, json_path: str,
 
 
 # ============================================================
+# P4-1 Sprite & Object Commands
+# ============================================================
+
+def cmd_sprite_list(game_file: Path, limit: int) -> None:
+    """List all sprites with name, dimensions, frame count."""
+    csx = f'''
+int limit = {limit};
+int count = 0;
+for (int i = 0; i < Data.Sprites.Count && count < limit; i++) {{
+    var spr = Data.Sprites[i];
+    string fcount = (spr.Textures != null) ? spr.Textures.Count.ToString() : "0";
+    string stype = spr.IsSpecialType ? spr.SSpriteType.ToString() : "Normal";
+    ScriptMessage(spr.Name.Content + " | " + spr.Width + "x" + spr.Height + " | frames=" + fcount + " | type=" + stype);
+    count++;
+}}
+ScriptMessage("(total: " + Data.Sprites.Count + " sprites, showing " + count + ")");
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        print(line)
+
+
+def cmd_sprite_search(game_file: Path, query: str, limit: int) -> None:
+    """Search sprites by name."""
+    esc = _csx_escape(query)
+    csx = f'''
+int limit = {limit};
+int found = 0;
+for (int i = 0; i < Data.Sprites.Count && found < limit; i++) {{
+    var spr = Data.Sprites[i];
+    if (spr.Name.Content.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+        string fcount = (spr.Textures != null) ? spr.Textures.Count.ToString() : "0";
+        ScriptMessage(spr.Name.Content + " | " + spr.Width + "x" + spr.Height + " | frames=" + fcount);
+        found++;
+    }}
+}}
+if (found == 0) {{
+    ScriptMessage("(no matching sprites)");
+}} else {{
+    ScriptMessage("(found " + found + " sprites)");
+}}
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        print(line)
+
+
+def cmd_obj_get(game_file: Path, obj_name: str) -> None:
+    """Show detailed info about a game object, including its sprite."""
+    esc = _csx_escape(obj_name)
+    csx = f'''
+var obj = Data.GameObjects.ByName("{esc}");
+if (obj == null) {{
+    obj = Data.GameObjects.ByName("{esc}", true);
+}}
+if (obj == null) {{
+    string query = "{esc}";
+    int first = -1;
+    int count = 0;
+    for (int o = 0; o < Data.GameObjects.Count; o++) {{
+        string on = Data.GameObjects[o].Name.Content;
+        if (on.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) {{
+            if (first < 0) first = o;
+            count++;
+        }}
+    }}
+    if (first >= 0) {{
+        obj = Data.GameObjects[first];
+        if (count > 1) ScriptMessage("(found " + count + " matches, using: " + obj.Name.Content + ")");
+    }}
+}}
+if (obj == null) {{
+    ScriptMessage("ERROR: Object not found: {esc}");
+    string suggest = "";
+    int found = 0;
+    for (int o = 0; o < Data.GameObjects.Count && found < 5; o++) {{
+        string on = Data.GameObjects[o].Name.Content;
+        if (on.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            "{esc}".IndexOf(on, StringComparison.OrdinalIgnoreCase) >= 0) {{
+            suggest += (found > 0 ? ", " : "") + on;
+            found++;
+        }}
+    }}
+    if (found > 0) ScriptMessage("HINT: Did you mean: " + suggest);
+    return;
+}}
+ScriptMessage("=== " + obj.Name.Content + " ===");
+ScriptMessage("Sprite: " + (obj.Sprite?.Name?.Content ?? "(none)"));
+ScriptMessage("Sprite Size: " + (obj.Sprite?.Width ?? 0) + "x" + (obj.Sprite?.Height ?? 0));
+ScriptMessage("Visible: " + obj.Visible + " | Solid: " + obj.Solid);
+ScriptMessage("Depth: " + obj.Depth + " | Persistent: " + obj.Persistent);
+ScriptMessage("Parent: " + (obj.ParentId?.Name?.Content ?? "(none)"));
+ScriptMessage("TextureMask: " + (obj.TextureMaskId?.Name?.Content ?? "(none)"));
+ScriptMessage("Physics: " + obj.UsesPhysics);
+int evtCount = 0;
+for (int e = 0; e < obj.Events.Count; e++) {{
+    var evtList = obj.Events[e];
+    if (evtList != null && evtList.Count > 0) {{
+        evtCount += evtList.Count;
+    }}
+}}
+ScriptMessage("Events: " + evtCount + " total");
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("HINT:"):
+            print(line, file=sys.stderr)
+        else:
+            print(line)
+
+
+def cmd_obj_set_sprite(game_file: Path, obj_name: str, sprite_name: str) -> None:
+    """Change the sprite reference of a game object."""
+    esc_obj = _csx_escape(obj_name)
+    esc_spr = _csx_escape(sprite_name)
+    csx = f'''
+var obj = Data.GameObjects.ByName("{esc_obj}");
+if (obj == null) {{
+    obj = Data.GameObjects.ByName("{esc_obj}", true);
+}}
+if (obj == null) {{
+    string query = "{esc_obj}";
+    int first = -1;
+    int count = 0;
+    for (int o = 0; o < Data.GameObjects.Count; o++) {{
+        string on = Data.GameObjects[o].Name.Content;
+        if (on.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) {{
+            if (first < 0) first = o;
+            count++;
+        }}
+    }}
+    if (first >= 0) {{
+        obj = Data.GameObjects[first];
+        if (count > 1) ScriptMessage("(found " + count + " matches, using: " + obj.Name.Content + ")");
+    }}
+}}
+if (obj == null) {{
+    ScriptMessage("ERROR: Object not found: {esc_obj}");
+    string suggest = "";
+    int found = 0;
+    for (int o = 0; o < Data.GameObjects.Count && found < 5; o++) {{
+        string on = Data.GameObjects[o].Name.Content;
+        if (on.IndexOf("{esc_obj}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            suggest += (found > 0 ? ", " : "") + on;
+            found++;
+        }}
+    }}
+    if (found > 0) ScriptMessage("HINT: Did you mean: " + suggest);
+    return;
+}}
+var spr = Data.Sprites.ByName("{esc_spr}");
+if (spr == null) {{
+    spr = Data.Sprites.ByName("{esc_spr}", true);
+}}
+if (spr == null) {{
+    string query = "{esc_spr}";
+    int first = -1;
+    int count = 0;
+    for (int s = 0; s < Data.Sprites.Count; s++) {{
+        string sn = Data.Sprites[s].Name.Content;
+        if (sn.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) {{
+            if (first < 0) first = s;
+            count++;
+        }}
+    }}
+    if (first >= 0) {{
+        spr = Data.Sprites[first];
+        if (count > 1) ScriptMessage("(found " + count + " sprites, using: " + spr.Name.Content + ")");
+    }}
+}}
+if (spr == null) {{
+    ScriptMessage("ERROR: Sprite not found: {esc_spr}");
+    string suggest = "";
+    int found = 0;
+    for (int s = 0; s < Data.Sprites.Count && found < 5; s++) {{
+        string sn = Data.Sprites[s].Name.Content;
+        if (sn.IndexOf("{esc_spr}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            suggest += (found > 0 ? ", " : "") + sn;
+            found++;
+        }}
+    }}
+    if (found > 0) ScriptMessage("HINT: Did you mean: " + suggest);
+    return;
+}}
+string oldSpr = obj.Sprite?.Name?.Content ?? "(none)";
+obj.Sprite = spr;
+ScriptMessage("OK: " + obj.Name.Content + ": " + oldSpr + " → " + spr.Name.Content);
+ScriptMessage("(Sprite size: " + spr.Width + "x" + spr.Height + ")");
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+        else:
+            print(line)
+
+
+# ============================================================
+# P4-1-1 Texture & Sprite Export/Replace
+# ============================================================
+
+def cmd_texture_list(game_file: Path, limit: int) -> None:
+    """List all embedded textures (TXTR)."""
+    csx = f'''
+int limit = {limit};
+for (int i = 0; i < Data.EmbeddedTextures.Count && i < limit; i++) {{
+    var t = Data.EmbeddedTextures[i];
+    int w = t.TextureData?.Width ?? 0;
+    int h = t.TextureData?.Height ?? 0;
+    string texName = t.Name?.Content ?? "(unnamed)";
+    ScriptMessage(texName + " | " + w + "x" + h + " | external=" + t.TextureExternal);
+}}
+ScriptMessage("(total: " + Data.EmbeddedTextures.Count + " textures)");
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        print(line)
+
+
+def _export_sprite_json(game_file: Path, sprite_name: str) -> None:
+    """Export sprite metadata as JSON to stderr."""
+    esc = _csx_escape(sprite_name)
+    csx = f'''
+var spr = Data.Sprites.ByName("{esc}");
+if (spr == null) {{
+    spr = Data.Sprites.ByName("{esc}", true);
+}}
+if (spr == null) return;
+string frames = "[";
+for (int i = 0; i < (spr.Textures?.Count ?? 0); i++) {{
+    if (i > 0) frames += ",";
+    var t = spr.Textures[i]?.Texture;
+    if (t != null) {{
+        frames += "{{";
+        frames += "\\"frame\\":\\"" + i + "\\",";
+        frames += "\\"src\\":\\"" + t.SourceX + "," + t.SourceY + " " + t.SourceWidth + "x" + t.SourceHeight + "\\",";
+        frames += "\\"target\\":\\"" + t.TargetX + "," + t.TargetY + " " + t.TargetWidth + "x" + t.TargetHeight + "\\",";
+        frames += "\\"bound\\":\\"" + t.BoundingWidth + "x" + t.BoundingHeight + "\\",";
+        frames += "\\"page\\":\\"" + (t.TexturePage?.Name?.Content ?? "?") + "\\"";
+        frames += "}}";
+    }}
+}}
+frames += "]";
+ScriptMessage("JSON:" + "{{");
+ScriptMessage("JSON:  \\"name\\": \\"" + spr.Name.Content + "\\",");
+ScriptMessage("JSON:  \\"width\\": " + spr.Width + ",");
+ScriptMessage("JSON:  \\"height\\": " + spr.Height + ",");
+ScriptMessage("JSON:  \\"frames\\": " + (spr.Textures?.Count ?? 0) + ",");
+ScriptMessage("JSON:  \\"tex_entries\\": " + frames);
+ScriptMessage("JSON:}}");
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        if line.startswith("JSON:"):
+            print(line[5:])  # print JSON fragment to stdout
+
+
+def cmd_sprite_export(game_file: Path, sprite_name: str, output: str, frame: int = -1) -> None:
+    """Export sprite frame(s) as PNG.
+
+    If frame is -1, export all frames to output directory.
+    If frame >= 0, export single frame to output path.
+    """
+    esc = _csx_escape(sprite_name)
+    esc_path = _csx_escape(output)
+    csx = f'''
+using UndertaleModLib.Util;
+using ImageMagick;
+var spr = Data.Sprites.ByName("{esc}");
+if (spr == null) {{
+    spr = Data.Sprites.ByName("{esc}", true);
+}}
+if (spr == null) {{
+    int first = -1;
+    int count = 0;
+    for (int s = 0; s < Data.Sprites.Count; s++) {{
+        var sn = Data.Sprites[s].Name.Content;
+        if (sn.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            if (first < 0) first = s;
+            count++;
+        }}
+    }}
+    if (first >= 0) spr = Data.Sprites[first];
+}}
+if (spr == null) {{
+    ScriptMessage("ERROR: Sprite not found: {esc}");
+    return;
+}}
+if (spr.Textures == null || spr.Textures.Count == 0) {{
+    ScriptMessage("ERROR: Sprite has no textures");
+    return;
+}}
+int frameNum = {frame};
+int totalFrames = spr.Textures.Count;
+var worker = new TextureWorker();
+if (frameNum < 0) {{
+    string outDir = "{esc_path}";
+    System.IO.Directory.CreateDirectory(outDir);
+    for (int i = 0; i < totalFrames; i++) {{
+        var entry = spr.Textures[i];
+        if (entry?.Texture == null) continue;
+        string fp = System.IO.Path.Combine(outDir, spr.Name.Content + "_" + i + ".png");
+        worker.ExportAsPNG(entry.Texture, fp);
+    }}
+    ScriptMessage("OK: Exported " + totalFrames + " frames to " + outDir);
+}} else {{
+    if (frameNum >= totalFrames) {{
+        ScriptMessage("ERROR: Frame " + frameNum + " out of range (0-" + (totalFrames - 1) + ")");
+        return;
+    }}
+    var entry = spr.Textures[frameNum];
+    if (entry?.Texture == null) {{
+        ScriptMessage("ERROR: Frame " + frameNum + " has no texture");
+        return;
+    }}
+    worker.ExportAsPNG(entry.Texture, "{esc_path}");
+    ScriptMessage("OK: Exported " + spr.Name.Content + "[" + frameNum + "] → {esc_path}");
+}}
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+        else:
+            print(line)
+
+
+def cmd_sprite_replace(game_file: Path, sprite_name: str, png_path: str, frame: int = 0, all_frames: bool = False) -> None:
+    """Replace a sprite frame's texture with a PNG file.
+
+    If all_frames is True, replace all frames with the same PNG.
+    """
+    esc = _csx_escape(sprite_name)
+    esc_png = _csx_escape(png_path)
+    all_flag = "true" if all_frames else "false"
+    csx = f'''
+using UndertaleModLib.Util;
+using ImageMagick;
+var spr = Data.Sprites.ByName("{esc}");
+if (spr == null) {{
+    spr = Data.Sprites.ByName("{esc}", true);
+}}
+if (spr == null) {{
+    int first = -1;
+    int count = 0;
+    for (int s = 0; s < Data.Sprites.Count; s++) {{
+        var sn = Data.Sprites[s].Name.Content;
+        if (sn.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            if (first < 0) first = s;
+            count++;
+        }}
+    }}
+    if (first >= 0) spr = Data.Sprites[first];
+}}
+if (spr == null) {{
+    ScriptMessage("ERROR: Sprite not found: {esc}");
+    return;
+}}
+string pngPath = "{esc_png}";
+if (!System.IO.File.Exists(pngPath)) {{
+    ScriptMessage("ERROR: File not found: " + pngPath);
+    return;
+}}
+byte[] pngBytes = System.IO.File.ReadAllBytes(pngPath);
+bool allMode = {all_flag};
+int totalFrames = spr.Textures?.Count ?? 0;
+int frameNum = {frame};
+int startFrame = allMode ? 0 : frameNum;
+int endFrame = allMode ? totalFrames - 1 : frameNum;
+int replaced = 0;
+for (int f = startFrame; f <= endFrame; f++) {{
+    if (spr.Textures == null || spr.Textures.Count <= f) continue;
+    var entry = spr.Textures[f];
+    if (entry?.Texture?.TexturePage == null) continue;
+    var texItem = entry.Texture;
+    var embeddedTex = texItem.TexturePage;
+    try {{
+        using var editImg = new MagickImage(pngBytes);
+        uint sw = texItem.SourceWidth;
+        uint sh = texItem.SourceHeight;
+        bool resized = false;
+        if (editImg.Width != sw || editImg.Height != sh) {{
+            ScriptMessage("Resize[" + f + "]: " + editImg.Width + "x" + editImg.Height + " -> " + sw + "x" + sh);
+            editImg.InterpolativeResize(sw, sh, PixelInterpolateMethod.Bilinear);
+            resized = true;
+        }}
+        var worker = new TextureWorker();
+        var pageImg = worker.GetEmbeddedTexture(embeddedTex);
+        lock (pageImg) {{
+            pageImg.Composite(editImg, (int)texItem.SourceX, (int)texItem.SourceY, CompositeOperator.Copy);
+        }}
+        using var ms = new System.IO.MemoryStream();
+        pageImg.Write(ms, MagickFormat.Png);
+        embeddedTex.TextureData.Image = GMImage.FromPng(ms.ToArray());
+        replaced++;
+        ScriptMessage("OK: Replaced " + spr.Name.Content + "[" + f + "]");
+        if (totalFrames > 1) ScriptMessage("(progress: " + replaced + "/" + (endFrame - startFrame + 1) + ")");
+    }} catch (System.Exception ex) {{
+        ScriptMessage("ERROR: [" + f + "] " + ex.Message);
+    }}
+}}
+if (replaced == 0) {{
+    ScriptMessage("ERROR: No frames were replaced");
+}} else {{
+    ScriptMessage("Done: " + replaced + " frame(s) replaced");
+}}
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("WARN:") or line.startswith("Resize"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:") or line.startswith("Done:"):
+            print(line)
+        else:
+            print(line)
+
+
+def cmd_sprite_duplicate(game_file: Path, src_name: str, dst_name: str) -> None:
+    """Duplicate a sprite with a new name for independent editing."""
+    esc_src = _csx_escape(src_name)
+    esc_dst = _csx_escape(dst_name)
+    csx = f'''
+var src = Data.Sprites.ByName("{esc_src}");
+if (src == null) {{
+    src = Data.Sprites.ByName("{esc_src}", true);
+}}
+if (src == null) {{
+    int first = -1;
+    for (int s = 0; s < Data.Sprites.Count; s++) {{
+        if (Data.Sprites[s].Name.Content.IndexOf("{esc_src}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            if (first < 0) first = s;
+        }}
+    }}
+    if (first >= 0) src = Data.Sprites[first];
+}}
+if (src == null) {{
+    ScriptMessage("ERROR: Source sprite not found: {esc_src}");
+    return;
+}}
+// Check if destination already exists
+var existing = Data.Sprites.ByName("{esc_dst}");
+if (existing != null) {{
+    ScriptMessage("ERROR: Destination sprite already exists: {esc_dst}");
+    return;
+}}
+var dst = new UndertaleModLib.Models.UndertaleSprite();
+dst.Name = Data.Strings.MakeString("{esc_dst}");
+dst.Width = src.Width;
+dst.Height = src.Height;
+dst.MarginLeft = src.MarginLeft;
+dst.MarginRight = src.MarginRight;
+dst.MarginTop = src.MarginTop;
+dst.MarginBottom = src.MarginBottom;
+dst.Transparent = src.Transparent;
+dst.Smooth = src.Smooth;
+dst.Preload = src.Preload;
+dst.BBoxMode = src.BBoxMode;
+dst.SepMasks = src.SepMasks;
+dst.OriginX = src.OriginX;
+dst.OriginY = src.OriginY;
+// Copy textures with INDEPENDENT texture data
+if (src.Textures != null) {{
+    dst.Textures = new UndertaleModLib.UndertaleSimpleList<UndertaleModLib.Models.UndertaleSprite.TextureEntry>();
+    var worker = new UndertaleModLib.Util.TextureWorker();
+    for (int i = 0; i < src.Textures.Count; i++) {{
+        var srcEntry = src.Textures[i];
+        if (srcEntry?.Texture == null) continue;
+        // Extract frame's pixel data from texture page as PNG bytes
+        var frameImg = worker.GetTextureFor(srcEntry.Texture, src.Name.Content + "_frame" + i);
+        var ms = new System.IO.MemoryStream();
+        frameImg.Write(ms, ImageMagick.MagickFormat.Png);
+        byte[] pngBytes = ms.ToArray();
+        ms.Dispose();
+        // Create new standalone embedded texture for this frame
+        var newTex = new UndertaleModLib.Models.UndertaleEmbeddedTexture();
+        newTex.Name = Data.Strings.MakeString(dst.Name.Content + "_frame" + i);
+        newTex.TextureData = new UndertaleModLib.Models.UndertaleEmbeddedTexture.TexData();
+        newTex.TextureData.Image = UndertaleModLib.Util.GMImage.FromPng(pngBytes);
+        Data.EmbeddedTextures.Add(newTex);
+        // Create new TexturePageItem pointing to standalone texture
+        var newItem = new UndertaleModLib.Models.UndertaleTexturePageItem();
+        newItem.Name = Data.Strings.MakeString(dst.Name.Content + "_item" + i);
+        newItem.SourceX = 0;
+        newItem.SourceY = 0;
+        newItem.SourceWidth = (ushort)frameImg.Width;
+        newItem.SourceHeight = (ushort)frameImg.Height;
+        newItem.TargetX = srcEntry.Texture.TargetX;
+        newItem.TargetY = srcEntry.Texture.TargetY;
+        newItem.TargetWidth = srcEntry.Texture.TargetWidth;
+        newItem.TargetHeight = srcEntry.Texture.TargetHeight;
+        newItem.BoundingWidth = srcEntry.Texture.BoundingWidth;
+        newItem.BoundingHeight = srcEntry.Texture.BoundingHeight;
+        newItem.TexturePage = newTex;
+        Data.TexturePageItems.Add(newItem);
+        frameImg.Dispose();
+        // Point sprite frame to new item
+        var entry = new UndertaleModLib.Models.UndertaleSprite.TextureEntry();
+        entry.Texture = newItem;
+        dst.Textures.Add(entry);
+    }}
+    worker.Dispose();
+}}
+// Copy collision masks
+if (src.CollisionMasks != null) {{
+    dst.CollisionMasks = new UndertaleModLib.UndertaleObservableList<UndertaleModLib.Models.UndertaleSprite.MaskEntry>();
+    for (int i = 0; i < src.CollisionMasks.Count; i++) {{
+        var srcMask = src.CollisionMasks[i];
+        byte[] maskData = new byte[srcMask.Data.Length];
+        System.Array.Copy(srcMask.Data, maskData, srcMask.Data.Length);
+        dst.CollisionMasks.Add(new UndertaleModLib.Models.UndertaleSprite.MaskEntry(maskData, srcMask.Width, srcMask.Height));
+    }}
+}}
+Data.Sprites.Add(dst);
+ScriptMessage("OK: Duplicated " + src.Name.Content + " → " + dst.Name.Content + " (" + (src.Textures?.Count ?? 0) + " frames)");
+    ScriptMessage("(Use replace-sprite to edit the copy independently)");
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+        else:
+            print(line)
+
+
+def cmd_sprite_preview(game_file: Path, sprite_name: str) -> None:
+    """Preview a sprite as ASCII art in terminal."""
+    import tempfile
+    from PIL import Image
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "preview.png"
+        cmd_sprite_export(game_file, sprite_name, str(p), frame=0)
+        if not p.exists():
+            print("(sprite not found)", file=sys.stderr)
+            return
+        img = Image.open(str(p)).convert("RGBA")
+        w, h = img.size
+        print(f"{sprite_name}: {w}x{h}")
+        chars = " .:oO8@"
+        for y in range(h):
+            row = ""
+            for x in range(w):
+                r, g, b, a = img.getpixel((x, y))
+                if a == 0:
+                    row += " "
+                else:
+                    bri = int(0.299 * r + 0.587 * g + 0.114 * b)
+                    row += chars[min(bri * len(chars) // 256, len(chars) - 1)]
+            print(row)
+
+
+def cmd_sprite_colorize(game_file: Path, src_name: str, dst_name: str,
+                         hue_from: tuple[float, float], hue_to: float,
+                         sat_min: float = 0.05, val_min: float = 0.15, val_max: float = 0.95) -> None:
+    """Duplicate a sprite and apply HSV-based selective color shift."""
+    from PIL import Image
+    import colorsys
+
+    # Step 1: duplicate
+    cmd_sprite_duplicate(game_file, src_name, dst_name)
+    path_base = Path(tempfile.mktemp(suffix=""))
+    temp_dir = path_base.parent / f"_clr_{path_base.name}"
+    temp_dir.mkdir(exist_ok=True)
+    try:
+        # Step 2: export all frames
+        cmd_sprite_export(game_file, dst_name, str(temp_dir))
+        # Step 3: process each frame
+        for f in sorted(temp_dir.iterdir()):
+            if not f.name.endswith(".png"):
+                continue
+            img = Image.open(str(f)).convert("RGBA")
+            px = img.load()
+            w, h = img.size
+            changed = 0
+            for x in range(w):
+                for y in range(h):
+                    r, g, b, a = px[x, y]
+                    if a == 0:
+                        continue
+                    hh, ss, vv = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+                    in_hue = (hue_from[0] <= hh <= hue_from[1]) if hue_from[0] <= hue_from[1] else (hh >= hue_from[0] or hh <= hue_from[1])
+                    if in_hue and ss > sat_min and val_min < vv < val_max:
+                        nr, ng, nb = colorsys.hsv_to_rgb(hue_to / 360.0, ss, vv)
+                        px[x, y] = (int(nr * 255), int(ng * 255), int(nb * 255), a)
+                        changed += 1
+            img.save(str(f))
+            print(f"  {f.name}: {changed} pixels shifted")
+        # Step 4: replace all frames
+        for f in sorted(temp_dir.iterdir()):
+            if not f.name.endswith(".png"):
+                continue
+            frame_str = f.stem.rsplit("_", 1)[-1]
+            try:
+                frame = int(frame_str)
+            except ValueError:
+                continue
+            cmd_sprite_replace(game_file, dst_name, str(f), frame=frame)
+    finally:
+        shutil.rmtree(str(temp_dir), ignore_errors=True)
+    print(f"✓ {src_name} → {dst_name}: hue shift {hue_from[0]*360:.0f}°-{hue_from[1]*360:.0f}° → {hue_to}°")
+
+
+def cmd_texture_export(game_file: Path, texture_name: str | None, output_dir: str) -> None:
+    """Export embedded texture(s) as PNG.
+
+    If texture_name is None, export all (via UTMT CLI dump -t).
+    If texture_name is given, export single texture (via CSX).
+    """
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    if texture_name is None:
+        # Export all textures via UTMT CLI dump -t
+        cmd = ["dotnet", _find_utmt_cli(), "dump", str(game_file), "-t", "-o", str(out_path)]
+        subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=True)
+        print(f"✓ 所有纹理已导出到: {out_path}")
+    else:
+        # Export single texture via CSX
+        esc = _csx_escape(texture_name)
+        esc_path = _csx_escape(str(out_path))
+        csx = f'''
+using UndertaleModLib.Util;
+var tex = Data.EmbeddedTextures.ByName("{esc}");
+if (tex == null) {{
+    for (int i = 0; i < Data.EmbeddedTextures.Count; i++) {{
+        if (Data.EmbeddedTextures[i].Name.Content.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            tex = Data.EmbeddedTextures[i];
+            break;
+        }}
+    }}
+}}
+if (tex == null) {{
+    ScriptMessage("ERROR: Texture not found: {esc}");
+    return;
+}}
+string outPath = "{esc_path}";
+System.IO.Directory.CreateDirectory(outPath);
+string fp = System.IO.Path.Combine(outPath, tex.Name.Content + ".png");
+if (tex.TextureData?.Image != null) {{
+    using var fs = new System.IO.FileStream(fp, System.IO.FileMode.Create);
+    tex.TextureData.Image.SavePng(fs);
+    ScriptMessage("OK: Exported " + tex.Name.Content + " → " + fp);
+}} else {{
+    ScriptMessage("ERROR: Texture has no image data");
+}}
+'''
+        out = _run_utmt(csx, game_file, save=False)
+        for line in _parse_msg(out):
+            if line.startswith("ERROR:"):
+                print(line, file=sys.stderr)
+            elif line.startswith("OK:"):
+                print(line)
+            else:
+                print(line)
+
+
+def cmd_texture_replace(game_file: Path, texture_name: str, png_path: str) -> None:
+    """Replace an embedded texture with a PNG file (via UTMT CLI replace -t)."""
+    p = Path(png_path)
+    if not p.exists():
+        raise NotFoundError(f"文件不存在: {png_path}")
+    cli = _find_utmt_cli()
+    target = game_file
+    if SANDBOX_ACTIVE:
+        sandbox_path = game_file.with_suffix(game_file.suffix + ".sandbox")
+        if not sandbox_path.exists():
+            shutil.copy2(str(game_file), str(sandbox_path))
+            print(f"🔒 沙箱模式: 已创建 {sandbox_path.name}", file=sys.stderr)
+        target = sandbox_path
+    if not SANDBOX_ACTIVE:
+        backup_file(target)
+    cmd = ["dotnet", cli, "replace", str(target), "-t", f"{texture_name}={png_path}", "-o", str(target)]
+    subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=True)
+    print(f"✓ {texture_name} 已替换: {png_path}")
+
+
+def cmd_sprite_dump_all(game_file: Path, output_dir: str) -> None:
+    """Dump ALL sprites as PNGs to a directory (via UTMT CLI dump --sprites)."""
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    cli = _find_utmt_cli()
+    cmd = ["dotnet", cli, "dump", str(game_file), "--sprites", "-o", str(out_path)]
+    subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=True)
+    print(f"✓ 所有精灵已导出到: {out_path}")
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -2121,6 +4289,98 @@ def cmd_room_list(args_filter: str = "") -> None:
             else:
                 continue
         print(f"  [{rid:>3}] {name}")
+
+
+# ============================================================
+# Experiment Management (snapshot/restore for isolation)
+# ============================================================
+
+def cmd_experiment_snapshot(save_dir: Path, tag: str | None = None) -> None:
+    """Create a named snapshot of game.ios and file0 for experiment isolation."""
+    game_file = find_game_data_file()
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    label = tag or f"exp_{ts}"
+    # Snapshot game.ios
+    snap_game = game_file.with_name(f"game.ios.snap.{label}")
+    shutil.copy2(str(game_file), str(snap_game))
+    # Snapshot file0
+    f0 = save_dir / "file0"
+    if f0.exists():
+        snap_f0 = save_dir / f"file0.snap.{label}"
+        shutil.copy2(str(f0), str(snap_f0))
+    # Snapshot ini
+    ini = save_dir / "undertale.ini"
+    if ini.exists():
+        snap_ini = save_dir / f"undertale.ini.snap.{label}"
+        shutil.copy2(str(ini), str(snap_ini))
+    print(f"✓ 实验快照已创建: {label}")
+    print(f"  game.ios → game.ios.snap.{label}")
+    if f0.exists():
+        print(f"  file0    → file0.snap.{label}")
+    if ini.exists():
+        print(f"  ini      → undertale.ini.snap.{label}")
+
+
+def cmd_experiment_list(save_dir: Path | None = None) -> None:
+    """List all experiment snapshots."""
+    game_file = find_game_data_file()
+    parent = game_file.parent
+    snaps = sorted(parent.glob("game.ios.snap.*"))
+    if not snaps:
+        print("(没有实验快照)")
+        return
+    print(f"找到 {len(snaps)} 个实验快照:")
+    for p in reversed(snaps):
+        label = str(p.name).removeprefix("game.ios.snap.")
+        mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(p.stat().st_mtime))
+        size = p.stat().st_size
+        # Check if corresponding file0 snapshot exists
+        f0_snap = parent / f"file0.snap.{label}"
+        f0_info = " + file0" if f0_snap.exists() else ""
+        print(f"  [{label}] {mtime} ({size} bytes){f0_info}")
+
+
+def cmd_experiment_restore(save_dir: Path, tag: str) -> None:
+    """Restore game.ios and file0 from a named experiment snapshot."""
+    game_file = find_game_data_file()
+    parent = game_file.parent
+    snap_game = parent / f"game.ios.snap.{tag}"
+    if not snap_game.exists():
+        # Try fuzzy match
+        snaps = sorted(parent.glob(f"game.ios.snap.*{tag}*"))
+        if not snaps:
+            print(f"错误: 未找到快照 '{tag}'", file=sys.stderr)
+            print("用 experiment-list 查看可用快照", file=sys.stderr)
+            return
+        snap_game = snaps[-1]
+        tag = str(snap_game.name).removeprefix("game.ios.snap.")
+        print(f"模糊匹配: {tag}")
+    # Restore game.ios (use temp file to bypass .app bundle protection)
+    import tempfile as _tf
+    _tmp = _tf.NamedTemporaryFile(suffix=".ios", delete=False).name
+    shutil.copy2(str(snap_game), _tmp)
+    shutil.copy2(_tmp, str(game_file))
+    # Sync to configurable fallback copy if it exists (DETERLINE_GAME_FILE)
+    env_game = os.environ.get("DETERLINE_GAME_FILE", "")
+    if env_game:
+        desktop_game = Path(env_game).expanduser()
+        if desktop_game.exists() and str(desktop_game.resolve()) != str(game_file.resolve()):
+            shutil.copy2(_tmp, str(desktop_game))
+    os.unlink(_tmp)
+    print(f"✓ 已恢复 game.ios ← game.ios.snap.{tag}")
+    # Restore file0 if exists
+    f0 = save_dir / "file0"
+    snap_f0 = parent / f"file0.snap.{tag}"
+    if snap_f0.exists() and f0.exists():
+        shutil.copy2(str(snap_f0), str(f0))
+        print(f"✓ 已恢复 file0 ← file0.snap.{tag}")
+    # Restore ini if exists
+    ini = save_dir / "undertale.ini"
+    snap_ini = parent / f"undertale.ini.snap.{tag}"
+    if snap_ini.exists() and ini.exists():
+        shutil.copy2(str(snap_ini), str(ini))
+        print(f"✓ 已恢复 undertale.ini ← undertale.ini.snap.{tag}")
+    print("完成。请重启游戏。")
 
 
 def main():
@@ -2194,6 +4454,22 @@ def main():
   # SCR_TEXT case search
   %(prog)s --action search-sctext --value "Toriel" --file data_win
   
+  # P4-1 Sprite/Texture replacement
+  %(prog)s --action list-textures --file data_win --limit 10
+  %(prog)s --action export-sprite --key "spr_sans_d" --value "sans.png" --frame 0 --file data_win
+  %(prog)s --action replace-sprite --key "spr_sans_d" --value "sans_edit.png" --frame 0 --file data_win
+  %(prog)s --action duplicate-sprite --key "spr_sans_d" --value "spr_sans_d_red" --file data_win
+  %(prog)s --action colorize-sprite --key "spr_sans_d" --value "spr_sans_d_red" --hue-from "180-260" --hue-to 0 --file data_win
+  %(prog)s --action preview-sprite --key "spr_sans_d" --file data_win
+  %(prog)s --action export-texture --value "./textures" --file data_win
+  %(prog)s --action replace-texture --key "Texture 0" --value "tex0.png" --file data_win
+  %(prog)s --action dump-sprites --value "./sprites" --file data_win
+
+  # Experiment snapshots (isolate experiments from each other)
+  %(prog)s --action experiment-snapshot --value "sans_face_test"
+  %(prog)s --action experiment-list
+  %(prog)s --action experiment-restore --value "sans_face_test"
+
   # Backups
   %(prog)s --action list-backups --value data_win
   %(prog)s --action undo --value data_win --backup 20240714_193500
@@ -2211,12 +4487,33 @@ def main():
                                  "replace-code", "find-replace-code",
                                  "append-code", "prepend-code",
                                  "search-textdata", "add-textentry", "delete-textentry",
-                                 "batch-add-textentry",
+                                  "batch-add-textentry",
+                                  "guided-add-dialogue",
                                  "search-vars", "create-script",
-                                 "room-objects", "search-sctext",
-                                  "spawn-obj", "remove-obj",
-                                  "quest-init", "quest-status",
-                                  "sandbox-restore"])
+                                  "room-objects", "search-sctext",
+                                   "spawn-obj", "remove-obj",
+                                   "quest-init", "quest-status",
+                                   "sandbox-restore",
+                                   "list-sprites", "search-sprite",
+                                   "get-obj", "set-obj-sprite",
+                                   "list-textures", "export-sprite",
+                                   "replace-sprite", "duplicate-sprite",
+                                   "preview-sprite", "colorize-sprite",
+                                   "export-texture", "replace-texture",
+                                   "dump-sprites",
+                                    "experiment-snapshot", "experiment-list",
+                                    "experiment-restore",
+                                    "room-info", "create-room",
+                                    "set-room-bg", "set-room-prop", "set-room-view",
+                                    "list-game-bgs", "create-bg-asset",
+                                    "gml-bg",
+                                    "remove-tile",
+                                    "handler-extract",
+                                    "create-door",
+                                    "list-doors",
+                                    "remove-door",
+                                    "create-pit",
+                                    "create-battle"])
     parser.add_argument("--key", help="键名或数字索引 (file0 用数字)")
     parser.add_argument("--value", help="要设置/搜索的值 (set/find 操作必需)")
     parser.add_argument("--old", help="replace-string 的旧文本")
@@ -2236,9 +4533,15 @@ def main():
     parser.add_argument("--backup", type=str, default=None,
                         help="备份时间戳 (undo 恢复到指定版本, list-backups 可查看)")
     parser.add_argument("--x", type=int, default=320,
-                        help="X 坐标 (spawn-obj 用, 默认: 320)")
+                        help="X 坐标 (spawn-obj/create-door 用, 默认: 320)")
     parser.add_argument("--y", type=int, default=240,
-                        help="Y 坐标 (spawn-obj 用, 默认: 240)")
+                        help="Y 坐标 (spawn-obj/create-door 用, 默认: 240)")
+    parser.add_argument("--spawn-x", type=int, default=160,
+                        help="目标房间出生 X (create-door 用, 默认: 160)")
+    parser.add_argument("--spawn-y", type=int, default=120,
+                        help="目标房间出生 Y (create-door 用, 默认: 120)")
+    parser.add_argument("--border", type=int, default=0,
+                        help="战斗边框样式 (create-battle 用, 默认: 0)")
     parser.add_argument("--all", action="store_true",
                         help="移除所有匹配实例 (remove-obj 用)")
     parser.add_argument("--instance", type=int, default=None,
@@ -2249,14 +4552,81 @@ def main():
                         help="头像表情 (Sans: 0=普通, 1=轻笑, 2=眨眼, 3=慢眨眼, 4=无眼)")
     parser.add_argument("--flag", type=int, default=None,
                         help="flag 索引 (quest-init 用, 默认 510)")
+    parser.add_argument("--frame", type=int, default=None,
+                        help="帧索引 (export-sprite/replace-sprite 用, 默认全部/0)")
+    parser.add_argument("--show-diff", action="store_true",
+                        help="替换代码时显示新旧 diff (replace-code 用)")
+    parser.add_argument("--json", action="store_true",
+                        help="导出时同时输出 JSON 元数据 (export-sprite 用)")
+    parser.add_argument("--hue-from", type=str, default=None,
+                        help="色相范围 \"min-max\" (colorize-sprite 用, 如 \"180-260\")")
+    parser.add_argument("--hue-to", type=float, default=None,
+                        help="目标色相角度 0-360 (colorize-sprite 用)")
     parser.add_argument("--sandbox", action="store_true",
                         help="沙箱模式: 在 game.ios.sandbox 副本上操作，不修改原文件")
+    parser.add_argument("--auto-snapshot", action="store_true",
+                        help="每次写入操作前自动创建实验快照")
+    parser.add_argument("--apply", action="store_true",
+                        help="应用模式 (handler-extract 用, 默认仅诊断)")
+
+    # Room editing (P4-2)
+    parser.add_argument("--width", type=int, default=None,
+                        help="房间宽度 (create-room/set-room-prop 用)")
+    parser.add_argument("--height", type=int, default=None,
+                        help="房间高度 (create-room/set-room-prop 用)")
+    parser.add_argument("--speed", type=int, default=None,
+                        help="房间帧率 (create-room/set-room-prop 用)")
+    parser.add_argument("--caption", type=str, default="",
+                        help="房间标题 (create-room/set-room-prop 用)")
+    parser.add_argument("--bg-color", type=str, default="000000",
+                        help="背景色 hex RGB (create-room/set-room-prop 用, 默认: 000000)")
+    parser.add_argument("--persistent", action="store_true",
+                        help="房间是否持久化 (set-room-prop 用)")
+    parser.add_argument("--bg", type=str, default=None,
+                        help="背景资源名 (set-room-bg/create-bg-asset 用)")
+    parser.add_argument("--index", type=int, default=0,
+                        help="背景/视图层索引 (set-room-bg/set-room-view 用, 默认: 0)")
+    parser.add_argument("--enable", type=str, default=None,
+                        help="启用/禁用 bool (set-room-bg/set-room-view 用)")
+    parser.add_argument("--foreground", type=str, default=None,
+                        help="是否前景层 bool (set-room-bg 用)")
+    parser.add_argument("--speedx", type=float, default=None,
+                        help="背景水平视差速度 (set-room-bg 用)")
+    parser.add_argument("--speedy", type=float, default=None,
+                        help="背景垂直视差速度 (set-room-bg 用)")
+    parser.add_argument("--tiled-h", type=str, default=None,
+                        help="水平平铺 bool (set-room-bg 用)")
+    parser.add_argument("--tiled-v", type=str, default=None,
+                        help="垂直平铺 bool (set-room-bg 用)")
+    parser.add_argument("--stretch", type=str, default=None,
+                        help="拉伸 bool (set-room-bg 用)")
+    parser.add_argument("--follow", type=str, default=None,
+                        help="视角跟随对象 (set-room-view 用, 如 obj_mainchara)")
+    parser.add_argument("--view-w", type=int, default=None,
+                        help="视图宽度 (set-room-view 用)")
+    parser.add_argument("--view-h", type=int, default=None,
+                        help="视图高度 (set-room-view 用)")
+    parser.add_argument("--port-w", type=int, default=None,
+                        help="视口宽度 (set-room-view 用)")
+    parser.add_argument("--port-h", type=int, default=None,
+                        help="视口高度 (set-room-view 用)")
+    parser.add_argument("--border-x", type=int, default=None,
+                        help="视图跟随水平边界 (set-room-view 用)")
+    parser.add_argument("--border-y", type=int, default=None,
+                        help="视图跟随垂直边界 (set-room-view 用)")
+    parser.add_argument("--image", type=str, default=None,
+                        help="PNG 图片路径 (create-bg-asset 用)")
+    parser.add_argument("--slot", type=int, default=0,
+                        help="背景槽位索引 (gml-bg 用, 默认: 0)")
     args = parser.parse_args()
 
     # Activate sandbox mode
     if args.sandbox:
         global SANDBOX_ACTIVE
         SANDBOX_ACTIVE = True
+    if args.auto_snapshot:
+        global AUTO_SNAPSHOT
+        AUTO_SNAPSHOT = True
 
     # Handle sandbox-restore before file-type checks
     if args.action == "sandbox-restore":
@@ -2322,7 +4692,7 @@ def main():
             elif args.action == "replace-code":
                 if args.key is None or args.value is None:
                     parser.error("--key 和 --value 是必需的 (代码名称 + GML 源码或文件路径)")
-                cmd_code_replace(game_file, args.key, args.value, value_is_file=args.file_path)
+                cmd_code_replace(game_file, args.key, args.value, value_is_file=args.file_path, show_diff=args.show_diff)
             elif args.action == "find-replace-code":
                 if args.key is None or args.old is None or args.value is None:
                     parser.error("--key, --old 和 --value 是必需的")
@@ -2336,6 +4706,11 @@ def main():
                     parser.error("--key 和 --value 是必需的")
                 cmd_textdata_add(game_file, args.key, args.value,
                                  face=args.face, emotion=args.emotion)
+            elif args.action == "guided-add-dialogue":
+                if args.key is None or args.value is None:
+                    parser.error("--key (文本 key) 和 --value (对话内容) 是必需的")
+                cmd_guided_add_dialogue(game_file, args.key, args.value,
+                                        face=args.face, emotion=args.emotion)
             elif args.action == "delete-textentry":
                 if args.key is None:
                     parser.error("--key 是必需的 (要删除的 textdata key)")
@@ -2360,6 +4735,35 @@ def main():
                 if args.value is None or args.key is None:
                     parser.error("--value (房间名) 和 --key (对象名) 是必需的")
                 cmd_spawn_obj(game_file, args.value, args.key, args.x, args.y)
+            elif args.action == "create-door":
+                if args.value is None or args.key is None:
+                    parser.error("--value (当前房间名) 和 --key (目标房间名) 是必需的")
+                cmd_create_door(game_file, args.value, args.key,
+                                args.x, args.y, args.spawn_x, args.spawn_y)
+            elif args.action == "list-doors":
+                if args.value is None:
+                    parser.error("--value 是必需的 (房间名)")
+                cmd_list_doors(game_file, args.value)
+            elif args.action == "remove-door":
+                if args.value is None:
+                    parser.error("--value 是必需的 (房间名)")
+                if not args.all and (args.x is None or args.y is None):
+                    parser.error("--x 和 --y (坐标) 或 --all (全部移除) 是必需的")
+                cmd_remove_door(game_file, args.value, args.x, args.y, remove_all=args.all)
+            elif args.action == "create-pit":
+                if args.value is None or args.key is None:
+                    parser.error("--value (当前房间名) 和 --key (目标房间名) 是必需的")
+                cmd_create_pit(game_file, args.value, args.key,
+                               args.x, args.y, args.spawn_x, args.spawn_y)
+            elif args.action == "create-battle":
+                if args.value is None or args.key is None:
+                    parser.error("--value (房间名) 和 --key (battlegroup ID) 是必需的")
+                try:
+                    bg_id = int(args.key)
+                except ValueError:
+                    parser.error("--key 必须是数字 (battlegroup ID)")
+                cmd_create_battle(game_file, args.value, bg_id,
+                                  border=args.border, x=args.x, y=args.y)
             elif args.action == "remove-obj":
                 if args.value is None:
                     parser.error("--value 是必需的 (房间名)")
@@ -2367,6 +4771,61 @@ def main():
                     parser.error("--instance (实例 ID) 或 --key (对象名) 是必需的")
                 cmd_remove_obj(game_file, args.value, args.key or "",
                                instance_id=args.instance, remove_all=args.all)
+            elif args.action == "room-info":
+                if args.value is None:
+                    parser.error("--value 是必需的 (房间名)")
+                cmd_room_info(game_file, args.value)
+            elif args.action == "create-room":
+                if args.value is None:
+                    parser.error("--value 是必需的 (房间内部名)")
+                cmd_create_room(game_file, args.value, args.width, args.height,
+                                args.speed, args.caption, args.bg_color)
+            elif args.action == "set-room-bg":
+                if args.value is None:
+                    parser.error("--value 是必需的 (房间名)")
+                cmd_set_room_bg(game_file, args.value, args.index,
+                                enable=_bool_or_none(args.enable),
+                                bg_name=args.bg,
+                                foreground=_bool_or_none(args.foreground),
+                                x=args.x, y=args.y,
+                                speedx=args.speedx, speedy=args.speedy,
+                                tiled_h=_bool_or_none(args.tiled_h),
+                                tiled_v=_bool_or_none(args.tiled_v),
+                                stretch=_bool_or_none(args.stretch))
+            elif args.action == "set-room-prop":
+                if args.value is None:
+                    parser.error("--value 是必需的 (房间名)")
+                cmd_set_room_prop(game_file, args.value,
+                                  width=args.width, height=args.height,
+                                  speed=args.speed, caption=args.caption,
+                                  bg_color=args.bg_color,
+                                  persistent=args.persistent)
+            elif args.action == "set-room-view":
+                if args.value is None:
+                    parser.error("--value 是必需的 (房间名)")
+                cmd_set_room_view(game_file, args.value, args.index,
+                                  enable=_bool_or_none(args.enable),
+                                  view_w=args.view_w, view_h=args.view_h,
+                                  port_w=args.port_w, port_h=args.port_h,
+                                  follow=args.follow,
+                                  border_x=args.border_x, border_y=args.border_y)
+            elif args.action == "list-game-bgs":
+                cmd_list_game_bgs(game_file, args.value or "")
+            elif args.action == "create-bg-asset":
+                if args.value is None or args.image is None:
+                    parser.error("--value (背景名) 和 --image (PNG 路径) 是必需的")
+                cmd_create_bg_asset(game_file, args.value, args.image)
+            elif args.action == "gml-bg":
+                if args.value is None or args.bg is None:
+                    parser.error("--value (房间名) 和 --bg (背景名/ID) 是必需的")
+                cmd_gml_bg(game_file, args.value, args.bg, args.slot,
+                           args.speedx, args.speedy)
+            elif args.action == "remove-tile":
+                if args.value is None:
+                    parser.error("--value 是必需的 (房间名)")
+                cmd_remove_tile(game_file, args.value, instance=args.instance)
+            elif args.action == "handler-extract":
+                cmd_handler_extract(game_file, apply=args.apply)
             elif args.action == "append-code":
                 if args.key is None or args.value is None:
                     parser.error("--key (代码名) 和 --value (GML) 是必需的")
@@ -2380,6 +4839,63 @@ def main():
                     parser.error("--value 是必需的 (JSON 文件路径)")
                 cmd_batch_textdata(game_file, args.value,
                                    face=args.face, emotion=args.emotion)
+            elif args.action == "list-sprites":
+                cmd_sprite_list(game_file, args.limit)
+            elif args.action == "search-sprite":
+                if args.value is None:
+                    parser.error("--value 是必需的 (搜索关键词)")
+                cmd_sprite_search(game_file, args.value, args.limit)
+            elif args.action == "get-obj":
+                if args.key is None:
+                    parser.error("--key 是必需的 (对象名称)")
+                cmd_obj_get(game_file, args.key)
+            elif args.action == "set-obj-sprite":
+                if args.key is None or args.value is None:
+                    parser.error("--key (对象名) 和 --value (精灵名) 是必需的")
+                cmd_obj_set_sprite(game_file, args.key, args.value)
+            elif args.action == "list-textures":
+                cmd_texture_list(game_file, args.limit)
+            elif args.action == "export-sprite":
+                if args.key is None:
+                    parser.error("--key 是必需的 (精灵名)")
+                if args.json:
+                    _export_sprite_json(game_file, args.key)
+                else:
+                    if args.value is None:
+                        parser.error("--value 是必需的 (路径)")
+                    cmd_sprite_export(game_file, args.key, args.value, frame=args.frame if args.frame is not None else -1)
+            elif args.action == "replace-sprite":
+                if args.key is None or args.value is None:
+                    parser.error("--key (精灵名) 和 --value (PNG 路径) 是必需的")
+                cmd_sprite_replace(game_file, args.key, args.value, frame=args.frame if args.frame is not None else 0, all_frames=args.all)
+            elif args.action == "duplicate-sprite":
+                if args.key is None or args.value is None:
+                    parser.error("--key (源精灵名) 和 --value (新精灵名) 是必需的")
+                cmd_sprite_duplicate(game_file, args.key, args.value)
+            elif args.action == "preview-sprite":
+                if args.key is None:
+                    parser.error("--key 是必需的 (精灵名)")
+                cmd_sprite_preview(game_file, args.key)
+            elif args.action == "colorize-sprite":
+                if args.key is None or args.value is None or args.hue_from is None or args.hue_to is None:
+                    parser.error("--key (源), --value (目标名), --hue-from (如 180-260), --hue-to (目标色相) 是必需的")
+                try:
+                    hf = tuple(float(x) / 360.0 for x in args.hue_from.split("-"))
+                except Exception:
+                    parser.error("--hue-from 格式错误，应为 \"180-260\"")
+                cmd_sprite_colorize(game_file, args.key, args.value, hue_from=hf, hue_to=args.hue_to)
+            elif args.action == "export-texture":
+                if args.value is None:
+                    parser.error("--value 是必需的 (输出目录)")
+                cmd_texture_export(game_file, args.key, args.value)
+            elif args.action == "replace-texture":
+                if args.key is None or args.value is None:
+                    parser.error("--key (纹理名) 和 --value (PNG 路径) 是必需的")
+                cmd_texture_replace(game_file, args.key, args.value)
+            elif args.action == "dump-sprites":
+                if args.value is None:
+                    parser.error("--value 是必需的 (输出目录)")
+                cmd_sprite_dump_all(game_file, args.value)
             else:
                 parser.error(f"'{args.action}' 不支持 data_win 文件")
         except (FileNotFoundError, ValueError, IndexError, RuntimeError, DeterlineError) as e:
@@ -2447,6 +4963,14 @@ def main():
                 cmd_quest_status(save_dir)
             elif args.action == "reset-all":
                 cmd_reset_all(save_dir)
+            elif args.action == "experiment-snapshot":
+                cmd_experiment_snapshot(save_dir, args.value)
+            elif args.action == "experiment-list":
+                cmd_experiment_list(save_dir)
+            elif args.action == "experiment-restore":
+                if not args.value:
+                    parser.error("--value 是必需的 (快照标签)")
+                cmd_experiment_restore(save_dir, args.value)
             else:
                 cmd_reset_flags(save_dir)
     except (FileNotFoundError, ValueError, DeterlineError) as e:

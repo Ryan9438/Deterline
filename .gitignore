@@ -11,3 +11,7 @@ __pycache__/
 
 # Temp files
 *.new
+
+# Runtime artifacts (created by the tool)
+*.snap.*
+*.sandbox
