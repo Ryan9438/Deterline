@@ -1,65 +1,6 @@
 ---
 name: deterline
-description: >
-  Deterline is an all-in-one modding tool for UNDERTALE (传说之下).
-  It edits save files: HP, LOVE, gold, weapons, armor, boss status, room
-  teleport, genocide reset.  It creates and edits rooms with custom
-  backgrounds (pixel art, gradients, parallax), tile floors, and camera
-  views.  It replaces sprites and textures: export PNG, edit in PIL,
-  replace back, recolor via HSV, duplicate sprites, generate pixel
-  backgrounds programmatically.  It adds custom NPCs with dialogue,
-  character portraits (facechoice 1-9), multi-page text, YES/NO choice
-  boxes, state machines, battles, and item rewards.  It edits GML scripts:
-  decompile to source, replace an entire script, append or prepend code
-  without breaking original logic, create new scripts, and cross-search
-  variable references across all 6272 scripts.  It manages dialogue text
-  with no length limits via the textdata_en central database (16457
-  lines).  It sets up bidirectional portals between rooms with spawn
-  points.  It isolates experiments via named snapshots (backup/restore).
-  Core constraint: dialogue text must be English/ASCII only (the game's
-  bitmap font has no Chinese glyphs).  Uses UndertaleModTool CLI (dotnet)
-  for data_win commands; ini/file0 commands work without it.
-  Users may ask in Chinese or English to: modify saves (改存档, 改属性,
-  换武器, 传送到某房间, 重置屠杀线), create new rooms (建房间, 做新场景,
-  做地图), change backgrounds (换背景, 设置背景, 加背景), replace sprites
-  or textures (换精灵, 改贴图, 导出图片, 导入图片, 换色, 改颜色), add
-  NPCs with dialogue (加对话, 改对话, 加NPC, 做支线, 触发战斗, 给物品),
-  set up portals (放传送门, 开门), create side quests (做任务), recolor
-  sprites (换色, 调色), generate backgrounds (生成背景, 像素背景), export
-  and import images (导出精灵, 替换纹理), or any UNDERTALE modding task.
-  Trigger keywords:
-  deterline, Deterline, modify_save, run.py, install.py,
-  bg_generator, UndertaleModTool, UTMT, game.ios, data.win,
-  undertale, UNDERTALE, 传说之下,
-  save, 存档, 存檔, save file, save editor, 修改器,
-  HP, LOVE, ATK, DEF, GOLD, EXP, Kills, Room, file0, undertale.ini,
-  weapon, armor, equip, item, boss, 武器, 护甲, 装备, 物品, 金钱, 属性,
-  genocide, murder, reset, flags, systeminfo, teleport, 传送, 重置, 屠杀,
-  dialogue, textdata, textentry, STRG, batch-add-textentry,
-  guided-add-dialogue, 对话, 文本, 文字, 加对话, 改对话,
-  face, portrait, emotion, facechoice, 头像, 表情,
-  room, create-room, room-info, room-objects, 房间, 场景, 地图, 建房间,
-  background, bg, gml-bg, create-bg-asset, tile, remove-tile,
-  set-room-view, set-room-prop, view, parallax, 背景, 地板, 瓷砖, 视差,
-  spawn, spawn-obj, remove, remove-obj, 生成, 移除, 放置,
-  sprite, texture, TXTR, TPAG, SPRT, 精灵, 纹理, 贴图, 图片, 图像,
-  export, replace, recolor, colorize, duplicate, duplicate-sprite,
-  export-sprite, export-texture, replace-sprite, replace-texture,
-  dump-sprites, preview-sprite, colorize-sprite, 导出, 替换, 换色, 复制,
-  GML, script, code, decompile, decompile-code, 脚本, 代码,
-  append-code, prepend-code, replace-code, create-script,
-  find-replace-code, search-vars, search-sctext, search-strings,
-  npc, quest, battlegroup, battle, create-battle, quest-init, quest-status,
-  支线, 任务, 战斗, NPC,
-  door, portal, create-door, list-doors, remove-door, 传送门, 门,
-  experiment, snapshot, sandbox, backup, undo, 快照, 备份, 恢复, 回滚,
-  sans, papyrus, toriel, flowey, undyne, alphys, asgore, mettaton, asriel,
-  dialoguer, OBJ_WRITER, msg, scr, scr_msgup, choice, YES, NO,
-  global.flag, flag, murderlv, judgement, 审判,
-  string, add-string, set-string, delete-string, search-strings,
-  room-list, list-backups, reset-all, auto-snapshot,
-  sandbox-restore, experiment-snapshot, experiment-list, experiment-restore,
-  ASCII, ascii, 英文, 中文限制, 字体
+description: "Deterline is an all-in-one modding tool for UNDERTALE (传说之下). Edit save files (HP, LOVE, gold, weapons, armor, room teleport, genocide reset); create and edit rooms with backgrounds, tiles and camera views; replace sprites and textures (export/import PNG, recolor via HSV, duplicate); add custom NPCs with dialogue, portraits, YES/NO choices, quests and battles; edit GML scripts (decompile, replace, append, prepend, create new); manage dialogue text; set up portals between rooms; generate pixel backgrounds. Use when the user wants any UNDERTALE modding task: 改存档, 改属性, 改HP, 换武器, 传送, 传送到某房间, 建房间, 做新场景, 做地图, 换背景, 设置背景, 加背景, 加对话, 改对话, 加NPC, 做支线, 做任务, 放传送门, 开门, 触发战斗, 给物品, 换精灵, 改贴图, 导出图片, 导入图片, 换色, 调色, 复制精灵, 生成背景, 像素背景, 替换纹理, 重置屠杀线. Dialogue text must be English/ASCII only (the bitmap font has no Chinese glyphs)."
 ---
 
 # Deterline
@@ -70,6 +11,43 @@ description: >
 > 本软件使用 AGPL-3.0 许可证。
 
 修改《传说之下》(UNDERTALE) 游戏存档 + 游戏数据的全能工具——Deterline。支持存档属性修改、**对话文本自由增删改查**、**GML 脚本反编译与重编译**、**房间布局编辑**、**自定义 NPC 支线**（头像 + 多段对话 + 选择分支 + 战斗 + 物品奖励）。
+
+## 触发词参考（关键词匹配，供 Agent 参考）
+
+```
+Deterline, deterline, modify_save, run.py, install.py, bg_generator,
+UndertaleModTool, UTMT, game.ios, data.win,
+undertale, UNDERTALE, 传说之下,
+save, 存档, 存檔, save file, save editor, 修改器,
+HP, LOVE, ATK, DEF, GOLD, EXP, Kills, Room, file0, undertale.ini,
+weapon, armor, equip, item, boss, 武器, 护甲, 装备, 物品, 金钱, 属性,
+genocide, murder, reset, flags, systeminfo, teleport, 传送, 重置, 屠杀,
+dialogue, textdata, textentry, STRG, batch-add-textentry,
+guided-add-dialogue, 对话, 文本, 文字, 加对话, 改对话,
+face, portrait, emotion, facechoice, 头像, 表情,
+room, create-room, room-info, room-objects, 房间, 场景, 地图, 建房间,
+background, bg, gml-bg, create-bg-asset, tile, remove-tile,
+set-room-view, set-room-prop, view, parallax, 背景, 地板, 瓷砖, 视差,
+spawn, spawn-obj, remove, remove-obj, 生成, 移除, 放置,
+sprite, texture, TXTR, TPAG, SPRT, 精灵, 纹理, 贴图, 图片, 图像,
+export, replace, recolor, colorize, duplicate, duplicate-sprite,
+export-sprite, export-texture, replace-sprite, replace-texture,
+dump-sprites, preview-sprite, colorize-sprite, 导出, 替换, 换色, 复制,
+GML, script, code, decompile, decompile-code, 脚本, 代码,
+append-code, prepend-code, replace-code, create-script,
+find-replace-code, search-vars, search-sctext, search-strings,
+npc, quest, battlegroup, battle, create-battle, quest-init, quest-status,
+支线, 任务, 战斗, NPC,
+door, portal, create-door, list-doors, remove-door, 传送门, 门,
+experiment, snapshot, sandbox, backup, undo, 快照, 备份, 恢复, 回滚,
+sans, papyrus, toriel, flowey, undyne, alphys, asgore, mettaton, asriel,
+dialoguer, OBJ_WRITER, msg, scr, scr_msgup, choice, YES, NO,
+global.flag, flag, murderlv, judgement, 审判,
+string, add-string, set-string, delete-string, search-strings,
+room-list, list-backups, reset-all, auto-snapshot,
+sandbox-restore, experiment-snapshot, experiment-list, experiment-restore,
+ASCII, ascii, 英文, 中文限制, 字体
+```
 
 ## 技能版本
 
