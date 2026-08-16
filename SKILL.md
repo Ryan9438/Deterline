@@ -51,7 +51,7 @@ ASCII, ascii, 英文, 中文限制, 字体
 
 ## 技能版本
 
-2.1.1
+2.2.0
 
 ## 适用平台
 
@@ -179,6 +179,9 @@ deterline/
 | `decompile-code --key "gml_Script_xxx"` | 反编译为 GML 源码 |
 | `replace-code --key "脚本名" --value "GML"` | **替换整个脚本后重编译** |
 | `replace-code --key "脚本名" --value "file.gml" --file-path` | 从文件加载 GML |
+| `append-code --key "脚本名" --value "GML"` | 追加到脚本末尾（不改原逻辑） |
+| `append-code --key "脚本名" --value "file.gml" --file-path` | 从文件加载 GML 后追加 |
+| `prepend-code --key "脚本名" --value "GML"` | 插入到脚本开头（同样支持 `--file-path`） |
 | `find-replace-code --key "脚本" --old "旧" --value "新"` | **源码搜索替换后重编译** |
 | `create-script --key "gml_Script_xxx" --value "GML"` | **创建全新脚本，自动注册** |
 
@@ -211,6 +214,9 @@ deterline/
 | `remove-obj --value "room_asrielroom" --key "obj_dummy1" --all` | 移除该类型全部实例 |
 | `npc-dialogue --value "room_torielroom" --key "obj_cactus" --x 170 --y 180 --text-key "obj_cactus_hi" --text "* Hi/%%"` | **一键安全 NPC 对话**：加对话 + 生成实例 + 注入 `deterline_state` 距离触发 + 自动守卫 Alarm_0。默认 = **对话期间锁移动 + 走开后可再次触发** |
 | `npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi/%%" --once` | **单次触发**：对话期间锁移动（`global.interact=1`），结束后解锁且**不再触发**（永久只一次） |
+| `npc-dialogue ... --range 160` | 自定义触发距离（默认 50px） |
+| `npc-choice --value "room_water_undynefinal" --key "obj_kitchentable" --x 160 --y 420 --text-key "obj_table_ask" --text "* Let's go?& &         Yes         No      \C " --yes-text-key "obj_table_yes" --yes-text "* Okay!/%%" --no-text-key "obj_table_no" --no-text "* .../%%" --goto "雪镇 - 船夫(妇)" --item 48 --range 160` | **一键安全 YES/NO 选择 NPC**：加 2-3 条对话 + 生成实例 + 注入选择状态机（触发 → `\C` 选择框 → YES 分支[文本/给物品/传送] / NO 分支[文本]）。**默认单次触发**，分支文本自动替换 msg[0]，从根源杜绝选择框循环重弹 |
+| `npc-choice ... --repeat` | 可重复触发（走开 >60px 再靠近可再触发） |
 | `guard-npc-alarm --key "obj_cactus" --instance 113927` | 给已有冲突 NPC 补 `Alarm_0` 守卫（幂等） |
 | `verify-nsid` | 检查损坏变量 NameStringID（读取会崩溃的陷阱）；`--fix` 自动修复 |
 
@@ -220,8 +226,9 @@ deterline/
 - 建议操作后用 `set --key Room --value 房间ID` 传送触发刷新
 - 用 `room-objects` 查看实例 ID 后再 `remove-obj --instance`
 - 生成的实例保留完整的对象行为（碰撞、事件、交互、AI）
-- `npc-dialogue` 一律用 `deterline_state` 状态机（普通对象与原生 readable 对象都安全），原生 readable 对象额外加 `Alarm_0` 守卫（自动在 Create 事件初始化 `deterline_state = 0;`，防止 NSID 损坏崩溃）
-- **默认触发行为**：靠近(<50px)触发，对话期间**锁移动**（`global.interact=1`，头像/文字不会与文本框错位），按 Z 关闭后**不会立即重触发**，需**走开(>60px) 再靠近**才能再次触发。需要"只看一次"用 `--once`
+- `npc-dialogue` / `npc-choice` 一律用 `deterline_state` 状态机（普通对象与原生 readable 对象都安全），原生 readable 对象额外加 `Alarm_0` 守卫（自动在 Create 事件初始化 `deterline_state = 0;`，防止 NSID 损坏崩溃）
+- **默认触发行为**：靠近(<50px，可用 `--range` 调)触发，对话期间**锁移动**（`global.interact=1`，头像/文字不会与文本框错位），按 Z 关闭后**不会立即重触发**，需**走开(>60px) 再靠近**才能再次触发。需要"只看一次"用 `--once`（npc-choice 默认即单次）
+- `npc-choice` 的 `--text` 必须是含 `\C ` 的 3 行以内选择文本（`"* 提问& &         Yes         No      \C "`）；YES/NO 分支文本**不得含 `\C`**（命令行会自动校验，`npc-dialogue` 遇到 `\C` 文本会报错并引导改用 npc-choice）
 - 可用 `--sandbox` 做安全测试，确认无误后 `sandbox-restore` 恢复
 
 ### 🎨 精灵/对象编辑（`--file data_win`）— P4-1
@@ -670,6 +677,97 @@ if (id == <实例ID>)
 - 含 `\C` 的选择文本总行数 ≤ **3 行**（含选项行）
 - 格式：`"* 提问& &    选项1    选项2      \C "`（3 行：提问 + 空行 + 选项）
 
+#### 已验证模板：YES/NO 选择 + 传送 + 给物品（单次触发）
+
+> 此模板来自竞技场桌子实验（v2.1.1 实测通过）：桌子靠近弹 "Let's go?"，
+> YES → 传送到雪镇码头，NO → 显示 "..." 后结束，**不再追问**。
+> 用 `npc-choice` 命令可一键生成，无需手写。
+
+前置条件（`npc-choice` 自动完成）：
+1. 文本条目（textdata_en）：
+   - `obj_ask` = `"* Let's go?& &         Yes         No      \C "`（含 `\C`，≤3 行）
+   - `obj_yes` = `"* Okay!/%%"`（**不含 `\C`**）
+   - `obj_no`  = `"* .../%%"`（**不含 `\C`**）
+2. 对象 Create 事件含 `deterline_state = 0;`
+3. 原生 readable 对象在 `Alarm_0` 头部加 `if (id == N) exit;` 守卫
+
+```gml
+// ===== 改写到 NPC 的 Step 事件（或 Step_1）=====
+if (id == <实例ID>)
+{
+    // 1. 对话结束后标记完成（单次触发：0→1→2，永不再触发）
+    if (deterline_state == 1 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+    {
+        deterline_state = 2;
+        global.interact = 0;
+    }
+
+    // 2. 处理 \C 选择结果（2 帧窗口截获；必须替换 msg[0] 为不含 \C 的文本！）
+    if (global.choice != -1 && deterline_state == 1)
+    {
+        if (global.choice == 0)  // YES
+        {
+            global.choice = -1;
+            global.msc = -1;       // 阻止 scr_msgup 覆盖 msg[]
+            global.interact = 0;
+            global.typer = 5;
+            global.facechoice = 0; // 头像角色（0=无）
+            global.faceemotion = 0;
+            global.msg[0] = scr_gettext("obj_yes");   // 不含 \C！
+            global.msg[1] = "%%%";
+            script_execute(scr_itemget, 48);          // 可选：给物品
+            room_goto(room_tundra_dock);              // 可选：传送（房间常量/ID 均可）
+        }
+        else                        // NO
+        {
+            global.choice = -1;
+            global.msc = -1;
+            global.typer = 5;
+            global.facechoice = 0;
+            global.faceemotion = 0;
+            global.msg[0] = scr_gettext("obj_no");    // 不含 \C！
+            global.msg[1] = "%%%";
+        }
+    }
+
+    // 3. 距离触发（默认 <50px；可用 --range 调）
+    if (deterline_state == 0 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+    {
+        var dist = distance_to_object(obj_mainchara);
+        if (dist < 160)   // 竞技场实测 160px（门线前触发）
+        {
+            deterline_state = 1;
+            global.interact = 1;    // 锁移动，防头像/文字错位
+            global.msc = 0;         // SCR_TEXT(0) = no-op
+            global.typer = 5;
+            global.facechoice = 0;
+            global.faceemotion = 0;
+            global.msg[0] = scr_gettext("obj_ask");
+            global.msg[1] = "%%%";
+            instance_create(0, 0, obj_dialoguer);
+        }
+    }
+}
+```
+
+**为什么 NO 不会循环追问（本次实验的坑）：**
+选 NO 后 `obj_choicer` 的 alarm 在 2 帧后调 `scr_msgup`，它会把 `global.msg[]`
+重新复制进对话框渲染。若此时 `msg[0]` 还是带 `\C` 的选择文本 → 选择框再次弹出 → 无限循环。
+**修复：分支处理必须把 `msg[0]` 换成不含 `\C` 的文本。**（`npc-choice` 自动生成此代码，
+`add-textentry` 遇到 `\C` 文本也会打印警告。）
+
+**可重复触发变体**（走开 >60px 再靠近可再触发）：把第 1 步的 `deterline_state = 2` 改为
+`deterline_state = 0`，并在 Step 末尾加：
+
+```gml
+if (deterline_state == 2 && distance_to_object(obj_mainchara) >= 60)
+{
+    deterline_state = 0;
+}
+```
+
+（`npc-choice --repeat` 自动生成此变体。）
+
 ---
 
 ## 实验验证记录
@@ -833,8 +931,10 @@ game_restart();            // 重启游戏
 21. `replace-texture` 替换整个纹理图谱，影响该图谱上所有精灵。确认无误再操作
 22. 纹理编辑后 PNG 会自动 Resize 匹配原精灵尺寸，但建议保持原尺寸编辑以保真
 23. 英文版 Undertale 的字体精灵不包含中文字形，替换文字纹理无法解决中文显示问题
-24. **新实例变量必须先初始化**：注入用到新变量（如 `deterline_state`）的代码前，务必在对象 Create 事件写 `变量 = 0;`。否则变量未被正确注册（NameStringID=0）时读取会崩溃。用 `npc-dialogue`/`guard-npc-alarm` 会自动处理；`verify-nsid --fix` 可修复已损坏变量
+24. **新实例变量必须先初始化**：注入用到新变量（如 `deterline_state`）的代码前，务必在对象 Create 事件写 `变量 = 0;`。否则变量未被正确注册（NameStringID=0）时读取会崩溃。用 `npc-dialogue`/`npc-choice`/`guard-npc-alarm` 会自动处理；`verify-nsid --fix` 可修复已损坏变量
 25. `npc-dialogue` 默认与 `--once` **都锁移动**：对话期间 `global.interact=1`，头像/文字不会与文本框错位；按 Z 关闭后默认需**走开(>60px) 才可再次触发**，`--once` 则**永久只触发一次**。不要用 `myinteract` 手写距离触发（会在对话结束瞬间立即重触发 + 不锁移动导致错位）
+26. `npc-choice` 的触发文本必须含 `\C `（且 ≤3 行含选项行），YES/NO 分支文本不得含 `\C`（否则选择框循环重弹）；`--goto` 支持中文房间名/ID，`--item` 用 `ITEMS` 字典 ID（0-65）。默认**单次触发**，`--repeat` 切可重复
+27. `append-code`/`prepend-code` 支持 `--file-path` 从文件加载 GML（与 `replace-code`/`create-script` 一致）
 
 ## 工作流（Agent 必读）
 

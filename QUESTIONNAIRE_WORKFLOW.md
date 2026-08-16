@@ -113,6 +113,8 @@ python run.py --action guided-add-dialogue \
 | **引导式添加** | `guided-add-dialogue --key "K" --value "V" --face N --emotion N --file data_win` | 2026-07-28 ✅ |
 | **NPC 靠近说话（可重复）** | `npc-dialogue --value "room_xxx" --key "obj_xxx" --x N --y N --text-key "K" --text "* .../%%" --face N --emotion N --file data_win` | 锁移动 + 走开重置 ✅ |
 | **NPC 靠近说话（单次）** | `npc-dialogue ... --once --file data_win` | 锁移动 + 永久一次 ✅ |
+| **NPC 靠近说话（自定义距离）** | `npc-dialogue ... --range 160 --file data_win` | 触发距离可调（默认 50px）✅ |
+| **NPC 带 YES/NO 选择** | `npc-choice --value "room_xxx" --key "obj_xxx" --x N --y N --text-key "K" --text "* ...\C " --yes-text-key "KY" --yes-text "..." --no-text-key "KN" --no-text "..." [--goto 房间] [--item ID] [--range N] [--repeat] --file data_win` | 选择框不循环重弹（msg[0] 自动替换）+ 单次触发默认 ✅ |
 | 批量导入 | `batch-add-textentry --value ./dialogues.json --file data_win` | P3 ✅ |
 | 搜索已有 | `search-textdata --value "keyword" --file data_win` | 实验 8 ✅ |
 | ASCII 校验 | `_validate_ascii_text()` | 2026-07-28 新增 ✅ |
@@ -430,6 +432,9 @@ remove-door --value room_xxx --x 160 --y 120 --file data_win
 # NPC 对话（安全，自动处理原生 readable 冲突）
 npc-dialogue --value room_xxx --key obj_cactus --x 170 --y 180 --text-key "obj_cactus_hi" --text "* Hi/%%" --file data_win
 guard-npc-alarm --key obj_cactus --instance 113927 --file data_win
+
+# NPC 带 YES/NO 选择（默认单次触发；分支文本自动替换 msg[0]，不循环重弹）
+npc-choice --value room_water_undynefinal --key obj_kitchentable --x 160 --y 420 --text-key "obj_table_ask" --text "* Let's go?& &         Yes         No      \C " --yes-text-key "obj_table_yes" --yes-text "* Okay!/%%" --no-text-key "obj_table_no" --no-text "* .../%%" --goto "雪镇 - 船夫(妇)" --item 48 --range 160 --file data_win
 
 # 战斗
 create-battle --value room_xxx --key 40 --x 200 --y 120 --file data_win

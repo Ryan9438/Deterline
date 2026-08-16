@@ -1566,8 +1566,20 @@ def cmd_code_find_replace(game_file: Path, code_name: str, old: str, new_val: st
         Path(temp_path).unlink(missing_ok=True)
 
 
-def cmd_code_append(game_file: Path, code_name: str, value: str) -> None:
+def _load_gml_value(value: str, value_is_file: bool) -> str:
+    """Load GML source from a direct string or a .gml file path."""
+    if not value_is_file:
+        return value
+    p = Path(value)
+    if not p.exists():
+        raise NotFoundError(f"文件不存在: {value}")
+    return p.read_text(encoding="utf-8")
+
+
+def cmd_code_append(game_file: Path, code_name: str, value: str,
+                    value_is_file: bool = False) -> None:
     """Append GML code to the end of an existing code entry (reliable version)."""
+    value = _load_gml_value(value, value_is_file)
     esc = _csx_escape(code_name)
     verb = _csx_verbatim_escape(value)
     csx = f'''
@@ -1606,8 +1618,10 @@ try {{
             print(line)
 
 
-def cmd_code_prepend(game_file: Path, code_name: str, value: str) -> None:
+def cmd_code_prepend(game_file: Path, code_name: str, value: str,
+                     value_is_file: bool = False) -> None:
     """Prepend GML code to the beginning of an existing code entry."""
+    value = _load_gml_value(value, value_is_file)
     esc = _csx_escape(code_name)
     verb = _csx_verbatim_escape(value)
     csx = f'''
@@ -1780,6 +1794,10 @@ def cmd_textdata_add(game_file: Path, key: str, value: str,
     _validate_facechoice(face)
     value = _inject_face_control(value, face, emotion)
     _validate_ascii_text(value, f"对话条目 '{key}'")
+    if "\\C" in value:
+        print("⚠️  该文本含 \\C 选择框标记——若由 Step 代码触发，分支处理必须替换", file=sys.stderr)
+        print("    global.msg[0] 为不含 \\C 的文本，否则 obj_choicer 的 scr_msgup 会", file=sys.stderr)
+        print("    重新复制本文本导致选择框循环重弹。建议用 npc-choice 命令一键生成。", file=sys.stderr)
     if not any(value.rstrip("\n\r ").endswith(s) for s in ["/", "/%%", "%%%", "\\C ", "\\C", "/%"]):
         print("警告: 对话文本应使用标准格式结尾", file=sys.stderr)
         print("  中间页: 以 / 结尾", file=sys.stderr)
@@ -2358,7 +2376,7 @@ ScriptMessage("NPC_TARGET:RESULT:" + oname + ":" + (native ? "1" : "0") + ":" + 
 
 
 def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: int,
-                          native: bool, once: bool = False) -> str:
+                          native: bool, once: bool = False, range_: int = 50) -> str:
     """Build distance-trigger GML for a spawned NPC instance.
 
     Both modes use the per-instance variable `deterline_state` (initialized in
@@ -2374,13 +2392,15 @@ def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: i
                   movement and (b) re-triggered instantly in a loop while the player
                   stayed within range.
 
+    range_ = trigger distance in pixels (default 50).
+
     `native` only affects the Alarm_0 guard (handled by the caller), not this block.
     """
     state = "deterline_state"
     trigger = f'''else if ({state} == 0 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
 {{
     var dist = distance_to_object(obj_mainchara);
-    if (dist < 50)
+    if (dist < {range_})
     {{
         {state} = 1;
         global.interact = 1;
@@ -2410,6 +2430,92 @@ def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: i
         global.interact = 0;
     }}
 {trigger}{rearm}}}
+'''
+
+
+def _build_npc_choice_block(instance_id: int, choice_key: str, yes_key: str | None,
+                            no_key: str, face: int, emotion: int, range_: int = 50,
+                            goto_room: str | None = None, item_id: int | None = None,
+                            repeat: bool = False) -> str:
+    """Build a distance-trigger GML block for a YES/NO choice NPC.
+
+    Verified template (arena-table experiment, v2.1.1):
+    - trigger: player within range_ px of the NPC → show the `\\C` choice text
+      (deterline_state 0→1, global.interact=1 locks movement during the dialogue)
+    - YES (global.choice == 0): if a yes_key is given, replace msg[0] with it (no \\C);
+      optionally give an item (scr_itemget) and/or teleport (room_goto)
+    - NO (global.choice == 1): replace msg[0] with no_key (no \\C)
+    - CRITICAL: branch texts MUST replace global.msg[0] with a non-\\C text —
+      otherwise obj_choicer's alarm (2 frames later) re-copies the `\\C` text via
+      scr_msgup and the choice box pops up again in a loop.
+    - single-trigger by default (0→1→2, never re-arms); repeat=True re-arms on
+      walk-away (≥60px), same as _build_npc_step_block.
+    """
+    state = "deterline_state"
+    yes_lines = ""
+    if yes_key:
+        yes_lines += f'''            global.typer = 5;
+            global.facechoice = {face};
+            global.faceemotion = {emotion};
+            global.msg[0] = scr_gettext("{yes_key}");
+            global.msg[1] = "%%%";
+'''
+    if item_id is not None:
+        yes_lines += f"            script_execute(scr_itemget, {item_id});\n"
+    if goto_room:
+        yes_lines += f"            room_goto({goto_room});\n"
+
+    rearm = ""
+    if repeat:
+        rearm = f'''
+    if ({state} == 2 && distance_to_object(obj_mainchara) >= 60)
+    {{
+        {state} = 0;
+    }}
+'''
+    return f'''if (id == {instance_id})
+{{
+    if ({state} == 1 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+    {{
+        {state} = 2;
+        global.interact = 0;
+    }}
+    if (global.choice != -1 && {state} == 1)
+    {{
+        if (global.choice == 0)
+        {{
+            global.choice = -1;
+            global.msc = -1;
+            global.interact = 0;
+{yes_lines}        }}
+        else
+        {{
+            global.choice = -1;
+            global.msc = -1;
+            global.typer = 5;
+            global.facechoice = {face};
+            global.faceemotion = {emotion};
+            global.msg[0] = scr_gettext("{no_key}");
+            global.msg[1] = "%%%";
+        }}
+    }}
+    if ({state} == 0 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+    {{
+        var dist = distance_to_object(obj_mainchara);
+        if (dist < {range_})
+        {{
+            {state} = 1;
+            global.interact = 1;
+            global.msc = 0;
+            global.typer = 5;
+            global.facechoice = {face};
+            global.faceemotion = {emotion};
+            global.msg[0] = scr_gettext("{choice_key}");
+            global.msg[1] = "%%%";
+            instance_create(0, 0, obj_dialoguer);
+        }}
+    }}
+{rearm}}}
 '''
 
 
@@ -2721,7 +2827,7 @@ try {{
 
 def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: int,
                      text_key: str, text: str, face: int = 0, emotion: int = 0,
-                     once: bool = False) -> None:
+                     once: bool = False, range_: int = 50) -> None:
     """One-shot safe NPC dialogue setup.
 
     1. Adds the dialogue to textdata_en
@@ -2731,10 +2837,17 @@ def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: 
        - classic myinteract trigger (plain objects)
     4. If the object inherits a native interaction system, also guards Alarm_0
        with `if (id == N) exit;` to prevent the default dialogue from overlapping.
+
+    range_ = trigger distance in pixels (default 50).
     """
     print("--- npc-dialogue ---")
     _validate_ascii_text(text, f"对话 '{text_key}'")
     _validate_facechoice(face)
+    if "\\C" in text:
+        raise ValidationError(
+            f"对话 '{text_key}' 含选择框标记 \\C，但 npc-dialogue 只支持纯文本对话。\n"
+            f"请改用 npc-choice 命令生成带 YES/NO 选择的分支对话。"
+        )
 
     print("Step 1/4: 添加对话条目...")
     cmd_textdata_add(game_file, text_key, text, face=face, emotion=emotion)
@@ -2759,7 +2872,7 @@ def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: 
 
     print("Step 4/4: 注入触发代码...")
     _ensure_var_initialized(game_file, info["obj"], "deterline_state")
-    block = _build_npc_step_block(new_id, text_key, face, emotion, native, once=once)
+    block = _build_npc_step_block(new_id, text_key, face, emotion, native, once=once, range_=range_)
     step_code = info["step_code"]
     if step_code:
         _append_to_code(game_file, step_code, block)
@@ -2772,9 +2885,124 @@ def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: 
     if native and info["alarm_code"]:
         _guard_alarm_for_instance(game_file, info["alarm_code"], new_id)
     if once:
-        print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<50px) 说一次 '{text_key}'（对话期间锁移动）")
+        print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<{range_}px) 说一次 '{text_key}'（对话期间锁移动）")
     else:
-        print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<50px) 说 '{text_key}'（对话期间锁移动，走开>60px 可再触发）")
+        print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<{range_}px) 说 '{text_key}'（对话期间锁移动，走开>60px 可再触发）")
+
+
+def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: int,
+                   choice_key: str, choice_text: str,
+                   yes_key: str | None = None, yes_text: str | None = None,
+                   no_key: str | None = None, no_text: str | None = None,
+                   face: int = 0, emotion: int = 0, range_: int = 50,
+                   goto_room: str | None = None, item_id: int | None = None,
+                   repeat: bool = False) -> None:
+    """One-shot safe NPC dialogue with a YES/NO choice (`\\C` box).
+
+    Builds on the verified arena-table state machine (v2.1.1):
+      1. Adds up to 3 textdata entries (choice / YES follow-up / NO follow-up)
+      2. Spawns the object instance
+      3. Injects the choice state machine into the object's Step event:
+         trigger → `\\C` box → YES branch (optional follow-up text, item, teleport)
+         / NO branch (follow-up text). Branch texts replace msg[0] with non-\\C
+         text, which is what prevents the choice box from re-popping (scr_msgup
+         re-copies global.msg[] 2 frames after the choice).
+      4. Guards Alarm_0 for native-readable objects (like npc-dialogue).
+
+    Single-trigger by default (0→1→2, never re-arms); repeat=True re-arms on
+    walk-away (≥60px) like the plain repeatable NPC.
+    """
+    print("--- npc-choice ---")
+    # ── validation ──────────────────────────────────────────────
+    if "\\C" not in choice_text:
+        raise ValidationError(
+            f"选择文本 '{choice_key}' 不含 \\C 标记（YES/NO 选择框不会出现）。\n"
+            f"格式: \"* 提问& &         Yes         No      \\C \""
+        )
+    line_count = choice_text.count("&") + 1
+    if line_count > 3:
+        raise ValidationError(
+            f"选择文本 '{choice_key}' 共 {line_count} 行（含选项行），超过 3 行限制，"
+            f"选项会溢出对话框。\n格式: \"* 提问& &         Yes         No      \\C \""
+        )
+    if no_key is None or no_text is None:
+        raise ValidationError("--no-text-key 和 --no-text 是必需的（NO 分支的回应文本）")
+    if yes_key is None:
+        yes_text = None  # YES 分支允许无文本（纯传送/给物品）
+    _validate_ascii_text(choice_text, f"选择文本 '{choice_key}'")
+    for key, val, label in [(yes_key, yes_text, "YES 分支文本"),
+                            (no_key, no_text, "NO 分支文本")]:
+        if val is not None:
+            _validate_ascii_text(val, f"{label} '{key}'")
+            if "\\C" in val:
+                raise ValidationError(
+                    f"{label} '{key}' 含 \\C 标记——分支文本必须是不含选择框的纯文本，"
+                    f"否则选择框会循环重弹。"
+                )
+    _validate_facechoice(face)
+    if item_id is not None and item_id not in ITEMS:
+        print(f"警告: 物品 ID {item_id} 不在已知物品表（{min(ITEMS)}-{max(ITEMS)}），仍将注入 scr_itemget", file=sys.stderr)
+
+    # ── resolve teleport target (room name → ID or constant) ───
+    goto_gml = None
+    if goto_room:
+        goto_gml = resolve_room(goto_room)  # numeric ID string works with room_goto()
+
+    # ── execute ─────────────────────────────────────────────────
+    print("Step 1/5: 添加对话条目...")
+    cmd_textdata_add(game_file, choice_key, choice_text, face=face, emotion=emotion)
+    if yes_key and yes_text:
+        cmd_textdata_add(game_file, yes_key, yes_text, face=face, emotion=emotion)
+    if no_key:
+        cmd_textdata_add(game_file, no_key, no_text, face=face, emotion=emotion)
+
+    print("Step 2/5: 检查对象继承链...")
+    info = _query_npc_target(game_file, obj_name)
+    if info is None:
+        raise NotFoundError(f"对象未找到: {obj_name}")
+    native = info["native"]
+    if native:
+        print(f"  ⚠️  {info['obj']} 继承原生交互系统 → 自动加 Alarm_0 守卫")
+
+    print("Step 3/5: 生成对象实例...")
+    new_id = _spawn_obj_internal(game_file, room_name, obj_name, x, y, quiet=True)
+    if new_id is None:
+        raise RuntimeError("生成对象失败（未获取到实例 ID）")
+    print(f"  ✅ 已生成实例 [{new_id}]")
+
+    print("Step 4/5: 注入选择状态机...")
+    _ensure_var_initialized(game_file, info["obj"], "deterline_state")
+    block = _build_npc_choice_block(
+        new_id, choice_key, yes_key, no_key, face, emotion,
+        range_=range_, goto_room=goto_gml, item_id=item_id, repeat=repeat,
+    )
+    step_code = info["step_code"]
+    if step_code:
+        _append_to_code(game_file, step_code, block)
+        print(f"  ✅ 已追加到 Step 事件: {step_code}")
+    else:
+        create_name = f"gml_Object_{info['obj']}_Step_0"
+        cmd_create_script(game_file, create_name, block)
+        print(f"  ✅ 已创建 Step 事件: {create_name}")
+
+    print("Step 5/5: 守卫原生交互...")
+    if native and info["alarm_code"]:
+        _guard_alarm_for_instance(game_file, info["alarm_code"], new_id)
+
+    extra = []
+    if yes_key and yes_text:
+        extra.append(f"YES→'{yes_key}'")
+    if item_id is not None:
+        extra.append(f"给物品 {ITEMS.get(item_id, item_id)}")
+    if goto_room and goto_gml is not None:
+        extra.append(f"传送→{format_room(goto_gml)}")
+    if not extra:
+        extra.append("YES→关闭对话")
+    if repeat:
+        extra.append("走开可再触发")
+    else:
+        extra.append("单次触发")
+    print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<{range_}px) 弹 '{choice_key}'（{'，'.join(extra)}）")
 
 
 def cmd_guard_npc_alarm(game_file: Path, obj_name: str, instance_id: int,
@@ -5100,12 +5328,15 @@ def main():
   %(prog)s --action guard-npc-alarm --key "obj_cactus" --instance 113927 --text-key "obj_cactus_deterline" --file data_win
   # Single-trigger NPC dialogue (locks player movement during talk, triggers once)
   %(prog)s --action npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi!/%%" --once --file data_win
+  # Choice NPC: YES/NO box + follow-up texts + teleport on YES (single-trigger by default)
+  %(prog)s --action npc-choice --value "room_water_undynefinal" --key "obj_kitchentable" --x 160 --y 420 --text-key "obj_table_ask" --text "* Let's go?& &         Yes         No      \\C " --yes-text-key "obj_table_yes" --yes-text "* Okay!/%%" --no-text-key "obj_table_no" --no-text "* .../%%" --goto "雪镇 - 船夫(妇)" --item 48 --range 160 --file data_win
   # Check for corrupted variable NameStringID (crash trap), --fix to repair
   %(prog)s --action verify-nsid --file data_win
   %(prog)s --action verify-nsid --fix --file data_win
 
   # Code append/prepend (新增，无需完全替换)
   %(prog)s --action append-code --key "gml_Object_obj_dummy1_Step_0" --value "if (global.flag[510]==99) instance_destroy();" --file data_win
+  %(prog)s --action append-code --key "gml_Object_obj_dummy1_Step_0" --value "./append.gml" --file-path --file data_win
   %(prog)s --action prepend-code --key "gml_Object_obj_dummy1_Step_0" --value "// custom code here" --file data_win
 
   # Batch import dialogues from JSON
@@ -5157,7 +5388,7 @@ def main():
                                  "search-vars", "create-script",
                                    "room-objects", "search-sctext",
                                     "spawn-obj", "remove-obj",
-                                    "npc-dialogue", "guard-npc-alarm",
+                                    "npc-dialogue", "npc-choice", "guard-npc-alarm",
                                    "quest-init", "quest-status",
                                    "sandbox-restore",
                                    "list-sprites", "search-sprite",
@@ -5220,9 +5451,25 @@ def main():
     parser.add_argument("--flag", type=int, default=None,
                         help="flag 索引 (quest-init 用, 默认 510)")
     parser.add_argument("--text-key", type=str, default=None,
-                        help="textdata key (npc-dialogue/guard-npc-alarm 用)")
+                        help="textdata key (npc-dialogue/guard-npc-alarm/npc-choice 用)")
     parser.add_argument("--text", type=str, default=None,
                         help="对话内容 ASCII (npc-dialogue 用)")
+    parser.add_argument("--yes-text-key", type=str, default=None,
+                        help="YES 分支 textdata key (npc-choice 用)")
+    parser.add_argument("--yes-text", type=str, default=None,
+                        help="YES 分支对话内容 ASCII (npc-choice 用)")
+    parser.add_argument("--no-text-key", type=str, default=None,
+                        help="NO 分支 textdata key (npc-choice 用, 必需)")
+    parser.add_argument("--no-text", type=str, default=None,
+                        help="NO 分支对话内容 ASCII (npc-choice 用, 必需)")
+    parser.add_argument("--goto", type=str, default=None,
+                        help="YES 分支传送目标房间（中文名/ID，npc-choice 用）")
+    parser.add_argument("--item", type=int, default=None,
+                        help="YES 分支奖励物品 ID (npc-choice 用, 0-65)")
+    parser.add_argument("--range", type=int, default=50,
+                        help="触发距离像素 (npc-dialogue/npc-choice 用, 默认: 50)")
+    parser.add_argument("--repeat", action="store_true",
+                        help="可重复触发（走开 >60px 再靠近可再触发；npc-choice 用，默认单次）")
     parser.add_argument("--frame", type=int, default=None,
                         help="帧索引 (export-sprite/replace-sprite 用, 默认全部/0)")
     parser.add_argument("--show-diff", action="store_true",
@@ -5417,7 +5664,20 @@ def main():
                     parser.error("--text-key (textdata key) 和 --text (对话内容) 是必需的")
                 cmd_npc_dialogue(game_file, args.value, args.key, args.x, args.y,
                                  args.text_key, args.text,
-                                 face=args.face, emotion=args.emotion, once=args.once)
+                                 face=args.face, emotion=args.emotion, once=args.once,
+                                 range_=args.range)
+            elif args.action == "npc-choice":
+                if args.value is None or args.key is None:
+                    parser.error("--value (房间名) 和 --key (对象名) 是必需的")
+                if args.text_key is None or args.text is None:
+                    parser.error("--text-key (选择文本 key) 和 --text (选择文本) 是必需的")
+                cmd_npc_choice(game_file, args.value, args.key, args.x, args.y,
+                               args.text_key, args.text,
+                               yes_key=args.yes_text_key, yes_text=args.yes_text,
+                               no_key=args.no_text_key, no_text=args.no_text,
+                               face=args.face, emotion=args.emotion, range_=args.range,
+                               goto_room=args.goto, item_id=args.item,
+                               repeat=args.repeat)
             elif args.action == "guard-npc-alarm":
                 if args.key is None or args.instance is None:
                     parser.error("--key (对象名) 和 --instance (实例 ID) 是必需的")
@@ -5518,11 +5778,11 @@ def main():
             elif args.action == "append-code":
                 if args.key is None or args.value is None:
                     parser.error("--key (代码名) 和 --value (GML) 是必需的")
-                cmd_code_append(game_file, args.key, args.value)
+                cmd_code_append(game_file, args.key, args.value, value_is_file=args.file_path)
             elif args.action == "prepend-code":
                 if args.key is None or args.value is None:
                     parser.error("--key (代码名) 和 --value (GML) 是必需的")
-                cmd_code_prepend(game_file, args.key, args.value)
+                cmd_code_prepend(game_file, args.key, args.value, value_is_file=args.file_path)
             elif args.action == "batch-add-textentry":
                 if args.value is None:
                     parser.error("--value 是必需的 (JSON 文件路径)")

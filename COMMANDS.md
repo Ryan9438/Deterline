@@ -112,6 +112,7 @@ python run.py --action find-replace-code --key "gml_Object_obj_dummy1_Step_0" --
 
 # 追加/前置代码（无需完全替换，不破坏原有逻辑）
 python run.py --action append-code --key "gml_Object_obj_dummy1_Step_0" --value "if (global.flag[510]==99) instance_destroy();" --file data_win
+python run.py --action append-code --key "gml_Object_obj_dummy1_Step_0" --value "./append.gml" --file-path --file data_win
 python run.py --action prepend-code --key "gml_Object_obj_dummy1_Step_0" --value "// init code" --file data_win
 
 # 创建新脚本
@@ -166,6 +167,14 @@ python run.py --action npc-dialogue --value "room_torielroom" --key "obj_cactus"
 
 # 单次触发 NPC 对话（对话期间锁移动，结束后不再触发，永久只看一次）
 python run.py --action npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi/%%" --once --file data_win
+
+# 自定义触发距离（默认 50px）
+python run.py --action npc-dialogue --value "room_water_undynefinal" --key "obj_kitchentable" --x 160 --y 420 --text-key "obj_table_hi" --text "* Hi/%%" --range 160 --file data_win
+
+# 一键安全 YES/NO 选择 NPC（npc-choice）：
+# - 触发文本必须含 \C（≤3行），YES/NO 分支文本不得含 \C（自动校验，防止选择框循环重弹）
+# - 默认单次触发；--repeat 可重复；--goto 传送（支持中文房间名）；--item 给物品
+python run.py --action npc-choice --value "room_water_undynefinal" --key "obj_kitchentable" --x 160 --y 420 --text-key "obj_table_ask" --text "* Let's go?& &         Yes         No      \C " --yes-text-key "obj_table_yes" --yes-text "* Okay!/%%" --no-text-key "obj_table_no" --no-text "* .../%%" --goto "雪镇 - 船夫(妇)" --item 48 --range 160 --file data_win
 
 # 给已注入过 myinteract 触发、与默认对话重叠的 NPC 补 Alarm_0 守卫（幂等）
 python run.py --action guard-npc-alarm --key "obj_cactus" --instance 113927 --file data_win
