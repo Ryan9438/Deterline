@@ -51,7 +51,7 @@ ASCII, ascii, 英文, 中文限制, 字体
 
 ## 技能版本
 
-2.1.0
+2.1.1
 
 ## 适用平台
 
@@ -209,6 +209,10 @@ deterline/
 | `remove-obj --value "room_asrielroom" --instance 113930` | 按实例 ID 移除 |
 | `remove-obj --value "room_asrielroom" --key "obj_dummy1"` | 按对象类型移除第一个 |
 | `remove-obj --value "room_asrielroom" --key "obj_dummy1" --all` | 移除该类型全部实例 |
+| `npc-dialogue --value "room_torielroom" --key "obj_cactus" --x 170 --y 180 --text-key "obj_cactus_hi" --text "* Hi/%%"` | **一键安全 NPC 对话**：加对话 + 生成实例 + 注入 `deterline_state` 距离触发 + 自动守卫 Alarm_0。默认 = **对话期间锁移动 + 走开后可再次触发** |
+| `npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi/%%" --once` | **单次触发**：对话期间锁移动（`global.interact=1`），结束后解锁且**不再触发**（永久只一次） |
+| `guard-npc-alarm --key "obj_cactus" --instance 113927` | 给已有冲突 NPC 补 `Alarm_0` 守卫（幂等） |
+| `verify-nsid` | 检查损坏变量 NameStringID（读取会崩溃的陷阱）；`--fix` 自动修复 |
 
 注意事项：
 - 修改的是 `game.ios/data.win` 中的房间布局数据，不是存档
@@ -216,6 +220,8 @@ deterline/
 - 建议操作后用 `set --key Room --value 房间ID` 传送触发刷新
 - 用 `room-objects` 查看实例 ID 后再 `remove-obj --instance`
 - 生成的实例保留完整的对象行为（碰撞、事件、交互、AI）
+- `npc-dialogue` 一律用 `deterline_state` 状态机（普通对象与原生 readable 对象都安全），原生 readable 对象额外加 `Alarm_0` 守卫（自动在 Create 事件初始化 `deterline_state = 0;`，防止 NSID 损坏崩溃）
+- **默认触发行为**：靠近(<50px)触发，对话期间**锁移动**（`global.interact=1`，头像/文字不会与文本框错位），按 Z 关闭后**不会立即重触发**，需**走开(>60px) 再靠近**才能再次触发。需要"只看一次"用 `--once`
 - 可用 `--sandbox` 做安全测试，确认无误后 `sandbox-restore` 恢复
 
 ### 🎨 精灵/对象编辑（`--file data_win`）— P4-1
@@ -522,13 +528,26 @@ Sprite (SPRT)            — 2583 个，逻辑精灵，每帧指向一个 Textur
 
 以下代码实现：自动对话 → 求助选择 → 奖励/拒绝 三段式支线。
 
+> ⚠️ **重要：不要用 `myinteract` 做距离触发状态变量。**
+> 如果目标对象继承 `obj_readablesolid`/`obj_interactable`（如 `obj_cactus`、`obj_readable_*`），
+> 其父类 `Step_0` 监视 `myinteract == 1` → 调度 `alarm[0]` → 弹默认对话，会与你的对话重叠成两个对话框。
+> 用**每实例变量 `deterline_state`**，或用 `npc-dialogue` 命令自动生成。
+
+> ⚠️⚠️ **`deterline_state` 必须先在 Create 事件中初始化！**
+> 它**不是**"未赋值自动为 0"。新变量若只在 Step 中被引用，一旦 Step 被覆盖为不含它的代码，
+> 其 `NameStringID` 会损坏为 0，游戏读取该变量时**直接崩溃**（UTMT 的引用链陷阱）。
+> `npc-dialogue` / `guard-npc-alarm` 会自动在对象 Create 事件写入 `deterline_state = 0;`。
+> 手工注入时必须自己做这步（或在 Create_0 末尾 `append-code` 加 `deterline_state = 0;`）。
+> 可用 `verify-nsid` 检查 / `--fix` 修复损坏变量。
+
 ```gml
 // ===== 改写到 NPC 的 Step_0 事件 =====
+// 前置条件：对象 Create 事件必须含 `deterline_state = 0;`（否则读取崩溃）
 
 // 1. 对话结束后重置
-if (myinteract == 1 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+if (deterline_state == 1 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
 {
-    myinteract = 0;
+    deterline_state = 0;
 }
 
 // 2. 处理 \C 选择结果（2 帧窗口截获）
@@ -558,14 +577,18 @@ if (global.choice != -1 && global.flag[510] == 2)
     global.choice = -1;
 }
 
-// 3. 距离自动触发（替代 Z 键）
+// 3. 距离自动触发（替代 Z 键）——用 deterline_state，不用 myinteract！
 var dist = distance_to_object(obj_mainchara);
-if (dist < 50 && myinteract == 0 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+if (dist >= 60)
+{
+    deterline_state = 0;   // 走远重置，可重复触发
+}
+if (dist < 50 && deterline_state == 0 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
 {
     // 阶段 0：初次见面
     if (global.flag[510] == 0)
     {
-        myinteract = 1;
+        deterline_state = 1;
         global.flag[510] = 1;
         global.msc = 0;        // SCR_TEXT(0) = no-op
         global.typer = 5;
@@ -579,7 +602,7 @@ if (dist < 50 && myinteract == 0 && !instance_exists(OBJ_WRITER) && !instance_ex
     // 阶段 1：求助（含 \C 选择）
     else if (global.flag[510] == 1)
     {
-        myinteract = 1;
+        deterline_state = 1;
         global.flag[510] = 2;
         global.msc = 0;
         global.typer = 5;
@@ -593,7 +616,7 @@ if (dist < 50 && myinteract == 0 && !instance_exists(OBJ_WRITER) && !instance_ex
     // 阶段 2：YES 后续
     else if (global.flag[510] == 3)
     {
-        myinteract = 1;
+        deterline_state = 1;
         global.flag[510] = 5;  // 标记完成
         global.msc = 0;
         global.typer = 5;
@@ -606,7 +629,7 @@ if (dist < 50 && myinteract == 0 && !instance_exists(OBJ_WRITER) && !instance_ex
     // 阶段 2：NO 后续
     else if (global.flag[510] == 4)
     {
-        myinteract = 1;
+        deterline_state = 1;
         global.flag[510] = 5;
         global.msc = 0;
         global.typer = 5;
@@ -621,6 +644,17 @@ if (dist < 50 && myinteract == 0 && !instance_exists(OBJ_WRITER) && !instance_ex
 // 4. 保持深度正确
 script_execute(scr_depth);
 ```
+
+**原生 readable 对象额外必做**：如果对象继承 `obj_readablesolid`/`obj_interactable`，还要在它的 `Alarm_0` 事件**头部**加守卫，阻止默认对话弹出：
+
+```gml
+if (id == <实例ID>)
+{
+    exit;
+}
+```
+
+`guard-npc-alarm` 命令可自动完成这两步（守卫 + 改写 Step 为 flag 状态机）。
 
 #### \C 选择机制的 2 帧窗口
 
@@ -650,6 +684,13 @@ script_execute(scr_depth);
 - 利用原对象已预设的 `rsprite/lsprite` 和 `image_speed` 自动控制
 - 设 `hspeed` 后原 Step 的 `if (speed > 0) image_speed = 0.2` 自动工作
 
+### 实验 15：新实例变量 NSID 陷阱（崩溃根因）
+- 现象：`npc-dialogue` 注入 `deterline_state` 状态机后，再次覆盖 Step 代码，游戏**读取即崩**
+- 根因：新变量 `deterline_state` 只在 Step 中被引用 → Step 被覆盖为不含它的代码 → `Occurrences=0` → UTMT 序列化时 `NameStringID=0` → 之后任何引用都崩（写入不崩，读取崩）
+- 决定性复现：创建含变量的脚本(NSID 正确) → 覆盖为不含变量的空代码(occ=0, NSID=0) → 再引用(NSID 仍=0)
+- **修复**：在 Create 事件初始化 `deterline_state = 0;`（变量永远被引用，NSID 不再损坏）；或 `verify-nsid --fix` 把 NameStringID 重置为正确 STRG 索引
+- 教训：**新实例变量必须先在 Create 事件初始化**；注入后跑 `verify-nsid` 验证
+
 ### 实验 A：Sans 走路变红（纹理替换管线验证）
 - `export-sprite` → PIL 红蓝通道互换 → `replace-sprite`
 - 确认精灵 frame 0/2 共享同纹理区域（SourceX/Y 相同）
@@ -667,18 +708,50 @@ script_execute(scr_depth);
 
 ---
 
+## 原生 readable 对象（交互冲突注意）
+
+下列对象**继承 `obj_readablesolid` / `obj_interactable`**，自带原生 Z 键/触碰交互系统：
+
+| 对象 | 默认对话 |
+|------|---------|
+| `obj_cactus` | `obj_cactus_55` / `obj_cactus_58`（"Ah, the cactus..."） |
+| `obj_readable_*` 系列 | 各自 `Alarm_0` 默认文本 |
+| `obj_dummy1` 等 | 父链含 `obj_interactable` |
+
+**原生交互链**（父类 `obj_readablesolid_Step_0`）：
+```
+玩家 Z 键/触碰 → scr_interact → myinteract = 1
+  → 父类 Step_0 检测 myinteract == 1 → alarm[0] = 1 → Alarm_0 → 弹默认对话
+```
+
+**冲突根因**：在 Step 事件里设 `myinteract = 1` 做距离触发，会同时被父类 Step_0 捕获 → 默认对话 + 你的对话两个对话框重叠。
+
+**正确做法（二选一）**：
+1. 用 `npc-dialogue` 命令（自动用 `deterline_state` 状态机 + `Alarm_0` 加 `if (id == N) exit;` 守卫）
+2. 手工：Step 用 `deterline_state`/`flag[510]` 状态机（不要碰 `myinteract`）+ `Alarm_0` 头部加 `if (id == <实例ID>) exit;`
+
+**如何识别**：`get-obj --key obj_xxx` 会显示完整父链并打印警告；`spawn-obj` 生成这类对象时也会提示。
+
+---
+
 ## 已知可靠的交互模式
 
 ### ✅ 距离自动触发
 ```
 distance_to_object(obj_mainchara) < 50
 ```
-任意对象的 Step 事件中检测玩家距离。不依赖 Z 键，对话结束后自动重置 `myinteract = 0`。
+任意对象的 Step 事件中检测玩家距离。不依赖 Z 键，对话结束后自动重置。
 已验证：`obj_dummy1` 在 `room_asrielroom` 中正常工作。
+
+> ⚠️ **用每实例变量 `deterline_state`（或 `global.flag[510]`）做状态，不要用 `myinteract`。**
+> 若对象继承 `obj_readablesolid`/`obj_interactable`，设 `myinteract = 1` 会触发父类默认对话造成重叠。
+> 用 `npc-dialogue` 命令可自动生成安全代码。
+> **⚠️ `deterline_state` 必须先在 Create 事件初始化（`deterline_state = 0;`），否则变量未被注册时读取会崩溃。**
 
 ### ✅ Z 键交互（仅限游戏内置对象）
 适用于 `obj_cactus`、`obj_readable_*`、`obj_dummy1` 等。
 `scr_interact` 系统自动处理。**自定义对象不能用此方式**，因为碰撞检测写死在玩家对象中。
+这些内置对象自带 `Alarm_0` 默认对话 —— 若要注入自定义对话，必须给 `Alarm_0` 头部加 `if (id == <实例ID>) exit;` 守卫（`guard-npc-alarm` 命令可自动完成）。
 
 ### ✅ 物品给予
 ```gml
@@ -727,6 +800,8 @@ game_restart();            // 重启游戏
 | `undo --value data_win` | 恢复 `game.ios` 到修改前状态（用 `.bak.时间戳` 可恢复到指定版本） |
 | `remove-obj --instance ID` | 精确移除单个实例，不影响其他对象 |
 | **沙箱模式** `--sandbox` | 在 `game.ios.sandbox` 副本上操作，原文件不受影响。用 `sandbox-restore` 恢复 |
+| **`verify-nsid` 变量体检** | 检查损坏的变量 NameStringID（读取会崩溃的陷阱），`--fix` 自动修复 |
+| **变量自动初始化** | `npc-dialogue`/`guard-npc-alarm` 自动在 Create 事件写 `deterline_state = 0;`，防止新变量 NSID 损坏崩溃 |
 | **精灵搜索推荐** `search-sprite` | 找不到精灵时自动推荐相似名称 |
 | **对象搜索推荐** `get-obj` | 找不到对象时自动推荐相似名称 |
 | **多匹配提示** | 名称模糊匹配时打印 `(found N matches, using: ...)` |
@@ -758,6 +833,8 @@ game_restart();            // 重启游戏
 21. `replace-texture` 替换整个纹理图谱，影响该图谱上所有精灵。确认无误再操作
 22. 纹理编辑后 PNG 会自动 Resize 匹配原精灵尺寸，但建议保持原尺寸编辑以保真
 23. 英文版 Undertale 的字体精灵不包含中文字形，替换文字纹理无法解决中文显示问题
+24. **新实例变量必须先初始化**：注入用到新变量（如 `deterline_state`）的代码前，务必在对象 Create 事件写 `变量 = 0;`。否则变量未被正确注册（NameStringID=0）时读取会崩溃。用 `npc-dialogue`/`guard-npc-alarm` 会自动处理；`verify-nsid --fix` 可修复已损坏变量
+25. `npc-dialogue` 默认与 `--once` **都锁移动**：对话期间 `global.interact=1`，头像/文字不会与文本框错位；按 Z 关闭后默认需**走开(>60px) 才可再次触发**，`--once` 则**永久只触发一次**。不要用 `myinteract` 手写距离触发（会在对话结束瞬间立即重触发 + 不锁移动导致错位）
 
 ## 工作流（Agent 必读）
 

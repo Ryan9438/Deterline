@@ -159,6 +159,20 @@ python run.py --action remove-obj --value "room_torielroom" --key "obj_sans" --a
 
 # 按实例 ID 移除
 python run.py --action remove-obj --value "room_torielroom" --instance 100085 --file data_win
+
+# 一键安全 NPC 对话（deterline_state 状态机 + Alarm_0 守卫 + Create 事件初始化 deterline_state）
+# 默认：对话期间锁移动，按 Z 关闭后需走开(>60px) 才能再次触发
+python run.py --action npc-dialogue --value "room_torielroom" --key "obj_cactus" --x 170 --y 180 --text-key "obj_cactus_hi" --text "* Hi/%%" --file data_win
+
+# 单次触发 NPC 对话（对话期间锁移动，结束后不再触发，永久只看一次）
+python run.py --action npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi/%%" --once --file data_win
+
+# 给已注入过 myinteract 触发、与默认对话重叠的 NPC 补 Alarm_0 守卫（幂等）
+python run.py --action guard-npc-alarm --key "obj_cactus" --instance 113927 --file data_win
+
+# 检查损坏变量 NameStringID（读取会崩溃的陷阱），--fix 自动修复
+python run.py --action verify-nsid --file data_win
+python run.py --action verify-nsid --fix --file data_win
 ```
 
 ---

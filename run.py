@@ -7,7 +7,7 @@
   python run.py --install      ← 一键安装到本地 Agent
 """
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 import os
 import sys

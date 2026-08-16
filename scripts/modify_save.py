@@ -315,10 +315,12 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
                 raise RuntimeError("UTMT CLI 输出了空文件，保存已取消")
             import shutil as _shutil
             _shutil.copy2(temp_output, str(target))
-            # Also sync to Steam app bundle (game reads from there on Steam launch)
+            # Also sync to Steam app bundle (game reads from there on Steam launch).
+            # Never sync in sandbox mode — the sandbox copy must not leak into the real file.
             steam_path = Path("~/Library/Application Support/Steam/steamapps/common/"
                              "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
-            if steam_path.exists() and str(steam_path.resolve()) != str(Path(target).resolve()):
+            if (not SANDBOX_ACTIVE and steam_path.exists()
+                    and str(steam_path.resolve()) != str(Path(target).resolve())):
                 _shutil.copy2(temp_output, str(steam_path))
             os.unlink(temp_output)
             saved_to_temp = True
@@ -1787,24 +1789,15 @@ def cmd_textdata_add(game_file: Path, key: str, value: str,
     esc_key = _csx_escape(key)
     esc_val = _csx_escape(value)
 
-    # First add the value string to STRG table
-    strg_csx = f'''
-var s = Data.Strings.MakeString("{esc_val}");
-ScriptMessage("STRG_INDEX:" + Data.Strings.IndexOf(s));
-'''
-    out = _run_utmt(strg_csx, game_file, save=True)
-    strg_idx = None
-    for line in _parse_msg(out):
-        if line.startswith("STRG_INDEX:"):
-            strg_idx = line.split(":", 1)[1]
-
-    if strg_idx is None:
-        raise RuntimeError("无法获取 STRG 索引")
-
     v_key = _csx_verbatim_escape(key)
     v_val = _csx_verbatim_escape(value)
+    # Single round trip: MakeString into STRG + append ds_map_add line to textdata_en.
     code_csx = f'''
 try {{
+    var s = Data.Strings.MakeString("{esc_val}");
+    int strg_idx = Data.Strings.IndexOf(s);
+    ScriptMessage("STRG_INDEX:" + strg_idx);
+
     string gml = GetDecompiledText(Data.Code.ByName("gml_Script_textdata_en"));
     if (gml.IndexOf(@"ds_map_add(global.text_data_en, ""{v_key}"", ") >= 0) {{
         ScriptMessage("WARN: Key '" + "{esc_key}" + "' already exists, skipping (use delete-textentry first)");
@@ -1818,7 +1811,7 @@ try {{
     }};
     importGroup.QueueReplace(Data.Code.ByName("gml_Script_textdata_en"), gml);
     importGroup.Import();
-    ScriptMessage("OK: Added textdata entry '" + "{esc_key}" + "' (STRG idx " + "{strg_idx}" + ")");
+    ScriptMessage("OK: Added textdata entry '" + "{esc_key}" + "' (STRG idx " + strg_idx + ")");
 }} catch (Exception ex) {{
     ScriptMessage("ERROR: " + ex.Message);
 }}
@@ -1826,6 +1819,8 @@ try {{
     out = _run_utmt(code_csx, game_file, save=True)
     for line in _parse_msg(out):
         if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("WARN:"):
             print(line, file=sys.stderr)
         elif line.startswith("OK:"):
             print(line)
@@ -1967,23 +1962,13 @@ def cmd_create_script(game_file: Path, code_name: str, value: str, value_is_file
             raise NotFoundError(f"文件不存在: {value}")
         gml_source = p.read_text(encoding="utf-8")
 
-    # Check if the code entry already exists
-    check_csx = f'''
-var existing = Data.Code.ByName("{esc_name}");
-if (existing != null) {{
-    ScriptMessage("EXISTS:" + existing.Name.Content);
-}} else {{
-    ScriptMessage("NOT_EXISTS");
-}}
-'''
-    out = _run_utmt(check_csx, game_file, save=False)
-    for line in _parse_msg(out):
-        if line.startswith("EXISTS:"):
-            print(f"警告: 代码 '{code_name}' 已存在，将覆盖", file=sys.stderr)
-
     esc_gml = _csx_verbatim_escape(gml_source)
     csx = f'''
 try {{
+    var existing = Data.Code.ByName("{esc_name}");
+    if (existing != null) {{
+        ScriptMessage("WARN:EXISTS:" + existing.Name.Content);
+    }}
     CodeImportGroup importGroup = new(Data)
     {{
         AutoCreateAssets = true,
@@ -2000,6 +1985,8 @@ try {{
     for line in _parse_msg(out):
         if line.startswith("ERROR:"):
             print(line, file=sys.stderr)
+        elif line.startswith("WARN:EXISTS:"):
+            print(f"警告: 代码 '{code_name}' 已存在，将覆盖", file=sys.stderr)
         elif line.startswith("OK:"):
             print(line)
 
@@ -2048,8 +2035,13 @@ if (!found) {{
 # Room Object Spawn/Remove (room layout editing)
 # ============================================================
 
-def cmd_spawn_obj(game_file: Path, room_name: str, obj_name: str, x: int, y: int) -> None:
-    """Spawn an object instance in a room at given coordinates."""
+def _spawn_obj_internal(game_file: Path, room_name: str, obj_name: str, x: int, y: int,
+                        quiet: bool = False) -> int | None:
+    """Spawn an object instance in a room. Returns the new instance ID (or None on failure).
+
+    Shared by cmd_spawn_obj and cmd_npc_dialogue. When quiet=True, suppresses
+    non-essential output (used by higher-level commands that report their own progress).
+    """
     esc_room = _csx_escape(room_name)
     esc_obj = _csx_escape(obj_name)
     csx = f'''
@@ -2103,6 +2095,27 @@ if (objDef == null) {{
     if (found > 0) ScriptMessage("HINT: Did you mean: " + suggest);
     return;
 }}
+// Native interactable detection (parent chain walk)
+bool objNativeInteract = false;
+var objChainCur = objDef;
+int objChainGuard = 0;
+while (objChainCur != null && objChainGuard < 30)
+{{
+    string objChainName = objChainCur.Name?.Content ?? "";
+    if (objChainName == "obj_interactable" || objChainName == "obj_readablesolid")
+    {{
+        objNativeInteract = true;
+        break;
+    }}
+    objChainCur = objChainCur.ParentId;
+    objChainGuard++;
+}}
+if (objNativeInteract)
+{{
+    ScriptMessage("WARN: 该对象继承原生交互系统 (obj_readablesolid/obj_interactable)");
+    ScriptMessage("     若注入 myinteract 距离触发会与默认对话重叠 → 改用 flag 状态机 + 守卫 Alarm_0,");
+    ScriptMessage("     或直接用 npc-dialogue / guard-npc-alarm 命令。");
+}}
 // Check for nearby objects (overlap warning)
 int nearCount = 0;
 int nearThreshold = 30;
@@ -2126,19 +2139,36 @@ room.GameObjects.Add(new UndertaleRoom.GameObject() {{
 string objName = objDef.Name?.Content ?? "(unknown)";
 string rName = room.Name?.Content ?? "(unknown)";
 ScriptMessage("OK: Spawned [" + newId + "] " + objName + " in " + rName + " at ({x}, {y})");
+ScriptMessage("SPAWN_RESULT:" + newId + ":" + (objNativeInteract ? "1" : "0"));
 '''
     out = _run_utmt(csx, game_file, save=True)
+    new_id: int | None = None
     for line in _parse_msg(out):
         if line.startswith("ERROR:"):
             print(line, file=sys.stderr)
         elif line.startswith("HINT:"):
             print(line, file=sys.stderr)
         elif line.startswith("WARN:"):
-            print(line, file=sys.stderr)
+            if not quiet:
+                print(line, file=sys.stderr)
         elif line.startswith("OK:"):
-            print(line)
+            if not quiet:
+                print(line)
+        elif line.startswith("SPAWN_RESULT:"):
+            parts = line.split(":")
+            try:
+                new_id = int(parts[1])
+            except (IndexError, ValueError):
+                new_id = None
         else:
-            print(line)
+            if not quiet:
+                print(line)
+    return new_id
+
+
+def cmd_spawn_obj(game_file: Path, room_name: str, obj_name: str, x: int, y: int) -> None:
+    """Spawn an object instance in a room at given coordinates."""
+    _spawn_obj_internal(game_file, room_name, obj_name, x, y)
 
 
 def cmd_remove_obj(game_file: Path, room_name: str, obj_name: str,
@@ -2233,6 +2263,611 @@ ScriptMessage("OK: Removed " + removed + " instance(s) of " + objName + " from "
         elif line.startswith("OK:"):
             print(line)
         else:
+            print(line)
+
+
+# ============================================================
+# Safe NPC dialogue (npc-dialogue / guard-npc-alarm)
+# ============================================================
+
+def _query_npc_target(game_file: Path, obj_name: str) -> dict | None:
+    """Query object inheritance (native interactable?) + its own Step/Alarm code entries.
+
+    Returns {"obj", "native", "step_code", "alarm_code"} or None if not found.
+    native=True means the object inherits obj_readablesolid/obj_interactable
+    (has a native Z-key/touch interaction system that conflicts with myinteract triggers).
+    """
+    esc = _csx_escape(obj_name)
+    csx = f'''
+var obj = Data.GameObjects.ByName("{esc}");
+if (obj == null) {{ obj = Data.GameObjects.ByName("{esc}", true); }}
+if (obj == null) {{
+    string q = "{esc}";
+    int first = -1;
+    int count = 0;
+    for (int o = 0; o < Data.GameObjects.Count; o++) {{
+        string on = Data.GameObjects[o].Name.Content;
+        if (on.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0) {{
+            if (first < 0) first = o;
+            count++;
+        }}
+    }}
+    if (first >= 0) {{
+        obj = Data.GameObjects[first];
+        ScriptMessage("NPC_TARGET:MATCH:" + obj.Name.Content + ":" + count);
+    }}
+}}
+if (obj == null) {{
+    ScriptMessage("NPC_TARGET:NOT_FOUND");
+    return;
+}}
+bool native = false;
+var cur = obj;
+int guard = 0;
+while (cur != null && guard < 30) {{
+    string cn = cur.Name?.Content ?? "";
+    if (cn == "obj_interactable" || cn == "obj_readablesolid") {{
+        native = true;
+        break;
+    }}
+    cur = cur.ParentId;
+    guard++;
+}}
+string oname = obj.Name.Content;
+string stepCode = "";
+string[] stepNames = new string[] {{
+    "gml_Object_" + oname + "_Step_1",
+    "gml_Object_" + oname + "_Step_0",
+    "gml_Object_" + oname + "_Step_2"
+}};
+foreach (string sn in stepNames) {{
+    if (Data.Code.ByName(sn) != null) {{
+        stepCode = sn;
+        break;
+    }}
+}}
+string alarmCode = "";
+var acur = obj;
+guard = 0;
+while (acur != null && guard < 30) {{
+    string cand = "gml_Object_" + acur.Name.Content + "_Alarm_0";
+    if (Data.Code.ByName(cand) != null) {{
+        alarmCode = cand;
+        break;
+    }}
+    acur = acur.ParentId;
+    guard++;
+}}
+ScriptMessage("NPC_TARGET:RESULT:" + oname + ":" + (native ? "1" : "0") + ":" + stepCode + ":" + alarmCode);
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        if line.startswith("NPC_TARGET:RESULT:"):
+            body = line[len("NPC_TARGET:RESULT:"):]
+            parts = body.split(":")
+            if len(parts) >= 4:
+                return {
+                    "obj": parts[0],
+                    "native": parts[1] == "1",
+                    "step_code": parts[2],
+                    "alarm_code": ":".join(parts[3:]),
+                }
+        if line.startswith("NPC_TARGET:NOT_FOUND"):
+            return None
+    return None
+
+
+def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: int,
+                          native: bool, once: bool = False) -> str:
+    """Build distance-trigger GML for a spawned NPC instance.
+
+    Both modes use the per-instance variable `deterline_state` (initialized in
+    Create_0 by _ensure_var_initialized), so multiple NPCs never share/clash on a
+    global flag — and BOTH lock the player during the dialogue
+    (global.interact=1 → 0) so the face/portrait and text can't drift from the
+    dialogue box.
+
+    once=True   → single-trigger state machine (0→1→2): never re-arms, shows once.
+    once=False  → repeatable state machine (0→1→2→(walk away ≥60px)→0): after the
+                  dialogue the player must walk away to be able to trigger again.
+                  This replaces the old myinteract trigger which (a) did NOT lock
+                  movement and (b) re-triggered instantly in a loop while the player
+                  stayed within range.
+
+    `native` only affects the Alarm_0 guard (handled by the caller), not this block.
+    """
+    state = "deterline_state"
+    trigger = f'''else if ({state} == 0 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+{{
+    var dist = distance_to_object(obj_mainchara);
+    if (dist < 50)
+    {{
+        {state} = 1;
+        global.interact = 1;
+        global.msc = 0;
+        global.typer = 5;
+        global.facechoice = {face};
+        global.faceemotion = {emotion};
+        global.msg[0] = scr_gettext("{text_key}");
+        global.msg[1] = "%%%";
+        instance_create(0, 0, obj_dialoguer);
+    }}
+}}
+'''
+    rearm = ""
+    if not once:
+        rearm = f'''
+    if ({state} == 2 && distance_to_object(obj_mainchara) >= 60)
+    {{
+        {state} = 0;
+    }}
+'''
+    return f'''if (id == {instance_id})
+{{
+    if ({state} == 1 && !instance_exists(obj_dialoguer))
+    {{
+        {state} = 2;
+        global.interact = 0;
+    }}
+{trigger}{rearm}}}
+'''
+
+
+def _guard_alarm_for_instance(game_file: Path, alarm_code: str, instance_id: int) -> bool:
+    """Prepend `if (id == N) exit;` to an Alarm_0 entry (idempotent). Returns True if added."""
+    esc = _csx_escape(alarm_code)
+    guard = f"if (id == {instance_id})\n{{\n    exit;\n}}"
+    verb = _csx_verbatim_escape(guard)
+    # Single round trip: decompile → check idempotency → prepend guard.
+    csx = f'''
+var code = Data.Code.ByName("{esc}");
+if (code == null) {{
+    ScriptMessage("ERROR: Code entry not found: {esc}");
+    return;
+}}
+try {{
+    string existingGml = GetDecompiledText(code);
+    if (existingGml.IndexOf("id == {instance_id}") >= 0) {{
+        ScriptMessage("SKIP: guard already present");
+        return;
+    }}
+    string newGml = @"{verb}" + "\\n" + existingGml;
+    CodeImportGroup importGroup = new(Data)
+    {{
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace(code, newGml);
+    importGroup.Import();
+    ScriptMessage("OK: guarded");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+}}
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+            return False
+        elif line.startswith("SKIP:"):
+            print(f"  ⏭️  守卫已存在: {alarm_code} (id == {instance_id})")
+            return False
+        elif line.startswith("OK:"):
+            print(f"  ✅ 已守卫 Alarm_0: {alarm_code}")
+            return True
+    return False
+
+
+def _find_create_code(game_file: Path, obj_name: str) -> str | None:
+    """Find the effective Create event code entry for an object (self or parent chain).
+
+    Walks the parent chain like _query_npc_target does for Step/Alarm, so a child
+    object without its own Create event still maps to the inherited one.
+    """
+    esc = _csx_escape(obj_name)
+    csx = f'''
+var obj = Data.GameObjects.ByName("{esc}");
+if (obj == null) {{
+    for (int o = 0; o < Data.GameObjects.Count; o++) {{
+        if (Data.GameObjects[o].Name.Content.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            obj = Data.GameObjects[o];
+            break;
+        }}
+    }}
+}}
+if (obj == null) {{
+    ScriptMessage("FIND_CREATE:NOT_FOUND");
+    return;
+}}
+string found = "";
+var cur = obj;
+int guard = 0;
+while (cur != null && guard < 30) {{
+    string cand = "gml_Object_" + cur.Name.Content + "_Create_0";
+    if (Data.Code.ByName(cand) != null) {{
+        found = cand;
+        break;
+    }}
+    cur = cur.ParentId;
+    guard++;
+}}
+ScriptMessage("FIND_CREATE:" + (found.Length > 0 ? found : "NONE"));
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        if line.startswith("FIND_CREATE:"):
+            val = line[len("FIND_CREATE:"):]
+            return None if val == "NONE" else val
+    return None
+
+
+def _ensure_var_initialized(game_file: Path, obj_name: str, var_name: str) -> bool:
+    """Ensure a per-instance variable is initialized (registered) for an object.
+
+    Root cause of the NSID=0 crash: a new instance variable that is only referenced
+    in one code entry gets Occurrences=0 (→ NameStringID=0) if that entry is ever
+    overwritten without the variable. Initializing it in Create_0 keeps it referenced
+    forever, so its NameStringID stays valid.
+
+    Idempotent: skips if the var is already referenced in the effective Create_0.
+    Returns True if the variable is (or already was) initialized.
+    """
+    create_code = _find_create_code(game_file, obj_name)
+    esc_var = _csx_escape(var_name)
+    verb_var = _csx_verbatim_escape(var_name)
+
+    if create_code is None:
+        # No Create event anywhere → create one with the init line (AutoCreateAssets links the event).
+        esc_obj = _csx_escape(obj_name)
+        create_name = f"gml_Object_{obj_name}_Create_0"
+        esc_name = _csx_escape(create_name)
+        init = f"{var_name} = 0;"
+        verb = _csx_verbatim_escape(init)
+        csx = f'''
+var obj = Data.GameObjects.ByName("{esc_obj}");
+if (obj == null) {{
+    for (int o = 0; o < Data.GameObjects.Count; o++) {{
+        if (Data.GameObjects[o].Name.Content.IndexOf("{esc_obj}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            obj = Data.GameObjects[o];
+            break;
+        }}
+    }}
+}}
+if (obj == null) {{
+    ScriptMessage("ERROR: Object not found: {esc_obj}");
+    return;
+}}
+try {{
+    CodeImportGroup importGroup = new(Data)
+    {{
+        AutoCreateAssets = true,
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace("{esc_name}", @"{verb}");
+    importGroup.Import();
+    ScriptMessage("OK: Created " + "{create_name}" + " with `{var_name} = 0;`");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+}}
+'''
+        out = _run_utmt(csx, game_file, save=True)
+        ok = any(line.startswith("OK:") for line in _parse_msg(out))
+        if ok:
+            print(f"  ✅ 已创建 Create 事件并初始化变量 {var_name} ({create_name})")
+        return ok
+
+    # Check existing Create_0: does it already reference var_name? (idempotency)
+    lines = _decompile_to_lines(game_file, create_code)
+    if lines is not None and any(var_name in ln for ln in lines):
+        print(f"  ⏭️  变量 {var_name} 已在 {create_code} 初始化")
+        return True
+
+    # Prepend the init line to the effective Create_0.
+    esc_name = _csx_escape(create_code)
+    init = f"{var_name} = 0;"
+    verb = _csx_verbatim_escape(init)
+    csx = f'''
+var code = Data.Code.ByName("{esc_name}");
+if (code == null) {{
+    ScriptMessage("ERROR: Code entry not found: {esc_name}");
+    return;
+}}
+try {{
+    string existingGml = GetDecompiledText(code);
+    string newGml = @"{verb}" + "\\n" + existingGml;
+    CodeImportGroup importGroup = new(Data)
+    {{
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace(code, newGml);
+    importGroup.Import();
+    ScriptMessage("OK: Prepended `{var_name} = 0;` to {esc_name}");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+}}
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    ok = any(line.startswith("OK:") for line in _parse_msg(out))
+    if ok:
+        print(f"  ✅ 已在 {create_code} 初始化变量 {var_name}")
+    return ok
+
+
+def cmd_verify_nsid(game_file: Path, fix: bool = False) -> None:
+    """Check for variables with corrupted NameStringID (0 while referenced).
+
+    Such variables crash the game when read (the NSID=0 trap). By default reports;
+    with --fix, resets each broken variable's NameStringID to the correct STRG index.
+    """
+    csx = f'''
+int bad = 0;
+int fixedCnt = 0;
+for (int i = 0; i < Data.Variables.Count; i++)
+{{
+    var v = Data.Variables[i];
+    string vname = v.Name?.Content ?? "";
+    if (vname.Length == 0) continue;
+    bool corrupt = v.NameStringID <= 0 && v.Occurrences > 0;
+    if (v.NameStringID > 0)
+    {{
+        // Sanity: NSID must point back to the same name in the STRG table.
+        var pointed = (v.NameStringID < Data.Strings.Count) ? (Data.Strings[v.NameStringID]?.Content ?? "") : "";
+        if (pointed != vname) corrupt = true;
+    }}
+    if (corrupt)
+    {{
+        int correct = Data.Strings.IndexOf(v.Name);
+        bad++;
+        if ({( "true" if fix else "false" )})
+        {{
+            v.NameStringID = correct;
+            fixedCnt++;
+        }}
+        ScriptMessage("BAD_NSID: name='" + vname + "' nsid=" + v.NameStringID + " occ=" + v.Occurrences + " correct=" + correct + " fixed=" + ({( "true" if fix else "false" )}));
+    }}
+}}
+ScriptMessage("VERIFY_NSID:bad=" + bad + " fixed=" + fixedCnt);
+'''
+    out = _run_utmt(csx, game_file, save=fix)
+    bad = fixed = None
+    for line in _parse_msg(out):
+        if line.startswith("BAD_NSID:"):
+            print(f"  ⚠️  {line[len('BAD_NSID:'):]}")
+        elif line.startswith("VERIFY_NSID:"):
+            body = line[len("VERIFY_NSID:"):]
+            parts = dict(p.split("=") for p in body.split() if "=" in p)
+            bad = int(parts.get("bad", 0))
+            fixed = int(parts.get("fixed", 0))
+    if bad is None:
+        print("错误: 无法解析 verify-nsid 结果", file=sys.stderr)
+        return
+    if bad == 0:
+        print("✅ verify-nsid: 无损坏变量（全部 NameStringID 有效）")
+    else:
+        if fix:
+            print(f"⚠️ verify-nsid: 发现 {bad} 个损坏变量，已修复 {fixed} 个")
+        else:
+            print(f"⚠️ verify-nsid: 发现 {bad} 个损坏变量（用 --fix 自动修复）")
+
+
+def _prepend_to_code(game_file: Path, code_name: str, value: str) -> None:
+    """Prepend GML to a code entry using QueueReplace (reliable)."""
+    esc = _csx_escape(code_name)
+    verb = _csx_verbatim_escape(value)
+    csx = f'''
+var code = Data.Code.ByName("{esc}");
+if (code == null) {{
+    ScriptMessage("ERROR: Code entry not found: {esc}");
+    return;
+}}
+try {{
+    string existingGml = GetDecompiledText(code);
+    string newGml = @"{verb}" + "\\n" + existingGml;
+    CodeImportGroup importGroup = new(Data)
+    {{
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace(code, newGml);
+    importGroup.Import();
+    ScriptMessage("OK: Prepended to " + "{esc}");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+}}
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+
+
+def _append_to_code(game_file: Path, code_name: str, value: str) -> None:
+    """Append GML to a code entry using QueueReplace (reliable)."""
+    esc = _csx_escape(code_name)
+    verb = _csx_verbatim_escape(value)
+    csx = f'''
+var code = Data.Code.ByName("{esc}");
+if (code == null) {{
+    ScriptMessage("ERROR: Code entry not found: {esc}");
+    return;
+}}
+if (code.ParentEntry != null) {{
+    ScriptMessage("SKIP: child entry, use parent instead");
+    return;
+}}
+try {{
+    string existingGml = GetDecompiledText(code);
+    string newGml = existingGml + "\\n" + @"{verb}";
+    CodeImportGroup importGroup = new(Data)
+    {{
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace(code, newGml);
+    importGroup.Import();
+    ScriptMessage("OK: Appended to " + "{esc}" + " (len " + newGml.Length + ")");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+}}
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("SKIP:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+
+
+def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: int,
+                     text_key: str, text: str, face: int = 0, emotion: int = 0,
+                     once: bool = False) -> None:
+    """One-shot safe NPC dialogue setup.
+
+    1. Adds the dialogue to textdata_en
+    2. Spawns the object instance
+    3. Injects a distance-trigger Step code — auto-picks between:
+       - flag-state machine (native readable objects, safe from myinteract conflict)
+       - classic myinteract trigger (plain objects)
+    4. If the object inherits a native interaction system, also guards Alarm_0
+       with `if (id == N) exit;` to prevent the default dialogue from overlapping.
+    """
+    print("--- npc-dialogue ---")
+    _validate_ascii_text(text, f"对话 '{text_key}'")
+    _validate_facechoice(face)
+
+    print("Step 1/4: 添加对话条目...")
+    cmd_textdata_add(game_file, text_key, text, face=face, emotion=emotion)
+
+    print("Step 2/4: 检查对象继承链...")
+    info = _query_npc_target(game_file, obj_name)
+    if info is None:
+        raise NotFoundError(f"对象未找到: {obj_name}")
+    native = info["native"]
+    if once:
+        print(f"  🔒 单次触发模式 → 用 deterline_state 状态机 + 对话期间锁移动，只触发一次")
+    elif native:
+        print(f"  ⚠️  {info['obj']} 继承原生交互系统 → 用 deterline_state 状态机 + Alarm_0 守卫（锁移动 + 走开重置）")
+    else:
+        print(f"  ✅  {info['obj']} 为普通对象 → 用 deterline_state 状态机（锁移动 + 走开重置）")
+
+    print("Step 3/4: 生成对象实例...")
+    new_id = _spawn_obj_internal(game_file, room_name, obj_name, x, y, quiet=True)
+    if new_id is None:
+        raise RuntimeError("生成对象失败（未获取到实例 ID）")
+    print(f"  ✅ 已生成实例 [{new_id}]")
+
+    print("Step 4/4: 注入触发代码...")
+    _ensure_var_initialized(game_file, info["obj"], "deterline_state")
+    block = _build_npc_step_block(new_id, text_key, face, emotion, native, once=once)
+    step_code = info["step_code"]
+    if step_code:
+        _append_to_code(game_file, step_code, block)
+        print(f"  ✅ 已追加到 Step 事件: {step_code}")
+    else:
+        create_name = f"gml_Object_{info['obj']}_Step_0"
+        cmd_create_script(game_file, create_name, block)
+        print(f"  ✅ 已创建 Step 事件: {create_name}")
+
+    if native and info["alarm_code"]:
+        _guard_alarm_for_instance(game_file, info["alarm_code"], new_id)
+    if once:
+        print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<50px) 说一次 '{text_key}'（对话期间锁移动）")
+    else:
+        print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<50px) 说 '{text_key}'（对话期间锁移动，走开>60px 可再触发）")
+
+
+def cmd_guard_npc_alarm(game_file: Path, obj_name: str, instance_id: int,
+                        text_key: str | None = None) -> None:
+    """Fix an existing NPC whose injected myinteract trigger overlaps with the
+    native readable dialogue.
+
+    Automates the manual two-step fix:
+    1. Prepends `if (id == N) exit;` to the effective Alarm_0 entry (idempotent).
+    2. If --text-key is given, rewrites the object's Step trigger to the flag-state
+       machine (removing the myinteract conflict).
+    """
+    print("--- guard-npc-alarm ---")
+    info = _query_npc_target(game_file, obj_name)
+    if info is None:
+        raise NotFoundError(f"对象未找到: {obj_name}")
+
+    if not info["alarm_code"]:
+        print("警告: 未找到 Alarm_0 代码条目，无法加守卫", file=sys.stderr)
+    else:
+        _guard_alarm_for_instance(game_file, info["alarm_code"], instance_id)
+
+    if text_key:
+        print(f"→ 改写 Step 触发为 flag 状态机 (实例 {instance_id}, key {text_key})...")
+        _ensure_var_initialized(game_file, info["obj"], "deterline_state")
+        block = _build_npc_step_block(instance_id, text_key, 0, 0, native=True)
+        step_code = info["step_code"]
+        if step_code:
+            _replace_step_code(game_file, step_code, instance_id, block)
+            print(f"  ✅ 已改写: {step_code}")
+        else:
+            create_name = f"gml_Object_{info['obj']}_Step_0"
+            cmd_create_script(game_file, create_name, block)
+            print(f"  ✅ 已创建: {create_name}")
+    print("  ✅ 完成")
+
+
+def _replace_step_code(game_file: Path, code_name: str, instance_id: int, new_block: str) -> None:
+    """Replace a Step event's code, keeping only lines not owned by this instance's
+    previous injected trigger (guarded by `if (id == N)`)."""
+    lines = _decompile_to_lines(game_file, code_name)
+    if lines is None:
+        return
+    kept: list[str] = []
+    skip_block = False
+    depth = 0
+    for ln in lines:
+        stripped = ln.strip()
+        if f"if (id == {instance_id})" in stripped:
+            skip_block = True
+            depth = 0
+            continue
+        if skip_block:
+            for ch in stripped:
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+            if depth <= 0:
+                skip_block = False
+            continue
+        kept.append(ln)
+    new_gml = "\n".join(kept).rstrip() + "\n" + new_block
+    _replace_code_entry(game_file, code_name, new_gml)
+
+
+def _replace_code_entry(game_file: Path, code_name: str, gml_source: str) -> None:
+    """Replace a code entry's full GML via QueueReplace."""
+    esc = _csx_escape(code_name)
+    verb = _csx_verbatim_escape(gml_source)
+    csx = f'''
+var code = Data.Code.ByName("{esc}");
+if (code == null) {{
+    ScriptMessage("ERROR: Code entry not found: {esc}");
+    return;
+}}
+try {{
+    CodeImportGroup importGroup = new(Data)
+    {{
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace(code, @"{verb}");
+    importGroup.Import();
+    ScriptMessage("OK: Replaced " + "{esc}" + " (len " + @"{verb}".Length + ")");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+}}
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
             print(line)
 
 
@@ -3670,9 +4305,29 @@ ScriptMessage("Sprite: " + (obj.Sprite?.Name?.Content ?? "(none)"));
 ScriptMessage("Sprite Size: " + (obj.Sprite?.Width ?? 0) + "x" + (obj.Sprite?.Height ?? 0));
 ScriptMessage("Visible: " + obj.Visible + " | Solid: " + obj.Solid);
 ScriptMessage("Depth: " + obj.Depth + " | Persistent: " + obj.Persistent);
-ScriptMessage("Parent: " + (obj.ParentId?.Name?.Content ?? "(none)"));
 ScriptMessage("TextureMask: " + (obj.TextureMaskId?.Name?.Content ?? "(none)"));
 ScriptMessage("Physics: " + obj.UsesPhysics);
+// Full inheritance chain (walk ParentId to root)
+var chainNames = new List<string>();
+var chainCur = obj;
+int chainGuard = 0;
+bool nativeInteractable = false;
+while (chainCur != null && chainGuard < 30)
+{{
+    string cn = chainCur.Name?.Content ?? "(unknown)";
+    chainNames.Add(cn);
+    if (cn == "obj_interactable" || cn == "obj_readablesolid") nativeInteractable = true;
+    chainCur = chainCur.ParentId;
+    chainGuard++;
+}}
+ScriptMessage("Parent Chain: " + string.Join(" → ", chainNames));
+if (nativeInteractable)
+{{
+    ScriptMessage("WARN: 原生交互对象 (继承 obj_readablesolid/obj_interactable)");
+    ScriptMessage("     该对象有原生 Z 键/触碰交互系统 (myinteract → alarm[0] → Alarm_0 默认对话)。");
+    ScriptMessage("     用 myinteract 做距离触发会与默认对话重叠 → 改用 flag 状态机 + 守卫 Alarm_0，");
+    ScriptMessage("     或直接用 npc-dialogue / guard-npc-alarm 命令。");
+}}
 int evtCount = 0;
 for (int e = 0; e < obj.Events.Count; e++) {{
     var evtList = obj.Events[e];
@@ -4439,6 +5094,16 @@ def main():
   %(prog)s --action remove-obj --value "room_asrielroom" --instance 113930 --file data_win
   %(prog)s --action remove-obj --value "room_asrielroom" --key "obj_dummy1" --all --file data_win
 
+  # Safe NPC dialogue (one-shot: spawn + textdata + flag-state trigger + Alarm_0 guard)
+  %(prog)s --action npc-dialogue --value "room_torielroom" --key "obj_cactus" --x 170 --y 180 --text-key "obj_cactus_deterline" --text "* Stay determined!/%%" --file data_win
+  # Guard an existing NPC whose myinteract trigger overlaps native dialogue
+  %(prog)s --action guard-npc-alarm --key "obj_cactus" --instance 113927 --text-key "obj_cactus_deterline" --file data_win
+  # Single-trigger NPC dialogue (locks player movement during talk, triggers once)
+  %(prog)s --action npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi!/%%" --once --file data_win
+  # Check for corrupted variable NameStringID (crash trap), --fix to repair
+  %(prog)s --action verify-nsid --file data_win
+  %(prog)s --action verify-nsid --fix --file data_win
+
   # Code append/prepend (新增，无需完全替换)
   %(prog)s --action append-code --key "gml_Object_obj_dummy1_Step_0" --value "if (global.flag[510]==99) instance_destroy();" --file data_win
   %(prog)s --action prepend-code --key "gml_Object_obj_dummy1_Step_0" --value "// custom code here" --file data_win
@@ -4490,8 +5155,9 @@ def main():
                                   "batch-add-textentry",
                                   "guided-add-dialogue",
                                  "search-vars", "create-script",
-                                  "room-objects", "search-sctext",
-                                   "spawn-obj", "remove-obj",
+                                   "room-objects", "search-sctext",
+                                    "spawn-obj", "remove-obj",
+                                    "npc-dialogue", "guard-npc-alarm",
                                    "quest-init", "quest-status",
                                    "sandbox-restore",
                                    "list-sprites", "search-sprite",
@@ -4507,13 +5173,14 @@ def main():
                                     "set-room-bg", "set-room-prop", "set-room-view",
                                     "list-game-bgs", "create-bg-asset",
                                     "gml-bg",
-                                    "remove-tile",
-                                    "handler-extract",
-                                    "create-door",
-                                    "list-doors",
-                                    "remove-door",
-                                    "create-pit",
-                                    "create-battle"])
+                                     "remove-tile",
+                                     "handler-extract",
+                                     "create-door",
+                                     "list-doors",
+                                     "remove-door",
+                                     "create-pit",
+                                     "create-battle",
+                                     "verify-nsid"])
     parser.add_argument("--key", help="键名或数字索引 (file0 用数字)")
     parser.add_argument("--value", help="要设置/搜索的值 (set/find 操作必需)")
     parser.add_argument("--old", help="replace-string 的旧文本")
@@ -4552,6 +5219,10 @@ def main():
                         help="头像表情 (Sans: 0=普通, 1=轻笑, 2=眨眼, 3=慢眨眼, 4=无眼)")
     parser.add_argument("--flag", type=int, default=None,
                         help="flag 索引 (quest-init 用, 默认 510)")
+    parser.add_argument("--text-key", type=str, default=None,
+                        help="textdata key (npc-dialogue/guard-npc-alarm 用)")
+    parser.add_argument("--text", type=str, default=None,
+                        help="对话内容 ASCII (npc-dialogue 用)")
     parser.add_argument("--frame", type=int, default=None,
                         help="帧索引 (export-sprite/replace-sprite 用, 默认全部/0)")
     parser.add_argument("--show-diff", action="store_true",
@@ -4568,6 +5239,10 @@ def main():
                         help="每次写入操作前自动创建实验快照")
     parser.add_argument("--apply", action="store_true",
                         help="应用模式 (handler-extract 用, 默认仅诊断)")
+    parser.add_argument("--once", action="store_true",
+                        help="单次触发 + 对话期间锁移动 (npc-dialogue 用)")
+    parser.add_argument("--fix", action="store_true",
+                        help="自动修复 (verify-nsid 用: 重置损坏变量的 NameStringID)")
 
     # Room editing (P4-2)
     parser.add_argument("--width", type=int, default=None,
@@ -4735,6 +5410,20 @@ def main():
                 if args.value is None or args.key is None:
                     parser.error("--value (房间名) 和 --key (对象名) 是必需的")
                 cmd_spawn_obj(game_file, args.value, args.key, args.x, args.y)
+            elif args.action == "npc-dialogue":
+                if args.value is None or args.key is None:
+                    parser.error("--value (房间名) 和 --key (对象名) 是必需的")
+                if args.text_key is None or args.text is None:
+                    parser.error("--text-key (textdata key) 和 --text (对话内容) 是必需的")
+                cmd_npc_dialogue(game_file, args.value, args.key, args.x, args.y,
+                                 args.text_key, args.text,
+                                 face=args.face, emotion=args.emotion, once=args.once)
+            elif args.action == "guard-npc-alarm":
+                if args.key is None or args.instance is None:
+                    parser.error("--key (对象名) 和 --instance (实例 ID) 是必需的")
+                cmd_guard_npc_alarm(game_file, args.key, args.instance, text_key=args.text_key)
+            elif args.action == "verify-nsid":
+                cmd_verify_nsid(game_file, fix=args.fix)
             elif args.action == "create-door":
                 if args.value is None or args.key is None:
                     parser.error("--value (当前房间名) 和 --key (目标房间名) 是必需的")
@@ -4971,8 +5660,13 @@ def main():
                 if not args.value:
                     parser.error("--value 是必需的 (快照标签)")
                 cmd_experiment_restore(save_dir, args.value)
-            else:
+            elif args.action == "reset-flags":
                 cmd_reset_flags(save_dir)
+            else:
+                parser.error(
+                    f"'{args.action}' 仅支持 --file data_win (游戏数据) 操作；"
+                    f"ini/file0 模式不适用该命令"
+                )
     except (FileNotFoundError, ValueError, DeterlineError) as e:
         print(f"错误: {e}", file=sys.stderr)
         sys.exit(1)

@@ -84,10 +84,17 @@
 → 头像表情（Sans）：
    0=普通 1=轻笑 2=眨眼 3=慢眨眼 4=无眼
 
+→ 触发方式（NPC 靠近说话）：
+   1. 可重复（默认）：对话期间锁移动，走开(>60px)再靠近可再次触发
+   2. 单次：只触发一次，对话期间锁移动（--once）
+
 → 也添加到 textdata_en 映射表？(Y/n)
 
 → [确认] 执行
 ```
+
+> ⚠️ 两种触发方式都会**锁移动**（`global.interact=1`），头像/文字不会与文本框错位。
+> 默认按 Z 关闭对话后需走开才能再触发，不会立即重触发。
 
 ⚠️ **Agent 推荐使用 `guided-add-dialogue` 命令**替代手拼参数：
 ```bash
@@ -104,6 +111,8 @@ python run.py --action guided-add-dialogue \
 | 添加文本到 STRG | `add-string --value "..." --file data_win` | 实验 1 ✅ |
 | 注册到 textdata_en | `add-textentry --key "K" --value "V" --face N --emotion N --file data_win` | 实验 8 ✅ |
 | **引导式添加** | `guided-add-dialogue --key "K" --value "V" --face N --emotion N --file data_win` | 2026-07-28 ✅ |
+| **NPC 靠近说话（可重复）** | `npc-dialogue --value "room_xxx" --key "obj_xxx" --x N --y N --text-key "K" --text "* .../%%" --face N --emotion N --file data_win` | 锁移动 + 走开重置 ✅ |
+| **NPC 靠近说话（单次）** | `npc-dialogue ... --once --file data_win` | 锁移动 + 永久一次 ✅ |
 | 批量导入 | `batch-add-textentry --value ./dialogues.json --file data_win` | P3 ✅ |
 | 搜索已有 | `search-textdata --value "keyword" --file data_win` | 实验 8 ✅ |
 | ASCII 校验 | `_validate_ascii_text()` | 2026-07-28 新增 ✅ |
@@ -350,7 +359,8 @@ Step 6/6 — 确认总览 → 执行
 | 阶段 | 功能 | 实现方式 |
 |------|------|---------|
 | 对话 | `add-textentry` 注册多段对话 | `scr_gettext("key")` 读取 |
-| NPC | `spawn-obj` 生成 + `append-code` 注入距离触发 | Step 事件 `point_distance` |
+| NPC | `npc-dialogue` 一键生成（推荐）| 加对话 + spawn + flag 状态机触发 + 自动守卫 Alarm_0 |
+| NPC（手动） | `spawn-obj` + `append-code` 注入距离触发 | Step 事件 `point_distance`（原生 readable 对象须用 `deterline_state` 状态机 + `Alarm_0` 守卫，勿用 `myinteract`） |
 | 传送 | `create-door` 双向门 | `room_goto` + `global.deterline_pending_*` 出生点 |
 | 战斗 | `create-battle` | `global.battlegroup` + `obj_battleblcon` |
 | 条件 | `global.flag[510/511]` 状态机 | `quest-init/status` |
@@ -416,6 +426,10 @@ create-bg-asset --value bg_xxx --image bg.png --file data_win
 create-door --value cur_room --key target_room --x 160 --y 120 --spawn-x 320 --spawn-y 240 --file data_win
 list-doors --value room_xxx --file data_win
 remove-door --value room_xxx --x 160 --y 120 --file data_win
+
+# NPC 对话（安全，自动处理原生 readable 冲突）
+npc-dialogue --value room_xxx --key obj_cactus --x 170 --y 180 --text-key "obj_cactus_hi" --text "* Hi/%%" --file data_win
+guard-npc-alarm --key obj_cactus --instance 113927 --file data_win
 
 # 战斗
 create-battle --value room_xxx --key 40 --x 200 --y 120 --file data_win
