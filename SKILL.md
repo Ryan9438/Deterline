@@ -202,6 +202,19 @@ deterline/
 | `search-vars --value "global.flag"` | **在所有 6272 个脚本中搜索变量引用** |
 | `room-objects --value "torielroom"` | **列出房间内的全部对象实例** |
 
+### 🏗️ 房间编辑与选房规则（`--file data_win`）
+
+> ⚠️ **强制规则（必须遵守）**：用户要求自定义/新建房间时，**禁止 `create-room` 新建房间序号**（游戏运行时无法识别新增房间）。只能**修改已有房间**。房间选择必须查阅 **`ROOMS_GUIDE.md`**（Deterline 目录下，336 个房间全量分类清单）。
+>
+> 选房规则：
+> 1. 用户要求**加背景/视差** → 必须选 **B 类**（有背景图，可注入 GML 视差）；横长房（W>320）优先，小房（320×240）视角静止看不到视差
+> 2. 用户要求**纯地板场景** → 选 **C 类**（纯 Tile 地板）
+> 3. 提供候选时列出房间号 + 尺寸 + 中文名，供用户挑选，不得擅自决定
+> 4. 用户要求**加背景时**，必须询问：是否要背景视差？视差速度（speedx）多少？（默认 0.3）
+> 5. 唯一自带原生视差的房间：`room_lastruins_corridor`（230，A 类），可作参考
+>
+> 常用房间编辑命令见下表；分类详见 ROOMS_GUIDE.md。
+
 ### 🏗️ 房间布局编辑（`--file data_win`）
 
 在任意房间生成或移除游戏对象实例，不限于原本就在该房间的对象。
@@ -219,6 +232,7 @@ deterline/
 | `npc-choice ... --repeat` | 可重复触发（走开 >60px 再靠近可再触发） |
 | `guard-npc-alarm --key "obj_cactus" --instance 113927` | 给已有冲突 NPC 补 `Alarm_0` 守卫（幂等） |
 | `verify-nsid` | 检查损坏变量 NameStringID（读取会崩溃的陷阱）；`--fix` 自动修复 |
+| `verify-instances` | 检查全房间实例 ID 异常（ID=0 / 重复 / 空对象 / Nonexistent）；`--fix` 为 ID=0/重复实例自动分配唯一 ID |
 
 注意事项：
 - 修改的是 `game.ios/data.win` 中的房间布局数据，不是存档
@@ -226,6 +240,7 @@ deterline/
 - 建议操作后用 `set --key Room --value 房间ID` 传送触发刷新
 - 用 `room-objects` 查看实例 ID 后再 `remove-obj --instance`
 - 生成的实例保留完整的对象行为（碰撞、事件、交互、AI）
+- **新增实例必须唯一非 0 的 InstanceID**：多个实例 ID=0 会共享 per-instance 变量表 → Create 事件写入（`phase`、`image_xscale` 等）不生效 → 读 `other.<变量>` 崩溃 + 布局异常（漏口）。ad-hoc CSX 直接 `new UndertaleRoom.GameObject()` 必须设 `InstanceID = Data.GeneralInfo.LastObj++`；工具命令（spawn-obj/npc-dialogue/create-door 等）已自动处理。操作后用 `verify-instances` 检查
 - `npc-dialogue` / `npc-choice` 一律用 `deterline_state` 状态机（普通对象与原生 readable 对象都安全），原生 readable 对象额外加 `Alarm_0` 守卫（自动在 Create 事件初始化 `deterline_state = 0;`，防止 NSID 损坏崩溃）
 - **默认触发行为**：靠近(<50px，可用 `--range` 调)触发，对话期间**锁移动**（`global.interact=1`，头像/文字不会与文本框错位），按 Z 关闭后**不会立即重触发**，需**走开(>60px) 再靠近**才能再次触发。需要"只看一次"用 `--once`（npc-choice 默认即单次）
 - `npc-choice` 的 `--text` 必须是含 `\C ` 的 3 行以内选择文本（`"* 提问& &         Yes         No      \C "`）；YES/NO 分支文本**不得含 `\C`**（命令行会自动校验，`npc-dialogue` 遇到 `\C` 文本会报错并引导改用 npc-choice）
@@ -254,7 +269,7 @@ deterline/
 
 | 命令 | 功能 |
 |------|------|
-| `create-room --value "room_myarea" --width 640 --height 480` | 创建新房间（View 自动 320×240） |
+| ~~`create-room`~~ | **❌ 废弃：禁止新建房间序号**（游戏运行时无法识别新增房间，曾导致传送进错房间遇神烦狗）。只能修改已有房间，选房见 ROOMS_GUIDE.md |
 | `room-info --value room_myarea` | 显示房间全部属性 |
 | `set-room-prop --value room_myarea --caption "标题"` | 修改房间属性（可选 `--width`/`--height`/`--speed`） |
 | `set-room-view --view-w 320 --view-h 240 --port-w 640 --port-h 480 --follow obj_mainchara` | 配置摄像机 |
@@ -788,6 +803,14 @@ if (deterline_state == 2 && distance_to_object(obj_mainchara) >= 60)
 - 决定性复现：创建含变量的脚本(NSID 正确) → 覆盖为不含变量的空代码(occ=0, NSID=0) → 再引用(NSID 仍=0)
 - **修复**：在 Create 事件初始化 `deterline_state = 0;`（变量永远被引用，NSID 不再损坏）；或 `verify-nsid --fix` 把 NameStringID 重置为正确 STRG 索引
 - 教训：**新实例变量必须先在 Create 事件初始化**；注入后跑 `verify-nsid` 验证
+
+### 实验 16：房间实例 InstanceID=0 陷阱（崩溃 + 布局异常根因）
+- 现象：条纹实验室（room_tundra_dangerbridge）靠近天花板/底部 solid 即崩（`other.phase` 未设置 @ Collision_822），且底部 x=160 处 100px 漏口可穿出房间
+- 根因：ad-hoc CSX 用 `new UndertaleRoom.GameObject() { ObjectDefinition=..., X=..., Y=... }` 未设 `InstanceID` → 37 个实例全部 ID=0 → GM 按实例 ID 管理 per-instance 变量表 → 全部实例共用一个变量槽 → Create 事件写入的 `phase`/`image_xscale` 未落到碰撞实例 → 读 `other.phase` 崩溃 + solid 未撑开成 400px（漏口）
+- 排查链：反汇编确认 `other.phase`（100467）→ 当前文件 Create 事件与干净原版逐字节一致 → 全备份都有正确 wiring → 对照原版排除 scale 覆盖 → 唯一异常 = 37 实例 ID 全 0（全游戏唯一 ID=0 的房间）
+- **修复**：给 37 实例分配唯一 ID（`Data.GeneralInfo.LastObj++`）并同步 `LastObj`，实测恢复正常
+- 工具防护：`verify-instances` 命令全房间体检 + `--fix` 自动修；spawn-obj/npc-dialogue/create-door/create-pit/create-battle 保存时自动告警 ID 异常；`room-info`/`room-objects` 对 ID=0/重复实例标 `⚠️`
+- 教训：**新增房间实例必须设唯一非 0 的 InstanceID**；排查"Create 事件正确却不生效"先查实例 ID；ad-hoc CSX 禁止裸 `new GameObject()` 不设 ID
 
 ### 实验 A：Sans 走路变红（纹理替换管线验证）
 - `export-sprite` → PIL 红蓝通道互换 → `replace-sprite`

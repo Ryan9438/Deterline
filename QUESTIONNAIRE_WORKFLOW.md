@@ -134,12 +134,20 @@ python run.py --action guided-add-dialogue \
 
 ---
 
-## 3. 🏗️ 造房间
+## 3. 🏗️ 造房间（改造已有房间）
+
+> ⚠️ **强制规则：禁止新建房间序号**（`create-room` 已废弃）。
+> 游戏运行时**无法识别新增房间**，`create-room` 创建的房间会因找不到而传送进错房间、遇神烦狗。
+> 因此"造房间"= **选择游戏里已有的房间进行改造**。选房必须查阅 **`ROOMS_GUIDE.md`**（336 个房间全量分类清单）。
 
 ### 问卷流程
 
 ```
-→ 房间内部名：room_xxx
+→ 房间内部名（从 ROOMS_GUIDE.md 选已有房间，禁止新造）：room_xxx
+→ 选房规则：
+   1. 要背景/视差 → 选 B 类（横长可滚动 W>320 最佳）
+   2. 要纯 Tile 地板 → 选 C 类
+   ※ 提供候选时列出房间号 + 尺寸 + 中文名，让用户挑选
 → 尺寸：宽 ___ 高 ___ (默认 640x480)
 → 标题（中文/英文）：___
 → 背景色（hex）：___ (默认 000000)
@@ -160,25 +168,29 @@ python run.py --action guided-add-dialogue \
 → [确认] 执行
 ```
 
-### 实现路径
+### 实现路径（改造已有房间，已验证）
 
 | 步骤 | CLI 命令 | 实验验证 |
 |------|---------|---------|
-| 创建房间 | `create-room --value room_xxx --width W --height H --caption "名称" --bg-color "hex" --file data_win` | P4-2 ✅ |
-| 自动注册 rooms.json | `create-room` 自动调用 `_update_rooms_json()` | P4-2 ✅ |
+| 选择已有房间 | 查 `ROOMS_GUIDE.md`（禁止 `create-room` 新建） | ✅ |
+| 清空房间 | `remove-obj --value room_xxx --key <obj> --all` + `remove-tile --value room_xxx` | 实验 D ✅ |
+| 设置房间尺寸 | `set-room-prop --value room_xxx --width W --height H --caption "名称" --file data_win`（房间 > View 才有滚动空间） | P4-2 ✅ |
+| 设置视角 | `set-room-view --value room_xxx --index 0 --view-w 320 --view-h 240 --port-w 640 --port-h 480 --follow obj_mainchara --file data_win` | P4-2 ✅（View=320 关键） |
 | 生成背景图 | `bg_generator.py --pattern gradient --colors "#R,#G,#B" --output bg.png` | P4-2 ✅ |
 | 生成棋盘 | `bg_generator.py --pattern checkerboard --colors "#A,#B" --tile-size 32 --output floor.png` | P4-2 ✅ |
 | 创建背景资源 | `create-bg-asset --value "bg_xxx" --image "bg.png" --file data_win` | P4-2 ✅ |
 | 注入运行时背景 | `gml-bg --value room_xxx --bg "bg_xxx" --slot 0 --speedx 0.15 --speedy 0 --file data_win` | P4-2 ✅ |
-| 设置视角 | `set-room-view --value room_xxx --index 0 --view-w 320 --view-h 240 --follow obj_mainchara --file data_win` | P4-2 ✅（View=320 关键） |
-| 设置房间属性 | `set-room-prop --value room_xxx --caption "名称" --width W --height H --file data_win` | P4-2 ✅ |
-| 移除对象/Tile | CSX 直接操作 `room.GameObjects` / `room.Tiles` | 实验 D ✅ |
+| 放置主角+碰撞 | `spawn-obj --value room_xxx --key obj_mainchara --x X --y Y` + 碰撞墙 | ✅ |
+| 铺设 Tile 地面 | CSX 直接操作 `room.Tiles`（直接改已有房间的 Tile） | 实验 D ✅ |
+| 进入房间验证 | `set --key Room "<房间ID>"`（必须用 game.ios 中已存在的房间） | ✅ |
 
 ### ⚠️ 已知限制
 
-- **Tile 房间背景不可用**：`gml-bg` 在 Tile 房间（如 `room_ruins7A`）无效。详见 PROJECT_SUMMARY "房间渲染类型" 章节
+- **禁止 `create-room`**：新建房间序号游戏运行时无法识别，会导致传送进错房间遇神烦狗
+- **Tile 房间背景不可用**：`gml-bg` 在 C 类 Tile 房间（8 层背景全 disabled）无效，渲染器跳过背景绘制。需先 `set-room-bg --enable true` 启用某层使其变 B 类，再注入 `gml-bg`
 - **背景房间需要 backgrounder 对象**：需手动 `spawn-obj` 放置背景控制器
 - **View 必须 320×240**：port 640×480，2x 缩放。View=640×480 破坏视角跟随
+- **`set --key Room` 只能填 game.ios 中已存在的房间号**：写入不存在的房间会触发运行时错误（神烦狗）
 
 ---
 
@@ -418,10 +430,9 @@ add-textentry --key "K" --value "V" --face 3 --emotion 0 --file data_win
 search-textdata --value "keyword" --file data_win
 batch-add-textentry --value ./file.json --file data_win
 
-# 房间
-create-room --value room_xxx --width 640 --height 480 --caption "名称" --file data_win
-set-room-view --value room_xxx --index 0 --view-w 320 --view-h 240 --file data_win
-gml-bg --value room_xxx --bg bg_xxx --slot 0 --speedx 0.15 --file data_win
+# 房间（只改已有房间，禁止 create-room 新建）
+set-room-view --value room_tundra_town --index 0 --view-w 320 --view-h 240 --file data_win
+gml-bg --value room_tundra_town --bg bg_xxx --slot 0 --speedx 0.15 --file data_win
 create-bg-asset --value bg_xxx --image bg.png --file data_win
 
 # 传送门

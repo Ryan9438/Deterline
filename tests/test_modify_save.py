@@ -169,5 +169,54 @@ class TestItemsDict(unittest.TestCase):
         self.assertEqual(ms.ITEMS[48], "牛仔帽")
 
 
+class TestInstancesCheckSnippet(unittest.TestCase):
+    def test_returns_csharp_snippet(self):
+        s = ms._instances_check_snippet()
+        # References the in-scope `room` variable and only reports (no writes).
+        self.assertIn("foreach (var _chkG in room.GameObjects)", s)
+        self.assertIn("_chkZero", s)
+        self.assertIn("_chkDup", s)
+        self.assertIn("WARN_INSTANCES:", s)
+        # Must never mutate (no write patterns: no LastObj bump, no reassignment).
+        self.assertNotIn("Data.GeneralInfo", s)
+        self.assertNotIn("nextId", s)
+        self.assertNotIn("LastObj", s)
+        self.assertNotIn("= nextId", s)
+
+
+class TestParseInstanceAudit(unittest.TestCase):
+    def test_clean_output(self):
+        out = ("VERIFY_INSTANCES:bad=0 zero=0 dup=0 null=0 nonexist=0 fixed=0\n")
+        info = ms._parse_instance_audit(out)
+        self.assertEqual(info["bad"], 0)
+        self.assertEqual(info["fixed"], 0)
+        self.assertEqual(info["bad_lines"], [])
+
+    def test_parses_bad_lines_and_counts(self):
+        out = (
+            "BAD_INSTANCE: room='room_tundra_dangerbridge' obj=obj_solidwide "
+            "id=0 x=0 y=160 zero=True dup=False null=False nonexist=False\n"
+            "BAD_INSTANCE: room='r2' obj=obj_solidsmall id=7 x=1 y=2 "
+            "zero=False dup=True null=False nonexist=False\n"
+            "VERIFY_INSTANCES:bad=2 zero=1 dup=1 null=0 nonexist=0 fixed=0\n"
+        )
+        info = ms._parse_instance_audit(out)
+        self.assertEqual(info["bad"], 2)
+        self.assertEqual(info["zero"], 1)
+        self.assertEqual(info["dup"], 1)
+        self.assertEqual(info["fixed"], 0)
+        self.assertEqual(len(info["bad_lines"]), 2)
+        self.assertIn("obj=obj_solidwide", info["bad_lines"][0])
+
+    def test_parses_warn(self):
+        out = "WARN_INSTANCES:zero=0 dup=1 (room=r1)\n"
+        info = ms._parse_instance_audit(out)
+        self.assertEqual(info["warn"], "zero=0 dup=1 (room=r1)")
+
+    def test_no_verify_line_returns_none(self):
+        info = ms._parse_instance_audit("some other output\n")
+        self.assertIsNone(info["bad"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2023,9 +2023,13 @@ for (int r = 0; r < Data.Rooms.Count; r++) {{
     if (room.Name.Content.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0) {{
         found = true;
         ScriptMessage("Room[" + r + "]: " + room.Name.Content);
+        var _seenIds = new System.Collections.Generic.HashSet<uint>();
         foreach (var go in room.GameObjects) {{
             string objName = go.ObjectDefinition?.Name?.Content ?? "(unknown)";
-            ScriptMessage("  [" + go.InstanceID + "] " + objName + " at (" + go.X + "," + go.Y + ")");
+            string idMark = "";
+            if (go.ObjectDefinition != null && (go.InstanceID == 0 || !_seenIds.Add(go.InstanceID)))
+                idMark = "  ⚠️ ID=0/重复";
+            ScriptMessage("  [" + go.InstanceID + "] " + objName + " at (" + go.X + "," + go.Y + ")" + idMark);
             // Show code events for this object
             string objDefName = "gml_Object_" + objName + "_";
             bool hasAny = false;
@@ -2147,7 +2151,16 @@ foreach (var go in room.GameObjects) {{
 }}
 if (nearCount > 0) ScriptMessage("(found " + nearCount + " objects within " + nearThreshold + "px)");
 
-uint newId = Data.GeneralInfo.LastObj++;
+ulong _maxInstId = 0;
+foreach (var _r in Data.Rooms)
+{{
+    foreach (var _g in _r.GameObjects)
+    {{
+        if (_g.InstanceID > _maxInstId) _maxInstId = _g.InstanceID;
+    }}
+}}
+uint newId = (uint)(System.Math.Max((long)Data.GeneralInfo.LastObj, (long)_maxInstId) + 1);
+Data.GeneralInfo.LastObj = newId;
 room.GameObjects.Add(new UndertaleRoom.GameObject() {{
     InstanceID = newId,
     ObjectDefinition = objDef,
@@ -2159,6 +2172,7 @@ string rName = room.Name?.Content ?? "(unknown)";
 ScriptMessage("OK: Spawned [" + newId + "] " + objName + " in " + rName + " at ({x}, {y})");
 ScriptMessage("SPAWN_RESULT:" + newId + ":" + (objNativeInteract ? "1" : "0"));
 '''
+    csx += _instances_check_snippet()
     out = _run_utmt(csx, game_file, save=True)
     new_id: int | None = None
     for line in _parse_msg(out):
@@ -2698,6 +2712,58 @@ try {{
     return ok
 
 
+def _instances_check_snippet() -> str:
+    """Return a C# snippet that audits the in-scope `room` for invalid instance IDs.
+
+    Appended to the CSX of room-write commands (spawn/door/pit/battle) so that any
+    operation adding instances reports ID=0 / duplicate-ID problems immediately,
+    without an extra UTMT round-trip.  Only reports — never mutates.  The `room`
+    variable must be non-null at the point of insertion.
+    """
+    return r'''
+// --- instance ID audit (experiment 19: ID=0/duplicate breaks per-instance vars) ---
+int _chkZero = 0;
+int _chkDup = 0;
+var _chkSeen = new System.Collections.Generic.HashSet<uint>();
+foreach (var _chkG in room.GameObjects)
+{
+    if (_chkG.ObjectDefinition == null) continue;
+    if (_chkG.InstanceID == 0) { _chkZero++; }
+    else if (!_chkSeen.Add(_chkG.InstanceID)) { _chkDup++; }
+}
+if (_chkZero > 0 || _chkDup > 0)
+{
+    ScriptMessage("WARN_INSTANCES:zero=" + _chkZero + " dup=" + _chkDup + " (room=" + room.Name.Content + ")");
+    ScriptMessage("  提示: 实例 ID=0/重复会使 per-instance 变量表冲突(Create 写入不生效 → 崩溃/漏口)。");
+    ScriptMessage("  请运行: --action verify-instances --fix --file data_win");
+}
+'''
+
+
+def _parse_instance_audit(output: str) -> dict:
+    """Parse VERIFY_INSTANCES / BAD_INSTANCE / WARN_INSTANCES output into a dict.
+
+    Keys: bad (int|None), zero, dup, null, nonexist, fixed, bad_lines (list).
+    """
+    result: dict = {"bad": None, "zero": 0, "dup": 0, "null": 0, "nonexist": 0,
+                    "fixed": 0, "bad_lines": []}
+    for line in _parse_msg(output):
+        if line.startswith("BAD_INSTANCE:"):
+            result["bad_lines"].append(line[len("BAD_INSTANCE:"):])
+        elif line.startswith("VERIFY_INSTANCES:"):
+            body = line[len("VERIFY_INSTANCES:"):]
+            parts = dict(p.split("=") for p in body.split() if "=" in p)
+            result["bad"] = int(parts.get("bad", 0))
+            result["zero"] = int(parts.get("zero", 0))
+            result["dup"] = int(parts.get("dup", 0))
+            result["null"] = int(parts.get("null", 0))
+            result["nonexist"] = int(parts.get("nonexist", 0))
+            result["fixed"] = int(parts.get("fixed", 0))
+        elif line.startswith("WARN_INSTANCES:"):
+            result["warn"] = line[len("WARN_INSTANCES:"):]
+    return result
+
+
 def cmd_verify_nsid(game_file: Path, fix: bool = False) -> None:
     """Check for variables with corrupted NameStringID (0 while referenced).
 
@@ -2753,6 +2819,88 @@ ScriptMessage("VERIFY_NSID:bad=" + bad + " fixed=" + fixedCnt);
             print(f"⚠️ verify-nsid: 发现 {bad} 个损坏变量，已修复 {fixed} 个")
         else:
             print(f"⚠️ verify-nsid: 发现 {bad} 个损坏变量（用 --fix 自动修复）")
+
+
+def cmd_verify_instances(game_file: Path, fix: bool = False) -> None:
+    """Check every room for instances with invalid IDs (0 or duplicate).
+
+    Such instances break GameMaker's per-instance variable tables: the Create
+    event's writes (e.g. phase, image_xscale) don't land on the colliding
+    instance, causing crashes (reading other.<var> unset) and visual leaks
+    (unscaled solids).  By default reports; with --fix, reassigns unique IDs
+    to ID=0/duplicate instances.  Null-ObjectDefinition / Nonexistent instances
+    are reported only (cannot be auto-fixed).
+    """
+    fix_csx = "true" if fix else "false"
+    csx = f'''
+// Verify / fix room instance IDs across all rooms (experiment 19)
+ulong maxUsed = 0;
+var used = new System.Collections.Generic.HashSet<uint>();
+foreach (var room in Data.Rooms)
+{{
+    foreach (var g in room.GameObjects)
+    {{
+        if (g.InstanceID != 0)
+        {{
+            used.Add(g.InstanceID);
+            if (g.InstanceID > maxUsed) maxUsed = g.InstanceID;
+        }}
+    }}
+}}
+uint nextId = (uint)(System.Math.Max((long)Data.GeneralInfo.LastObj, (long)maxUsed) + 1);
+
+int badZero = 0, badDup = 0, badNull = 0, badNonexist = 0, fixedCnt = 0;
+var local = new System.Collections.Generic.HashSet<uint>();
+foreach (var room in Data.Rooms)
+{{
+    local.Clear();
+    string roomName = room.Name?.Content ?? "(unnamed)";
+    foreach (var g in room.GameObjects)
+    {{
+        string objName = g.ObjectDefinition?.Name?.Content ?? "(null)";
+        bool idZero = (g.InstanceID == 0);
+        bool idDup = (!idZero && !local.Add(g.InstanceID));
+        bool nullObj = (g.ObjectDefinition == null);
+        bool nonexist = g.Nonexistent;
+        if (idZero) badZero++;
+        if (idDup) badDup++;
+        if (nullObj) badNull++;
+        if (nonexist) badNonexist++;
+        if (idZero || idDup || nullObj || nonexist)
+        {{
+            ScriptMessage("BAD_INSTANCE: room='" + roomName + "' obj=" + objName + " id=" + g.InstanceID + " x=" + g.X + " y=" + g.Y + " zero=" + idZero + " dup=" + idDup + " null=" + nullObj + " nonexist=" + nonexist);
+        }}
+        if ({( "true" if fix else "false" )} && (idZero || idDup))
+        {{
+            g.InstanceID = nextId;
+            nextId++;
+            fixedCnt++;
+        }}
+    }}
+}}
+if ({( "true" if fix else "false" )})
+{{
+    Data.GeneralInfo.LastObj = nextId - 1;
+}}
+int bad = badZero + badDup + badNull + badNonexist;
+ScriptMessage("VERIFY_INSTANCES:bad=" + bad + " zero=" + badZero + " dup=" + badDup + " null=" + badNull + " nonexist=" + badNonexist + " fixed=" + fixedCnt);
+'''
+    out = _run_utmt(csx, game_file, save=fix)
+    info = _parse_instance_audit(out)
+    if info["bad"] is None:
+        print("错误: 无法解析 verify-instances 结果", file=sys.stderr)
+        return
+    for line in info["bad_lines"]:
+        print(f"  ⚠️  {line}")
+    if info["bad"] == 0:
+        print("✅ verify-instances: 无异常实例（ID=0/重复/空对象/Nonexistent 均为 0）")
+    else:
+        fix_txt = f"，已修复 ID 类 {info['fixed']} 个（null/Nonexistent 仅报告，无法自动修）" if fix \
+            else "（用 --fix 自动为 ID=0/重复实例分配唯一 ID）"
+        print(f"⚠️ verify-instances: 异常 {info['bad']} 个 "
+              f"(zero={info['zero']} dup={info['dup']} null={info['null']} "
+              f"nonexist={info['nonexist']}){fix_txt}")
+
 
 
 def _prepend_to_code(game_file: Path, code_name: str, value: str) -> None:
@@ -3177,9 +3325,13 @@ ScriptMessage("Objects:    " + (room.GameObjects?.Count ?? 0));
 ScriptMessage("Tiles:      " + (room.Tiles?.Count ?? 0));
 
 if (room.GameObjects != null) {{
+    var _seenIds2 = new System.Collections.Generic.HashSet<uint>();
     foreach (var go in room.GameObjects) {{
         string objName = go.ObjectDefinition?.Name?.Content ?? "(unknown)";
-        ScriptMessage("  [" + go.InstanceID + "] " + objName + " at (" + go.X + "," + go.Y + ")");
+        string idMark = "";
+        if (go.ObjectDefinition != null && (go.InstanceID == 0 || !_seenIds2.Add(go.InstanceID)))
+            idMark = "  ⚠️ ID=0/重复";
+        ScriptMessage("  [" + go.InstanceID + "] " + objName + " at (" + go.X + "," + go.Y + ")" + idMark);
     }}
 }}
 
@@ -3207,7 +3359,16 @@ def cmd_create_room(game_file: Path, room_name: str,
     """Create a new room with default View (follows obj_mainchara).
     IMPORTANT: View is fixed at 320x240 (port 640x480, 2x scale).
     This is Undertale's standard — View=640x480 causes perspective to break.
-    Room dimensions default to 640x480 (larger than View = scroll works)."""
+    Room dimensions default to 640x480 (larger than View = scroll works).
+    NOTE: This command is DEPRECATED — creating new room indices is FORBIDDEN.
+    The game runtime cannot recognize added rooms and will teleport the player
+    into the wrong room (annoying dog). Use existing rooms from ROOMS_GUIDE.md."""
+    raise DeterlineError(
+        "禁止新建房间序号（`create-room` 已废弃）："
+        "游戏运行时无法识别新增房间，会导致传送进错房间、遇神烦狗。"
+        "只能改造已有房间——请查阅 ROOMS_GUIDE.md 选房，"
+        "用 set-room-prop / set-room-view / gml-bg / Tile 编辑改造。"
+    )
     if width is None: width = 640
     if height is None: height = 480
     if speed is None: speed = 30
@@ -3956,7 +4117,16 @@ if (cactusSpr != null) {{
     doorObj.Sprite = cactusSpr;
 }}
 
-uint newId = Data.GeneralInfo.LastObj++;
+ulong _maxInstId = 0;
+foreach (var _r in Data.Rooms)
+{{
+    foreach (var _g in _r.GameObjects)
+    {{
+        if (_g.InstanceID > _maxInstId) _maxInstId = _g.InstanceID;
+    }}
+}}
+uint newId = (uint)(System.Math.Max((long)Data.GeneralInfo.LastObj, (long)_maxInstId) + 1);
+Data.GeneralInfo.LastObj = newId;
 room.GameObjects.Add(new UndertaleRoom.GameObject() {{
     InstanceID = newId,
     ObjectDefinition = doorObj,
@@ -3965,6 +4135,7 @@ room.GameObjects.Add(new UndertaleRoom.GameObject() {{
 }});
 ScriptMessage("OK: Door [" + newId + "] created in " + room.Name.Content + " -> " + "{esc_target}");
 '''
+    csx += _instances_check_snippet()
     out = _run_utmt(csx, game_file, save=True)
     for line in _parse_msg(out):
         if line.startswith("ERROR:"):
@@ -4111,7 +4282,16 @@ if (pitSpr != null) {{
     pitObj.Sprite = pitSpr;
 }}
 
-uint newId = Data.GeneralInfo.LastObj++;
+ulong _maxInstId = 0;
+foreach (var _r in Data.Rooms)
+{{
+    foreach (var _g in _r.GameObjects)
+    {{
+        if (_g.InstanceID > _maxInstId) _maxInstId = _g.InstanceID;
+    }}
+}}
+uint newId = (uint)(System.Math.Max((long)Data.GeneralInfo.LastObj, (long)_maxInstId) + 1);
+Data.GeneralInfo.LastObj = newId;
 room.GameObjects.Add(new UndertaleRoom.GameObject() {{
     InstanceID = newId,
     ObjectDefinition = pitObj,
@@ -4120,6 +4300,7 @@ room.GameObjects.Add(new UndertaleRoom.GameObject() {{
 }});
 ScriptMessage("OK: Pit [" + newId + "] created in " + room.Name.Content + " -> " + "{esc_target}");
 '''
+    csx += _instances_check_snippet()
     out = _run_utmt(csx, game_file, save=True)
     for line in _parse_msg(out):
         if line.startswith("ERROR:"):
@@ -4231,7 +4412,16 @@ if (markerSpr != null) {{
     batObj.Sprite = markerSpr;
 }}
 
-uint newId = Data.GeneralInfo.LastObj++;
+ulong _maxInstId = 0;
+foreach (var _r in Data.Rooms)
+{{
+    foreach (var _g in _r.GameObjects)
+    {{
+        if (_g.InstanceID > _maxInstId) _maxInstId = _g.InstanceID;
+    }}
+}}
+uint newId = (uint)(System.Math.Max((long)Data.GeneralInfo.LastObj, (long)_maxInstId) + 1);
+Data.GeneralInfo.LastObj = newId;
 room.GameObjects.Add(new UndertaleRoom.GameObject() {{
     InstanceID = newId,
     ObjectDefinition = batObj,
@@ -4240,6 +4430,7 @@ room.GameObjects.Add(new UndertaleRoom.GameObject() {{
 }});
 ScriptMessage("OK: Battle trigger [" + newId + "] in " + room.Name.Content + " (group " + {battlegroup_id} + ")");
 '''
+    csx += _instances_check_snippet()
     out = _run_utmt(csx, game_file, save=True)
     for line in _parse_msg(out):
         if line.startswith("ERROR:"):
@@ -5333,6 +5524,8 @@ def main():
   # Check for corrupted variable NameStringID (crash trap), --fix to repair
   %(prog)s --action verify-nsid --file data_win
   %(prog)s --action verify-nsid --fix --file data_win
+  %(prog)s --action verify-instances --file data_win
+  %(prog)s --action verify-instances --fix --file data_win
 
   # Code append/prepend (新增，无需完全替换)
   %(prog)s --action append-code --key "gml_Object_obj_dummy1_Step_0" --value "if (global.flag[510]==99) instance_destroy();" --file data_win
@@ -5411,7 +5604,7 @@ def main():
                                      "remove-door",
                                      "create-pit",
                                      "create-battle",
-                                     "verify-nsid"])
+                                     "verify-nsid", "verify-instances"])
     parser.add_argument("--key", help="键名或数字索引 (file0 用数字)")
     parser.add_argument("--value", help="要设置/搜索的值 (set/find 操作必需)")
     parser.add_argument("--old", help="replace-string 的旧文本")
@@ -5489,7 +5682,7 @@ def main():
     parser.add_argument("--once", action="store_true",
                         help="单次触发 + 对话期间锁移动 (npc-dialogue 用)")
     parser.add_argument("--fix", action="store_true",
-                        help="自动修复 (verify-nsid 用: 重置损坏变量的 NameStringID)")
+                        help="自动修复 (verify-nsid 用: 重置损坏变量的 NameStringID；verify-instances 用: 为 ID=0/重复实例分配唯一 ID)")
 
     # Room editing (P4-2)
     parser.add_argument("--width", type=int, default=None,
@@ -5684,6 +5877,8 @@ def main():
                 cmd_guard_npc_alarm(game_file, args.key, args.instance, text_key=args.text_key)
             elif args.action == "verify-nsid":
                 cmd_verify_nsid(game_file, fix=args.fix)
+            elif args.action == "verify-instances":
+                cmd_verify_instances(game_file, fix=args.fix)
             elif args.action == "create-door":
                 if args.value is None or args.key is None:
                     parser.error("--value (当前房间名) 和 --key (目标房间名) 是必需的")

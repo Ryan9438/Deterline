@@ -33,7 +33,8 @@
 - 源码搜索替换（`find-replace-code`，已修复转义问题）
 
 ### 🏗️ 房间编辑（P4-2，需 UTMT CLI）
-- 创建新房间（`create-room`）、查看房间属性（`room-info`）
+> ⚠️ **禁止新建房间序号**（`create-room` 已废弃）：游戏运行时无法识别新增房间，曾导致传送进错房间遇神烦狗。只能**改造已有房间**，选房见 `ROOMS_GUIDE.md`。
+- 查看房间属性（`room-info`）、改造已有房间（清空→设尺寸→配 View→铺 Tile→注入背景）
 - 修改房间尺寸/标题/背景色（`set-room-prop`）
 - 配置摄像机视角（**View 必须 320×240，port 640×480**，`set-room-view`）
 - 运行时背景 + 视差注入（`gml-bg`，替代 `set-room-bg`）
@@ -95,9 +96,8 @@ python run.py --action append-code --key "gml_Object_obj_dummy1_Step_0" --value 
 # 房间布局编辑（需 UTMT CLI）
 python run.py --action spawn-obj --value "room_asrielroom" --key "obj_dummy1" --x 160 --y 120 --file data_win
 
-# 房间编辑（P4-2，需 UTMT CLI）
-python run.py --action create-room --value "room_myarea" --width 640 --height 480 --file data_win
-python run.py --action gml-bg --value room_myarea --bg "bg_my" --slot 0 --speedx 0.5 --file data_win
+# 房间编辑（P4-2，需 UTMT CLI）—— 只能改造已有房间，禁止 create-room 新建
+python run.py --action gml-bg --value room_tundra_town --bg "bg_my" --slot 0 --speedx 0.5 --file data_win
 
 # 任务管理
 python run.py --action quest-status
@@ -210,7 +210,7 @@ deterline/
 - `facechoice` 范围 0-9（0=无头像, 1=Toriel, 2=Flowey, 3=Sans, ...），**不要用 10+**
 - **`--sandbox` 模式**：在 `game.ios.sandbox` 副本上操作，原文件不受影响。确认后用 `sandbox-restore` 恢复
 - **安装 UTMT CLI 后**才能使用 `--file data_win` 相关命令
-- **房间 View 必须为 320×240（port 640×480）**——`create-room` 自动使用此设置。设成 640×480 会导致视角跟随失效（`view_xview` 被钳位到 0）
+- **房间 View 必须为 320×240（port 640×480）**——设成 640×480 会导致视角跟随失效（`view_xview` 被钳位到 0）
 - **运行时背景请用 `gml-bg` 而不是 `set-room-bg`**——Undertale 运行时忽略 ROOM 数据的 Backgrounds 设置，`gml-bg` 通过 GML 注入生效
 
 ## License

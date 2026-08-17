@@ -182,6 +182,10 @@ python run.py --action guard-npc-alarm --key "obj_cactus" --instance 113927 --fi
 # 检查损坏变量 NameStringID（读取会崩溃的陷阱），--fix 自动修复
 python run.py --action verify-nsid --file data_win
 python run.py --action verify-nsid --fix --file data_win
+
+# 检查全房间实例 ID 异常（ID=0/重复会破坏 per-instance 变量表 → 崩溃+布局异常），--fix 自动分配唯一 ID
+python run.py --action verify-instances --file data_win
+python run.py --action verify-instances --fix --file data_win
 ```
 
 ---
