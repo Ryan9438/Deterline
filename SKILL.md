@@ -20,6 +20,7 @@ UndertaleModTool, UTMT, game.ios, data.win,
 undertale, UNDERTALE, 传说之下,
 save, 存档, 存檔, save file, save editor, 修改器,
 HP, LOVE, ATK, DEF, GOLD, EXP, Kills, Room, file0, undertale.ini,
+set-derived, derived stat, 固定属性, 锁属性, maxhp, 最大生命,
 weapon, armor, equip, item, boss, 武器, 护甲, 装备, 物品, 金钱, 属性,
 genocide, murder, reset, flags, systeminfo, teleport, 传送, 重置, 屠杀,
 dialogue, textdata, textentry, STRG, batch-add-textentry,
@@ -139,11 +140,15 @@ deterline/
 | 命令 | 功能 |
 |---|---|
 | `get --key Love` | 读取 INI 键值 |
-| `set --key Love --value 20` | 修改 INI（`Room` 自动同步 file0） |
-| `set --key Room --value "托丽尔的家"` | 支持中文房间名 |
+| `set --key Love --value 20` | 修改 LOVE（**自动同步 file0，游戏以 file0 为准**） |
+| `set --key Love --value 20 --file file0` | 直接改 file0 LOVE（推荐，无需动 INI） |
+| `set --key Kills --value 100` | 修改击杀数（**自动同步 file0**） |
+| `set --key Room --value "托丽尔的家"` | 支持中文房间名（自动同步 file0） |
 | `list` | 列出 INI 全部配置 |
 | `find --value 4 --file file0` | 在 file0 中搜索数值 |
-| `set --key HP --value 50 --file file0` | 修改 file0 属性 |
+| `set --key HP --value 50 --file file0` | 修改 file0 的 maxhp（**进战斗会被按 LV 重算**，见下方警告） |
+| `set-derived --key HP --value 50` | **固定 HP/AT/DF**：写 file0 + 改写游戏脚本，阻止按 LV 重算 |
+| `set-derived --key AT --value 99` | 固定 AT（同理支持 DF / MAXHP） |
 | `set --key WEAPON --value 52 --file file0` | 换武器（自动计算 AT） |
 | `set --key TORIEL --value 5 --file file0` | 修改 Boss 状态 |
 | `room-list --value "雪镇"` | 搜索/列出房间 |
@@ -154,6 +159,22 @@ deterline/
 | `undo --value ini` / `file0` / `data_win` | 从 `.bak` 恢复 |
 | `undo --value data_win --backup 20240714_193500` | 恢复到指定时间戳版本 |
 | `list-backups --value data_win` | 列出所有备份 |
+
+> ⚠️ **重要（已对照游戏源码 scr_load / scr_saveprocess 核实）**：
+> 核心属性 **LOVE/LV、HP(最大生命)、AT、DF、EXP、GOLD、Kills、装备、Boss 状态、flag 都存在 `file0`**，读档瞬间从 file0 读取。
+> `undertale.ini` 的 `[General] Name / Love / Time / Kills / Room` **只是存档时写入的镜像副本，游戏不读它定数值**（下次存档会被覆盖）。
+> 所以：改 LOVE / Kills / Room 推荐直接用 `--file file0`；用 INI 命令时工具会自动同步 file0（Room/Love/Kills）。
+> file0 字段索引（0-based，去首行名字后）：`[0]=LOVE [1]=MAXHP [2]=MAXEN [3]=AT [4]=武器AT [5]=DF [6]=护甲DF [7]=SP [8]=EXP [9]=GOLD [10]=KILLS`。
+
+> ⚠️⚠️ **HP / AT / DF 不是自由属性，而是由 LV 推导的缓存**：
+> 游戏在升级（`scr_levelup`）与**每次进入战斗**（`obj_battlecontroller_Create_0`）时都会重算：
+> `maxhp = 16 + lv*4`、`at = 8 + lv*2`、`df = 9 + ceil(lv/4)`。
+> **读档瞬间**（`scr_load`）是 `maxhp = file0 值`、`hp = maxhp`，所以改完 file0 后菜单会正常显示你设置的值
+> （如 LV5 设 50 → 显示 50/50）；重算只在**进战斗/升级**那一刻发生，之后才会变回 LV 推导值。
+> 因此只用 `set --key HP` 改 file0，进战斗就会被覆盖（工具会打印警告）。要**永久固定**这些值，必须用
+> `set-derived --key HP|AT|DF --value N`（它同时改写 file0 与上述两个脚本）。注意 `set-derived` 会永久改写
+> `game.ios`、对**所有存档**生效，可用 `undo --value data_win` 恢复。LV5 对应的原版值为 HP36 / AT18 / DF11。
+
 
 ### 💬 对话文本编辑（`--file data_win`）
 
@@ -168,6 +189,7 @@ deterline/
 | `delete-string --key 50000` | **删除字符串** |
 | `search-strings --value "Toriel"` | 搜索 |
 | `replace-string --old "A" --value "B"` | 批量替换 |
+| `search-textdata --value "key前缀"` | 搜索 textdata key（⚠️ 行序 ≠ 台词顺序） |
 
 ### 📜 脚本编辑（`--file data_win`）
 
@@ -191,8 +213,9 @@ deterline/
 
 | 命令 | 功能 |
 |---|---|
-| `search-textdata --value "sans"` | 搜索 textdata key |
+| `search-textdata --value "sans"` | 搜索 textdata key（⚠️ 行序 ≠ 台词顺序） |
 | `add-textentry --key "obj_xxx" --value "文本/"` | **新增对话条目（自动去重）** |
+| `update-textentry --key "obj_xxx" --value "新文本/"` | **改已有对话条目（替换已存在 key 的文本，幂等）** |
 | `delete-textentry --key "obj_xxx"` | 按 key 删除条目 |
 
 ### 🔍 跨脚本搜索（`--file data_win`）
@@ -365,8 +388,54 @@ global.msg[0] = "对话文本/"
 instance_create(0, 0, obj_dialoguer)  →  OBJ_WRITER 渲染
 ```
 
-- 所有对话文本集中在 `gml_Script_textdata_en` 这一个脚本
+- 所有对话文本注册在 `gml_Script_textdata_en` 这一个脚本
 - 格式：`ds_map_add(global.text_data_en, "key", "文本/%%")`
+
+> ⚠️⚠️ **`search-textdata` 的返回顺序 ≠ 游戏内对话顺序（关键陷阱）**
+>
+> - textdata 的 key 编号（如 `obj_darksans1_345`）与角色台词顺序**无关**。同一段剧情的 key 可能散落在脚本各处：Sans 雪镇开场里 `obj_darksans1_187`（放屁垫玩笑）数值上排在 `obj_darksans1_345`（第一句 "* Human."）**前面**。
+> - `search-textdata` 按**文件行序**输出，**列表里第一行绝不等于"第一句对话"**。严禁凭"先搜到/列表在前"判断台词先后。
+> - **台词真正的顺序由场景代码决定**：`global.msg[N] = scr_gettext("key")` 的 N 递增顺序，或对象事件里的调用顺序。要确定"第几句 = 哪个 key"，必须反编译对应场景对象的事件代码查看。
+> - 同名台词常有**重复变体**（如 `obj_darksans1_187` 与 `obj_darksans1_210` 都是放屁垫玩笑，`obj_darksans1_345` 与 `obj_darksans1_354` 都是 "Human."）。必须在代码里确认目标事件实际引用的那一个。
+
+#### 改已有对话的标准流程（Agent 必读）
+
+> 用户要求"改某 NPC 的第 N 句对话 / 改某句特定台词"时，**禁止直接按 `search-textdata` 的结果挑一条改**。必须按以下流程定位：
+
+```
+1. 定位 key 家族
+   search-textdata --value "<key前缀>" --file data_win
+   （如 Sans 雪镇开场 = "darksans1"；先搜关键词确认前缀）
+
+2. 确认场景顺序（关键步骤，决定"第几句"）
+   search-vars --value "<key前缀>" --file data_win
+   → 找到真正引用这些 key 的对象事件代码（如 gml_Object_obj_darksans1_Step_0）
+   decompile-code --key "<该对象事件>" --file data_win
+   → 看 global.msg[0]/[1]/[2] = scr_gettext("key") 的先后 → 确定第 N 句对应哪个 key
+
+3. 核对旧文本
+   search-textdata --value "<确定的key>" --file data_win
+   → 确认该 key 的当前文本与用户描述一致（防止选到重复变体）
+
+4. 修改
+   方案 A（推荐）：update-textentry --key "<key>" --value "<新文本>" --file data_win
+   方案 B（无该命令时）：find-replace-code --key "gml_Script_textdata_en"
+     --old "<旧文本片段>" --value "<新文本片段>" --file data_win
+
+5. 验证
+   search-textdata --value "<key>" --file data_win 确认已更新
+```
+
+**已核实示例：Sans 雪镇开场（`obj_darksans1` 家族）**
+
+| 游戏顺序 | key | 文本 |
+|---|---|---|
+| 第 1 句 | `obj_darksans1_345` | `* Human./` |
+| 第 2 句 | `obj_darksans1_346` | `* Don't you know how&  to greet a new pal?/` |
+| 第 3 句 | `obj_darksans1_347` | `* Turn around and shake&  my hand./%%` |
+| 放屁垫玩笑 | `obj_darksans1_187`（变体 `_210`） | `* heheh... the old whoopee&  cushion in the hand&  trick./` |
+
+引用代码：`gml_Object_obj_darksans1_Step_0`（`msg[0]=scr_gettext("obj_darksans1_345")` 为第一句）。
 
 ### 完整文本控制符表
 
@@ -427,7 +496,7 @@ instance_create(0, 0, obj_dialoguer)  →  OBJ_WRITER 渲染
 **在对话文本中切换头像与表情：**
 
 ```
-"\F3\E1* 嘿，你好呀。/ \E0* 今天天气不错。/%%"
+"\F3\E1* hey, buddy./ \E0* nice weather today./%%"
 → 第1页：Sans脸 + 轻笑 → 第2页：Sans脸 + 普通
 ```
 

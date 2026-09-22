@@ -11,7 +11,7 @@
 请问你想修改什么？
 
   1. 📁 改存档（HP/LOVE/金钱/武器/传送）
-  2. 💬 加对话（NPC/内容/头像/表情）
+  2. 💬 对话（加新对话 / 改已有对话 / 查台词）
   3. 🏗️ 造房间（尺寸/背景/地板）
   4. 🚪 放传送门（双向/单向）
   5. ⚔️ 战斗触发器（位置/敌群）
@@ -23,7 +23,18 @@
 
 ---
 
-## 1. 📁 改存档
+## 2. 💬 对话
+
+> 进入本分类先分流：
+> ```
+> → 你要做什么？
+>    A. 加一条新对话（新 NPC / 新台词）
+>    B. 改游戏里已有的某句台词（改对话内容）
+>    C. 查某段台词的 key / 位置
+> ```
+> 选 **A** → 走下方「2A 加对话」；选 **B** → 走「2B 改已有对话」；选 **C** → 用 `search-textdata` 搜索（注意：行序 ≠ 台词顺序，见 SKILL.md「改已有对话标准流程」）。
+
+### 2A. 加对话
 
 ### 问卷流程
 
@@ -44,13 +55,16 @@
 
 ### 实现路径
 
+> ⚠️ **权威来源在 file0**（已对照游戏源码 scr_load 核实）：LOVE/HP/AT/DF/EXP/GOLD/Kills/装备都在 file0，游戏运行时读 file0。ini `[General] Love/Kills/Room` 只是镜像副本（游戏不读它定数值）。改核心属性一律用 `--file file0`；用 INI 命令改 Love/Kills/Room 也会自动同步 file0。
+
 | 选项 | CLI 命令 | 实验验证 |
 |------|---------|---------|
-| 改 HP | `set --key HP --value N --file file0` | P0 基础存档编辑 ✅ |
-| 改 LOVE | `set --key Love --value N` | P0 ✅ |
+| 改 HP（=最大生命） | `set --key HP --value N --file file0` | P0 基础存档编辑 ✅ |
+| 改 LOVE | `set --key Love --value N --file file0` | P0 ✅（游戏读 file0[0]） |
+| 改击杀数 | `set --key Kills --value N --file file0` | P0 ✅（游戏读 file0[10]） |
 | 改金钱 | `set --key GOLD --value N --file file0` | P0 ✅ |
 | 换武器 | `set --key WEAPON --value N --file file0` | P0 ✅（自动 AT 同步） |
-| 传送 | `set --key Room --value "房间名"` | P0 ✅（支持中文名） |
+| 传送 | `set --key Room --value "房间名"` | P0 ✅（支持中文名，自动同步 file0） |
 | 重置屠杀线 | `reset-flags` | P0 ✅ |
 | 全量重置 | `reset-all` | 实验 5/7 ✅ |
 | 查看当前 | `list` / `list --file file0` | P0 ✅ |
@@ -131,6 +145,53 @@ python run.py --action guided-add-dialogue \
 | `\C ` 选择框 | 创建 YES/NO 选择 | 实验 5/7 |
 | `\F\E` 控制符 | 由 `--face` `--emotion` 自动插入 | 实验 8 |
 | 英文(ASCII) | 不支持中文/日文 | 2026-07-28 底层限制 |
+
+### 2B. 改已有对话
+
+> ⚠️ **关键**：textdata 的 key 编号 ≠ 台词顺序，`search-textdata` 列表第一行 ≠ 第一句。确定"第几句"必须反编译场景代码。完整步骤见 **SKILL.md「改已有对话的标准流程」**。
+
+### 问卷流程
+
+```
+→ 谁在说话 / 哪个场景：___（如 Sans 雪镇开场、Toriel 遗迹、审判长廊…）
+→ 改第几句（1 = 第一句）：___
+→ 目标句当前文本（让 Agent 核对定位，防止选到重复变体）：___
+   示例: "Human."  "Don't you know how to greet a new pal?"
+→ 新文本（英文 ASCII，保留 * 前缀与 / 结尾格式）：___
+   （不改头像/表情，除非用户明确要求）
+
+→ [确认] Agent 按标准流程定位 key 并修改
+```
+
+### Agent 定位步骤（必须按序执行，禁止跳步）
+
+```
+1. search-textdata --value "<key前缀>" --file data_win
+   → 确认 key 家族（如 Sans 开场 = "darksans1"）
+2. search-vars --value "<key前缀>" --file data_win
+   → 找到引用这些 key 的对象事件（如 gml_Object_obj_darksans1_Step_0）
+3. decompile-code --key "<该事件>" --file data_win --old "scr_gettext"
+   → 看 global.msg[N] = scr_gettext("key") 顺序 → 第 N 句 = 哪个 key
+4. search-textdata --value "<确定的key>" --file data_win
+   → 核对旧文本与用户描述一致（防重复变体）
+5. update-textentry --key "<key>" --value "<新文本>" --file data_win
+   （无此命令时用 find-replace-code 改 gml_Script_textdata_en 对应行）
+6. search-textdata --value "<key>" --file data_win → 验证
+```
+
+### 实现路径
+
+| 步骤 | CLI 命令 | 说明 |
+|------|---------|------|
+| 找 key 家族 | `search-textdata --value "darksans1" --file data_win` | ⚠️ 行序非台词顺序 |
+| 找场景代码 | `search-vars --value "darksans1" --file data_win` | 定位 `gml_Object_..._Step_0` |
+| 看台词顺序 | `decompile-code --key "gml_Object_..._Step_0" --old "scr_gettext" --file data_win` | msg[0]=第 1 句 |
+| 核对旧文本 | `search-textdata --value "obj_xxx_NNN" --file data_win` | 防重复变体 |
+| **改已有条目** | `update-textentry --key "obj_xxx_NNN" --value "* 新文本/" --file data_win` | 新命令，幂等替换 |
+| 改（无新命令时） | `find-replace-code --key "gml_Script_textdata_en" --old "旧文本" --value "新文本" --file data_win` | 源码级替换后重编译 |
+| 验证 | `search-textdata --value "obj_xxx_NNN" --file data_win` | 确认已更新 |
+
+**已核实示例：Sans 雪镇开场第一句** → key `obj_darksans1_345`（`* Human./`），引用代码 `gml_Object_obj_darksans1_Step_0:20`（`msg[0] = scr_gettext("obj_darksans1_345")`）。
 
 ---
 
@@ -416,17 +477,19 @@ Step 6/6 — 确认总览 → 执行
 ## 附录：各问卷选项的 CLI 命令汇总
 
 ```
-# 存档
+# 存档（核心属性在 file0，游戏读 file0）
 get --key Love
-set --key Love --value 20
+set --key Love --value 20 --file file0
+set --key Kills --value 100 --file file0
 set --key WEAPON --value 52 --file file0
 room-list --value "瀑布"
-set --key Room --value "托丽尔的家"
+set --key Room --value "托丽尔的家"     # 自动同步 file0
 reset-flags
 
 # 对话
 add-string --value "text" --file data_win
 add-textentry --key "K" --value "V" --face 3 --emotion 0 --file data_win
+update-textentry --key "K" --value "新文本" --file data_win   # 改已有台词
 search-textdata --value "keyword" --file data_win
 batch-add-textentry --value ./file.json --file data_win
 

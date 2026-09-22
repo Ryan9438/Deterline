@@ -44,17 +44,30 @@ python run.py --action list
 python run.py --action list --file file0
 python run.py --action find --value 42 --file file0
 
-# 修改属性（INI）
+# 修改属性（INI —— Love/Kills/Room 会自动同步 file0，游戏以 file0 为准）
 python run.py --action set --key Love --value 20
 python run.py --action set --key Kills --value 100
 python run.py --action set --key Room --value 43
 python run.py --action set --key Room --value "托丽尔的家"
 
-# 修改 file0
-python run.py --action set --key HP --value 50 --file file0
-python run.py --action set --key WEAPON --value 52 --file file0    # 自动 AT+99
-python run.py --action set --key ARMOR --value 53 --file file0     # 自动 DF+99
+# 修改属性（file0 —— 核心属性都在这里，推荐直接改 file0）
+python run.py --action set --key Love --value 20 --file file0
+python run.py --action set --key HP --value 50 --file file0      # 写 maxhp（读档即显示 50；进战斗会被按 LV 重算，见下）
+python run.py --action set --key MAXHP --value 50 --file file0
+python run.py --action set --key MAXEN --value 50 --file file0
+python run.py --action set --key EXP --value 100 --file file0
 python run.py --action set --key GOLD --value 9999 --file file0
+python run.py --action set --key Kills --value 100 --file file0
+python run.py --action set --key WEAPON --value 52 --file file0  # 自动 AT+99
+python run.py --action set --key ARMOR --value 53 --file file0   # 自动 DF+99
+
+# 固定由 LV 推导的属性（HP/AT/DF）——写 file0 并改写游戏脚本，防止被重算
+# 游戏每次进战斗都会 maxhp=16+lv*4 / at=8+lv*2 / df=9+ceil(lv/4)，
+# 只 set file0 会被覆盖；set-derived 才能永久固定（会永久改写 game.ios，对所有存档生效）
+python run.py --action set-derived --key HP --value 50
+python run.py --action set-derived --key AT --value 99
+python run.py --action set-derived --key DF --value 99
+# 恢复：python run.py --action undo --value data_win
 
 # 修改 Boss 状态（4=击杀, 5=宽恕）
 python run.py --action set --key TORIEL --value 5 --file file0
@@ -128,7 +141,7 @@ python run.py --action create-script --key "gml_Script_myFunc" --value "return 0
 python run.py --action search-textdata --value "sans" --file data_win
 
 # 新增/删除对话条目
-python run.py --action add-textentry --key "obj_mynpc_001" --value "* 你好/" --file data_win
+python run.py --action add-textentry --key "obj_mynpc_001" --value "* Hello from Deterline!/%%" --file data_win
 python run.py --action delete-textentry --key "obj_test_entry" --file data_win
 ```
 
@@ -211,6 +224,11 @@ python run.py --action list-backups --value file0
 python run.py --action undo --value data_win
 python run.py --action undo --value data_win --backup 20240714_193500
 python run.py --action undo --value file0
+# ⚠️ undo 只回退"最后一次写入"（.bak）。若连续改了多个字段，需用时间戳备份回到更早状态：
+python run.py --action list-backups --value file0
+python run.py --action undo --value file0 --backup 20240714_193500
+# data_win 的 undo/list-backups 支持 --dir 指定游戏数据文件
+python run.py --action list-backups --value data_win --dir "path/to/game.ios"
 ```
 
 ---

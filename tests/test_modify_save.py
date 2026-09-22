@@ -3,11 +3,14 @@
 Run: python3 -m unittest discover tests
 """
 
+import contextlib
+import io
 import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -216,6 +219,314 @@ class TestParseInstanceAudit(unittest.TestCase):
     def test_no_verify_line_returns_none(self):
         info = ms._parse_instance_audit("some other output\n")
         self.assertIsNone(info["bad"])
+
+
+class TestTextdataUpdate(unittest.TestCase):
+    def _capture(self, fake_out):
+        captured = {}
+
+        def fake_run(csx, game_file, save=True):
+            captured["csx"] = csx
+            captured["save"] = save
+            return fake_out
+
+        return captured, fake_run
+
+    def test_builds_csx_with_existing_key_and_new_value(self):
+        captured, fake_run = self._capture(
+            "OK: Updated 1 entry(s) for 'obj_darksans1_345'\n")
+        with mock.patch.object(ms, "_run_utmt", fake_run):
+            ms.cmd_textdata_update(Path("game.ios"), "obj_darksans1_345", "* hello there, pal./")
+        # 生成的 C# 用 verbatim 字符串：引号加倍
+        self.assertIn('@"ds_map_add(global.text_data_en, ""obj_darksans1_345"", ""* hello there, pal./"");"',
+                      captured["csx"])
+        self.assertIn('new string(\' \', indent)', captured["csx"])
+        self.assertTrue(captured["save"])
+
+    def test_missing_key_reports_error(self):
+        captured, fake_run = self._capture("ERROR: No entry found for key 'nope' (use add-textentry first)\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            with mock.patch.object(ms, "_run_utmt", fake_run):
+                ms.cmd_textdata_update(Path("game.ios"), "nope", "* x/")
+        self.assertIn("No entry found", buf.getvalue())
+
+    def test_rejects_non_ascii(self):
+        with self.assertRaises(ms.ValidationError):
+            ms.cmd_textdata_update(Path("game.ios"), "obj_darksans1_345", "* 你好/")
+
+    def test_face_emotion_injected(self):
+        captured, fake_run = self._capture("OK: Updated 1 entry(s) for 'k'\n")
+        with mock.patch.object(ms, "_run_utmt", fake_run):
+            ms.cmd_textdata_update(Path("game.ios"), "k", "* hi/", face=3, emotion=1)
+        self.assertIn(r'\F3\E1* hi/', captured["csx"])
+
+
+class TestFile0Fields(unittest.TestCase):
+    def test_core_layout_matches_game_source(self):
+        # 对照游戏源码 scr_load / scr_saveprocess
+        self.assertEqual(ms.FILE0_FIELDS["LOVE"], 0)
+        self.assertEqual(ms.FILE0_FIELDS["MAXHP"], 1)      # global.maxhp
+        self.assertEqual(ms.FILE0_FIELDS["HP"], 1)         # 别名（游戏不存"当前HP"）
+        self.assertEqual(ms.FILE0_FIELDS["MAXEN"], 2)      # global.maxen
+        self.assertEqual(ms.FILE0_FIELDS["AT"], 3)
+        self.assertEqual(ms.FILE0_FIELDS["WEAPON_AT"], 4)
+        self.assertEqual(ms.FILE0_FIELDS["DF"], 5)
+        self.assertEqual(ms.FILE0_FIELDS["ARMOR_DF"], 6)
+        self.assertEqual(ms.FILE0_FIELDS["SP"], 7)
+        self.assertEqual(ms.FILE0_FIELDS["EXP"], 8)
+        self.assertEqual(ms.FILE0_FIELDS["GOLD"], 9)
+        self.assertEqual(ms.FILE0_FIELDS["KILLS"], 10)
+
+    def test_resolve_file0_keys(self):
+        self.assertEqual(ms._resolve_file0_key("MAXHP"), 1)
+        self.assertEqual(ms._resolve_file0_key("HP"), 1)
+        self.assertEqual(ms._resolve_file0_key("MAXEN"), 2)
+        self.assertEqual(ms._resolve_file0_key("SP"), 7)
+        self.assertEqual(ms._resolve_file0_key("LOVE"), 0)
+        self.assertEqual(ms._resolve_file0_key("Love"), 0)   # 大小写不敏感
+
+
+class TestDerivedStats(unittest.TestCase):
+    """HP/AT/DF 由 LV 推导，file0 值会被游戏重算 —— set-derived 必须改写脚本。"""
+
+    def test_derived_values(self):
+        self.assertEqual(ms.derived_stat_value("HP", 1), 20)
+        self.assertEqual(ms.derived_stat_value("HP", 5), 36)
+        self.assertEqual(ms.derived_stat_value("MAXHP", 5), 36)
+        self.assertEqual(ms.derived_stat_value("AT", 5), 18)
+        self.assertEqual(ms.derived_stat_value("DF", 5), 11)   # 9 + ceil(5/4)
+        self.assertIsNone(ms.derived_stat_value("GOLD", 5))
+
+    def test_patch_formula_but_not_condition(self):
+        code = ("global.maxhp = 16 + (global.lv * 4);\n"
+                "if (global.hp > (global.maxhp + 15))\n"
+                "{\nglobal.hp = global.maxhp + 15;\n}")
+        new, n = ms._patch_stat_assignments(code, "maxhp", 50)
+        self.assertEqual(n, 1)
+        self.assertIn("global.maxhp = 50;", new)
+        self.assertIn("if (global.hp > (global.maxhp + 15))", new)
+
+    def test_patch_relocks_existing_literal(self):
+        new, n = ms._patch_stat_assignments("global.at = 18;", "at", 99)
+        self.assertEqual(n, 1)
+        self.assertEqual(new, "global.at = 99;")
+
+    def test_patch_no_match_leaves_code(self):
+        code = "global.df = 5;"
+        new, n = ms._patch_stat_assignments(code, "at", 99)
+        self.assertEqual(n, 0)
+        self.assertEqual(new, code)
+
+    def test_set_derived_writes_file0_and_patches_both_scripts(self):
+        calls = {"file0": [], "replace": []}
+        code_map = {
+            "gml_Object_obj_battlecontroller_Create_0": "global.maxhp = 16 + (global.lv * 4);",
+            "gml_Script_scr_levelup": "global.maxhp = 16 + (global.lv * 4);",
+        }
+        with mock.patch.object(ms, "cmd_file0_set",
+                               lambda sd, k, v, **kw: calls["file0"].append((k, v))), \
+             mock.patch.object(ms, "_get_decompiled_code",
+                               lambda gf, name: code_map.get(name)), \
+             mock.patch.object(ms, "cmd_code_replace",
+                               lambda gf, name, code: calls["replace"].append((name, code))):
+            ms.cmd_set_derived(Path("."), Path("game.ios"), "HP", "50")
+        self.assertEqual(calls["file0"], [("MAXHP", "50")])
+        self.assertEqual(len(calls["replace"]), 2)
+        for _name, code in calls["replace"]:
+            self.assertIn("global.maxhp = 50;", code)
+
+    def test_set_derived_rejects_unknown_key(self):
+        with self.assertRaises(ms.ValidationError):
+            ms.cmd_set_derived(Path("."), Path("game.ios"), "GOLD", "5")
+
+    def test_set_derived_rejects_non_int(self):
+        with self.assertRaises(ms.ValidationError):
+            ms.cmd_set_derived(Path("."), Path("game.ios"), "HP", "abc")
+
+    def test_set_derived_raises_when_no_scripts_found(self):
+        with mock.patch.object(ms, "cmd_file0_set", lambda *a, **k: None), \
+             mock.patch.object(ms, "_get_decompiled_code", lambda *a, **k: None):
+            with self.assertRaises(RuntimeError):
+                ms.cmd_set_derived(Path("."), Path("game.ios"), "HP", "50")
+
+
+class TestFile0DerivedWarning(unittest.TestCase):
+    """直接 set file0 的 HP/AT/DF 时应提示会被 LV 重算覆盖。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.save_dir = Path(self._tmp.name)
+        (self.save_dir / "file0").write_text("Ryan\n5 \n36 \n", encoding="utf-8")
+
+    def test_warns_when_value_differs_from_lv(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            ms.cmd_file0_set(self.save_dir, "HP", "50")
+        msg = buf.getvalue()
+        self.assertIn("set-derived", msg)
+        # 必须说清"读档后显示设置值，进战斗/升级才重算"，不能误导成"当前显示 36"
+        self.assertIn("读档后菜单会显示", msg)
+        self.assertIn("进入战斗/升级", msg)
+
+    def test_no_warning_when_value_matches_lv(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            ms.cmd_file0_set(self.save_dir, "HP", "36")
+        self.assertEqual(buf.getvalue(), "")
+
+
+class TestIniFile0Sync(unittest.TestCase):
+    """ini [General] 的 Love/Kills/Room 只是镜像副本，游戏读 file0 —— cmd_ini_set 必须同步 file0。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.save_dir = Path(self._tmp.name)
+
+    def _write_save(self, n=550):
+        (self.save_dir / "undertale.ini").write_text("[General]\n", encoding="utf-8")
+        lines = ["Ryan\n"] + ["0 \n"] * n
+        (self.save_dir / "file0").write_text("".join(lines), encoding="utf-8")
+
+    def _nums(self):
+        _, nums = ms._parse_file0(self.save_dir / "file0")
+        return nums
+
+    def test_love_syncs_to_file0(self):
+        self._write_save()
+        ms.cmd_ini_set(self.save_dir, "General", "Love", "5")
+        self.assertEqual(self._nums()[0], 5)   # file0[0] = global.lv
+        cp = ms._read_ini(self.save_dir / "undertale.ini")
+        self.assertEqual(ms.parse_ini_value(cp.get("General", "Love")), "5")
+
+    def test_kills_syncs_to_file0(self):
+        self._write_save()
+        ms.cmd_ini_set(self.save_dir, "General", "Kills", "12")
+        self.assertEqual(self._nums()[10], 12)
+
+    def test_room_syncs_to_file0_location(self):
+        self._write_save()
+        ms.cmd_ini_set(self.save_dir, "General", "Room", "70")
+        self.assertEqual(self._nums()[546], 70)
+
+    def test_non_general_section_does_not_sync(self):
+        self._write_save()
+        ms.cmd_ini_set(self.save_dir, "Sans", "Love", "9")
+        self.assertEqual(self._nums()[0], 0)   # 非 [General] 不触发 file0 同步
+
+
+class TestParseLayers(unittest.TestCase):
+    def test_comma_list(self):
+        self.assertEqual(ms._parse_layers("0,1,2"), [0, 1, 2])
+
+    def test_whitespace_tolerated(self):
+        self.assertEqual(ms._parse_layers(" 0 , 1 "), [0, 1])
+
+    def test_empty_is_empty(self):
+        self.assertEqual(ms._parse_layers(None), [])
+        self.assertEqual(ms._parse_layers(""), [])
+
+    def test_out_of_range_raises(self):
+        with self.assertRaises(ValueError):
+            ms._parse_layers("8")
+        with self.assertRaises(ValueError):
+            ms._parse_layers("-1")
+
+    def test_non_int_raises(self):
+        with self.assertRaises(ValueError):
+            ms._parse_layers("a")
+
+
+class TestBuildGmlBgCode(unittest.TestCase):
+    """gml-bg 必须同时设置 htiled/vtiled，并支持多层与遮挡隐藏。"""
+
+    def test_sets_both_tiling_axes(self):
+        gml = ms.build_gml_bg_code("room_x", "bg_blue", [0])
+        self.assertIn("background_htiled[0] = true;", gml)
+        self.assertIn("background_vtiled[0] = true;", gml)
+
+    def test_vtiled_can_be_disabled(self):
+        gml = ms.build_gml_bg_code("room_x", "bg_blue", [0], vtiled=False)
+        self.assertIn("background_vtiled[0] = false;", gml)
+
+    def test_hide_above_emits_loop(self):
+        gml = ms.build_gml_bg_code("room_x", "bg_blue", [0], hide_above=True)
+        self.assertIn("for (var _det_i = 0 + 1; _det_i < 8;", gml)
+        self.assertIn("background_visible[_det_i] = false;", gml)
+
+    def test_hide_above_uses_top_slot(self):
+        gml = ms.build_gml_bg_code("room_x", "bg_blue", [0, 1], hide_above=True)
+        self.assertIn("for (var _det_i = 1 + 1; _det_i < 8;", gml)
+
+    def test_no_hide_above_by_default(self):
+        gml = ms.build_gml_bg_code("room_x", "bg_blue", [0])
+        self.assertNotIn("_det_i", gml)
+
+    def test_multiple_slots_all_set(self):
+        gml = ms.build_gml_bg_code("room_x", "bg_blue", [0, 1])
+        for s in (0, 1):
+            self.assertIn(f"background_index[{s}] = bg_blue;", gml)
+
+    def test_numeric_asset_used_as_index(self):
+        gml = ms.build_gml_bg_code("room_x", "27", [0])
+        self.assertIn("background_index[0] = 27;", gml)
+
+    def test_foreground_flag(self):
+        gml = ms.build_gml_bg_code("room_x", "bg_blue", [0], foreground=True)
+        self.assertIn("background_foreground[0] = true;", gml)
+
+    def test_parallax_speed_applied(self):
+        gml = ms.build_gml_bg_code("room_x", "bg_blue", [0], speedx=0.5)
+        self.assertIn("view_xview[0] * 0.5", gml)
+
+    def test_guard_flag_includes_asset(self):
+        gml = ms.build_gml_bg_code("room_x", "bg_blue", [0])
+        self.assertIn("det_bg_room_x_0_bg_blue", gml)
+
+    def test_empty_slots_defaults_to_zero(self):
+        gml = ms.build_gml_bg_code("room_x", "bg_blue", [])
+        self.assertIn("background_index[0] = bg_blue;", gml)
+
+
+class TestBuildSetRoomBgStmts(unittest.TestCase):
+    """set-room-bg 不得在未显式传 x/y 时移动背景层。"""
+
+    def test_no_props_is_empty(self):
+        self.assertEqual(ms.build_set_room_bg_stmts(0), "")
+
+    def test_x_y_omitted_by_default(self):
+        stmts = ms.build_set_room_bg_stmts(0, bg_name="bg_x")
+        self.assertNotIn(".X =", stmts)
+        self.assertNotIn(".Y =", stmts)
+
+    def test_x_y_emitted_when_given(self):
+        stmts = ms.build_set_room_bg_stmts(0, x=5, y=6)
+        self.assertIn("room.Backgrounds[0].X = 5;", stmts)
+        self.assertIn("room.Backgrounds[0].Y = 6;", stmts)
+
+    def test_enable_true_disables_bg_color(self):
+        stmts = ms.build_set_room_bg_stmts(0, enable=True)
+        self.assertIn("room.DrawBackgroundColor = false;", stmts)
+        self.assertIn("room.Backgrounds[0].Enabled = true;", stmts)
+
+    def test_keep_bg_color_suppresses_side_effect(self):
+        stmts = ms.build_set_room_bg_stmts(0, enable=True, keep_bg_color=True)
+        self.assertNotIn("DrawBackgroundColor", stmts)
+
+    def test_bg_none_clears_definition(self):
+        stmts = ms.build_set_room_bg_stmts(0, bg_name="none")
+        self.assertIn("room.Backgrounds[0].BackgroundDefinition = null;", stmts)
+
+    def test_bg_name_resolves(self):
+        stmts = ms.build_set_room_bg_stmts(0, bg_name="bg_blue_solid")
+        self.assertIn('Data.Backgrounds.ByName("bg_blue_solid")', stmts)
+
+    def test_tiling_flags(self):
+        stmts = ms.build_set_room_bg_stmts(0, tiled_h=True, tiled_v=False)
+        self.assertIn("room.Backgrounds[0].TiledHorizontally = true;", stmts)
+        self.assertIn("room.Backgrounds[0].TiledVertically = false;", stmts)
 
 
 if __name__ == "__main__":

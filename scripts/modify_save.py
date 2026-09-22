@@ -50,10 +50,12 @@ DISTANCE_TRIGGER = 50
 QUEST_STATE_INIT = 0
 
 ROOM_BG_WARNING = (
-    "注意: Undertale 运行时忽略 ROOM Backgrounds 数据。",
-    "      背景实际渲染由 obj_backgrounder_* 的 GML 代码控制。",
-    "      请改用 `gml-bg` 命令注入运行时背景 GML。",
-    "      对 ROOM 数据的修改（本命令）可能不生效。",
+    "提示: 背景渲染分三类，先诊断再改：",
+    "  A 纯 Tile 房: 房间数据 8 层全 Enabled=false，渲染器跳过背景，改房间数据无效",
+    "  B 房间数据驱动: 部分层 Enabled=true 且无 obj_backgrounder_*，房间数据即渲染来源",
+    "  C 对象驱动: 有 obj_backgrounder_* 对象，运行时覆盖房间数据",
+    "  诊断: `room-bg-info --value <房间> --file data_win`",
+    "  遮挡: 高 slot 层画在低 slot 之上，只改低层会被盖住（用 gml-bg --hide-above）",
 )
 
 # ============================================================
@@ -554,6 +556,15 @@ def cmd_ini_get(save_dir: Path, section: str, key: str) -> None:
     print(line)
 
 
+# ini [General] 中"镜像"键 → file0 权威字段（对照 scr_save / scr_load 确认：
+# 游戏运行时 LOVE/Kills/Room 从 file0 读取，ini 只是存档时写入的副本）
+INI_TO_FILE0_SYNC = {
+    "Love": "LOVE",
+    "Kills": "KILLS",
+    "Room": "LOCATION",
+}
+
+
 def cmd_ini_set(save_dir: Path, section: str, key: str, value: str) -> None:
     path = save_dir / "undertale.ini"
     cp = _read_ini(path)
@@ -574,12 +585,19 @@ def cmd_ini_set(save_dir: Path, section: str, key: str, value: str) -> None:
 
     new_display = parse_ini_value(formatted)
     msg = f"✓ [{section}] {key}: {old_display} → {new_display}"
-    if key == "Room":
-        _load_rooms()
-        name = ROOMS.get(new_display)
-        if name:
-            msg += f"  ({name})"
-        cmd_file0_set(save_dir, "LOCATION", actual)
+
+    # ini [General] 的 Love/Kills/Room 只是镜像副本，游戏运行时读 file0（scr_load）。
+    # 修改这些键必须同步 file0 才生效。
+    if section.lower() == "general" and key in INI_TO_FILE0_SYNC:
+        file0_key = INI_TO_FILE0_SYNC[key]
+        if key == "Room":
+            _load_rooms()
+            name = ROOMS.get(new_display)
+            if name:
+                msg += f"  ({name})"
+        cmd_file0_set(save_dir, file0_key, str(actual))
+        msg += "  (游戏读 file0，已同步)"
+
     print(msg)
 
 
@@ -589,20 +607,56 @@ def cmd_ini_set(save_dir: Path, section: str, key: str, value: str) -> None:
 
 # ── 核心角色属性 ──────────────────────────────────────────────
 # 索引对应 file0 中去掉首行名字后的 0-based 位置
-# 数据来源: Flowey's Time Machine research/savefile.md
+# 布局已对照游戏源码 scr_saveprocess / scr_load 核实：
+#   [0]=global.lv [1]=global.maxhp [2]=global.maxen [3]=global.at
+#   [4]=global.wstrength [5]=global.df [6]=global.adef [7]=global.sp
+#   [8]=global.xp [9]=global.gold [10]=global.kills
+# 注意: file0 不存"当前 HP"，HP 即最大生命值(maxhp)。
 FILE0_FIELDS = {
     "LOVE": 0,          # LV / 等级
     "LV": 0,
-    "HP": 1,            # 当前生命值
-    "MAXHP": 2,         # 最大生命值
+    "MAXHP": 1,         # 最大生命值 (global.maxhp)
+    "HP": 1,            # 别名: 游戏无独立"当前HP"，HP 即最大生命值
+    "MAXEN": 2,         # 战斗能量上限 (global.maxen)
     "AT": 3,            # 基础攻击
     "WEAPON_AT": 4,     # 武器攻击加成
     "DF": 5,            # 基础防御
     "ARMOR_DF": 6,      # 护甲防御加成
+    "SP": 7,            # 速度
     "EXP": 8,           # 处决点数
     "GOLD": 9,          # 金钱
     "KILLS": 10,        # 总击杀数
 }
+
+# HP/AT/DF 由 LV 推导，游戏在升级 (scr_levelup) 与每次进入战斗
+# (obj_battlecontroller_Create_0) 时都会用下面公式重算，file0 中的值只是
+# 读档瞬间的缓存。想固定这些值必须改游戏脚本，见 `set-derived`。
+DERIVED_STAT_FORMULAS: dict[str, str] = {
+    "HP": "16 + (global.lv * 4)",
+    "MAXHP": "16 + (global.lv * 4)",
+    "AT": "8 + (global.lv * 2)",
+    "DF": "9 + ceil(global.lv / 4)",
+}
+
+DERIVED_STAT_VARS: dict[str, str] = {
+    "HP": "maxhp",
+    "MAXHP": "maxhp",
+    "AT": "at",
+    "DF": "df",
+}
+
+
+def derived_stat_value(key: str, lv: int) -> int | None:
+    """Return the LV-derived value the game will recompute for HP/AT/DF."""
+    upper = key.upper()
+    if upper in ("HP", "MAXHP"):
+        return 16 + lv * 4
+    if upper == "AT":
+        return 8 + lv * 2
+    if upper == "DF":
+        return 9 + (lv + 3) // 4
+    return None
+
 
 # ── 物品栏 (8 格 + 手机 + 装备) ─────────────────────────────
 INVENTORY_FIELDS = {
@@ -820,7 +874,7 @@ def cmd_file0_list(save_dir: Path) -> None:
 
     # 核心属性概览
     core = {k: numbers[v] for k, v in FILE0_FIELDS.items() if v < len(numbers)}
-    print(f"  LOVE={core.get('LOVE','?')}  HP={core.get('HP','?')}/{core.get('MAXHP','?')}  "
+    print(f"  LOVE={core.get('LOVE','?')}  MAXHP={core.get('MAXHP','?')}  MAXEN={core.get('MAXEN','?')}  "
           f"AT={core.get('AT','?')}  DF={core.get('DF','?')}  "
           f"GOLD={core.get('GOLD','?')}  KILLS={core.get('KILLS','?')}")
 
@@ -893,7 +947,8 @@ def cmd_file0_find(save_dir: Path, value: str) -> None:
         print(f"  ... (共 {len(matches)} 处, 仅显示前 20)")
 
 
-def cmd_file0_set(save_dir: Path, key: str, value: str) -> None:
+def cmd_file0_set(save_dir: Path, key: str, value: str,
+                  warn_derived: bool = True) -> None:
     path = save_dir / "file0"
     name, numbers = _parse_file0(path)
 
@@ -931,6 +986,24 @@ def cmd_file0_set(save_dir: Path, key: str, value: str) -> None:
     numbers[idx] = val
     hint = _file0_field_hint(numbers, idx)
     _write_file0(path, name, numbers)
+
+    # HP/AT/DF 由 LV 推导：读档时先用 file0 值，但进战斗/升级时会被游戏重算覆盖。
+    if warn_derived and numbers:
+        lv = numbers[0]
+        derived = derived_stat_value(upper_key, lv)
+        if derived is not None and val != derived:
+            print(
+                f"⚠️ 注意: {upper_key} 由 LV 推导。读档后菜单会显示你设置的 {val}，"
+                f"但进入战斗/升级时游戏会按 {upper_key} = {DERIVED_STAT_FORMULAS[upper_key]}"
+                f" 重算（当前 LV={lv} → {derived}），此后 {val} 会被覆盖为 {derived}。",
+                file=sys.stderr,
+            )
+            print(
+                f"   如需永久固定为 {val}，请运行: "
+                f"set-derived --key {upper_key} --value {val}",
+                file=sys.stderr,
+            )
+
     print(f"✓ file0 [{idx}] {key}: {old} → {val}{hint}{auto_msg}")
 
 
@@ -938,7 +1011,8 @@ def cmd_file0_set(save_dir: Path, key: str, value: str) -> None:
 # Undo: restore from .bak
 # ============================================================
 
-def cmd_undo(save_dir: Path, target: str, backup_ts: str | None = None) -> None:
+def cmd_undo(save_dir: Path, target: str, backup_ts: str | None = None,
+             dir_override: str | None = None) -> None:
     files: dict[str, Path] = {
         "ini": save_dir / "undertale.ini",
         "file0": save_dir / "file0",
@@ -946,7 +1020,7 @@ def cmd_undo(save_dir: Path, target: str, backup_ts: str | None = None) -> None:
     key = target.lower()
     if key in ("data_win", "game", "game.ios"):
         try:
-            game_file = find_game_data_file()
+            game_file = find_game_data_file(dir_override)
         except FileNotFoundError as e:
             raise NotFoundError(str(e))
         orig = game_file
@@ -972,7 +1046,8 @@ def cmd_undo(save_dir: Path, target: str, backup_ts: str | None = None) -> None:
     print(f"✓ {label} 已从备份恢复: {bak} → {orig}")
 
 
-def cmd_list_backups(save_dir: Path, target: str) -> None:
+def cmd_list_backups(save_dir: Path, target: str,
+                     dir_override: str | None = None) -> None:
     files: dict[str, Path] = {
         "ini": save_dir / "undertale.ini",
         "file0": save_dir / "file0",
@@ -980,7 +1055,7 @@ def cmd_list_backups(save_dir: Path, target: str) -> None:
     key = target.lower()
     if key in ("data_win", "game", "game.ios"):
         try:
-            game_file = find_game_data_file()
+            game_file = find_game_data_file(dir_override)
         except FileNotFoundError as e:
             raise NotFoundError(str(e))
         orig = game_file
@@ -1071,11 +1146,11 @@ def cmd_reset_all(save_dir: Path) -> None:
     if len(nums) > 1:
         old = nums[1]
         nums[1] = 20
-        changes.append(f"HP: {old} → 20")
+        changes.append(f"MAXHP: {old} → 20")
     if len(nums) > 2:
         old = nums[2]
         nums[2] = 20
-        changes.append(f"MAXHP: {old} → 20")
+        changes.append(f"MAXEN: {old} → 20")
     if len(nums) > 8:
         old = nums[8]
         nums[8] = 0
@@ -1659,40 +1734,178 @@ try {{
 
 
 # ============================================================
+# set-derived: lock LV-derived stats (HP/AT/DF) in game scripts
+# ============================================================
+
+# 游戏在两处把 HP/AT/DF 从 LV 重算，必须同时改写这两处才能真正固定数值。
+DERIVED_TARGET_SCRIPTS: list[str] = [
+    "gml_Object_obj_battlecontroller_Create_0",
+    "gml_Script_scr_levelup",
+]
+
+
+def _patch_stat_assignments(code: str, var: str, value: int) -> tuple[str, int]:
+    """Rewrite every `global.<var> = ...;` assignment to a fixed literal.
+
+    Matches both the LV-derived formula (e.g. `16 + (global.lv * 4)`) and a
+    previously locked literal (e.g. `50`), so the operation is idempotent and
+    re-lockable. Returns (new_code, number_of_replacements).
+    """
+    import re
+    pattern = re.compile(rf"global\.{re.escape(var)}\s*=\s*[^;\n]*;")
+    return pattern.subn(f"global.{var} = {value};", code)
+
+
+def cmd_set_derived(save_dir: Path, game_file: Path, key: str, value: str) -> None:
+    """Set a stat in file0 AND patch the game so it is not recomputed from LV.
+
+    HP/AT/DF are derived from LV by scr_levelup and obj_battlecontroller_Create_0,
+    so writing file0 alone is transient. This command rewrites those two scripts
+    to hardcode the requested value.
+    """
+    upper = key.upper()
+    if upper not in DERIVED_STAT_VARS:
+        raise ValidationError(f"set-derived 仅支持 HP / MAXHP / AT / DF，收到: '{key}'")
+    try:
+        val = int(value)
+    except ValueError:
+        raise ValidationError(f"值须为整数: {value}")
+    if val < 0:
+        raise ValidationError(f"值不能为负: {val}")
+
+    var = DERIVED_STAT_VARS[upper]
+    file0_key = "MAXHP" if var == "maxhp" else var.upper()
+
+    print(f"🔧 固定 {upper} = {val}（file0 + 游戏脚本）")
+    print(f"   注意: 这会永久改写 game.ios 的 {', '.join(DERIVED_TARGET_SCRIPTS)}，"
+          f"对所有存档生效。用 undo --value data_win 可恢复。")
+
+    # 1) 写入 file0（读档时立即生效）
+    cmd_file0_set(save_dir, file0_key, str(val), warn_derived=False)
+
+    # 2) 改写游戏脚本，阻止进战斗/升级时按 LV 重算
+    patched = 0
+    for code_name in DERIVED_TARGET_SCRIPTS:
+        code = _get_decompiled_code(game_file, code_name)
+        if code is None:
+            print(f"   ⚠️ 找不到脚本 {code_name}，跳过", file=sys.stderr)
+            continue
+        new_code, n = _patch_stat_assignments(code, var, val)
+        if n == 0:
+            print(f"   ⚠️ {code_name} 中没有 global.{var} 赋值，跳过", file=sys.stderr)
+            continue
+        cmd_code_replace(game_file, code_name, new_code)
+        patched += n
+        print(f"   ✓ {code_name}: 改写 {n} 处 global.{var}")
+
+    if patched == 0:
+        raise RuntimeError("未能改写任何脚本，游戏仍会按 LV 重算该属性")
+    print(f"✓ {upper} 已固定为 {val}（共改写 {patched} 处）")
+
+
+# ============================================================
 # gml-bg (Auto-generate runtime background GML injection)
 # ============================================================
 
-def cmd_gml_bg(game_file: Path, room_name: str, bg_asset: str,
-               slot: int = 0, speedx: float | None = None,
-               speedy: float | None = None) -> None:
-    """Generate and inject GML code to set a runtime background for a room.
-    Uses background_index[slot] + background_x[] parallax calculation.
+def _parse_layers(spec: str | None) -> list[int]:
+    """Parse a layer spec like "0,1,2" into [0, 1, 2]. Empty/None -> []."""
+    if not spec:
+        return []
+    out: list[int] = []
+    for part in str(spec).replace(" ", "").split(","):
+        if not part:
+            continue
+        try:
+            v = int(part)
+        except ValueError:
+            raise ValueError(f"无效的层索引: {part!r} (应为 0-7 整数, 逗号分隔)")
+        if not 0 <= v <= 7:
+            raise ValueError(f"层索引越界: {v} (允许 0-7)")
+        out.append(v)
+    return out
+
+
+def build_gml_bg_code(room_name: str, bg_asset: str, slots: list[int],
+                      speedx: float = 0.0, speedy: float = 0.0,
+                      hide_above: bool = False, vtiled: bool = True,
+                      foreground: bool = False) -> str:
+    """Build the runtime-background GML injected by `gml-bg`.
+
+    Pure function (no I/O) so it can be unit-tested.
+
+    - slots: background layer indices to assign `bg_asset` to.
+    - hide_above: hide every layer above max(slots) to avoid occlusion
+      (higher slots are drawn on top of lower slots).
+    - vtiled/foreground: applied to every slot.
     """
+    if not slots:
+        slots = [0]
     esc_room = _csx_escape(room_name)
-    # Resolve bg_asset: if numeric, use as index; if string, use as name
-    if bg_asset.isdigit():
-        bg_ref = bg_asset
-    else:
-        bg_ref = _csx_escape(bg_asset)
-    flag_name = f"det_bg_{esc_room}_{slot}"
+    bg_ref = bg_asset if bg_asset.isdigit() else _csx_escape(bg_asset)
+    slot_key = "_".join(str(s) for s in slots)
+    asset_key = bg_asset.replace('"', "")
+    flag_name = f"det_bg_{esc_room}_{slot_key}_{asset_key}"
 
-    sx = speedx if speedx is not None else 0.0
-    sy = speedy if speedy is not None else 0.0
+    setup: list[str] = []
+    for s in slots:
+        setup.append(f"background_visible[{s}] = true;")
+        setup.append(f"background_index[{s}] = {bg_ref};")
+        setup.append(f"background_htiled[{s}] = true;")
+        setup.append(f"background_vtiled[{s}] = {'true' if vtiled else 'false'};")
+        setup.append(f"background_foreground[{s}] = {'true' if foreground else 'false'};")
+    if hide_above:
+        top = max(slots)
+        setup.append(
+            f"for (var _det_i = {top} + 1; _det_i < 8; _det_i++) "
+            "{ background_visible[_det_i] = false; }"
+        )
 
-    gml = f'''if (room == {esc_room})
+    parallax: list[str] = []
+    for s in slots:
+        parallax.append(
+            f"background_x[{s}] = floor(view_xview[0] - (view_xview[0] * {speedx}));"
+        )
+        parallax.append(
+            f"background_y[{s}] = floor(view_yview[0] - (view_yview[0] * {speedy}));"
+        )
+
+    setup_block = "\n".join(setup)
+    parallax_block = "\n".join(parallax)
+    return f'''if (room == {esc_room})
 {{
 if (!variable_global_exists("{flag_name}"))
 {{
 global.{flag_name} = 1;
-background_visible[{slot}] = true;
-background_index[{slot}] = {bg_ref};
-background_htiled[{slot}] = true;
+{setup_block}
 }}
-background_x[{slot}] = floor(view_xview[0] - (view_xview[0] * {sx}));
-background_y[{slot}] = floor(view_yview[0] - (view_yview[0] * {sy}));
+{parallax_block}
 }}'''
 
-    # Inject into obj_mainchara_Step_0 (exists in all rooms, use append-code)
+
+def cmd_gml_bg(game_file: Path, room_name: str, bg_asset: str,
+               slot: int = 0, speedx: float | None = None,
+               speedy: float | None = None,
+               layers: str | None = None,
+               all_layers: bool = False,
+               hide_above: bool = False,
+               vtiled: bool = True,
+               foreground: bool = False) -> None:
+    """Inject runtime-background GML into obj_mainchara_Step_0.
+
+    Handles multiple layers and occlusion: higher slots draw on top of
+    lower ones, so `--hide-above` disables every layer above the target.
+    """
+    slots = _parse_layers(layers)
+    if all_layers:
+        slots = list(range(8))
+    if not slots:
+        slots = [slot]
+    gml = build_gml_bg_code(
+        room_name, bg_asset, slots,
+        speedx=speedx if speedx is not None else 0.0,
+        speedy=speedy if speedy is not None else 0.0,
+        hide_above=hide_above, vtiled=vtiled, foreground=foreground,
+    )
     cmd_code_append(game_file, "gml_Object_obj_mainchara_Step_0", gml)
 
 
@@ -1766,6 +1979,9 @@ try {{
             print(line, file=sys.stderr)
         else:
             print(line)
+    print("⚠️  注意: 本列表按文件行序输出，key 编号 ≠ 台词顺序。", file=sys.stderr)
+    print("    列表里第一行 ≠ '第一句对话'。确定台词顺序请反编译引用这些 key 的", file=sys.stderr)
+    print("    对象事件代码，看 global.msg[N] = scr_gettext(\"key\") 的先后（见 SKILL.md）。", file=sys.stderr)
 
 
 def _validate_facechoice(face: int) -> None:
@@ -1905,6 +2121,67 @@ try {{
     importGroup.QueueReplace(Data.Code.ByName("gml_Script_textdata_en"), newGml);
     importGroup.Import();
     ScriptMessage("OK: Removed " + removed + " entry(s) for '" + "{esc_key}" + "'");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+}}
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+
+
+def cmd_textdata_update(game_file: Path, key: str, value: str,
+                        face: int = 0, emotion: int = 0) -> None:
+    """Update the text of an EXISTING key in the textdata_en map (idempotent).
+
+    Replaces the value of the ds_map_add(global.text_data_en, "key", ...) line
+    in gml_Script_textdata_en. Errors if the key does not exist.
+    """
+    _validate_facechoice(face)
+    value = _inject_face_control(value, face, emotion)
+    _validate_ascii_text(value, f"对话条目 '{key}'")
+    if "\\C" in value:
+        print("⚠️  该文本含 \\C 选择框标记——若由 Step 代码触发，分支处理必须替换", file=sys.stderr)
+        print("    global.msg[0] 为不含 \\C 的文本，否则 obj_choicer 的 scr_msgup 会", file=sys.stderr)
+        print("    重新复制本文本导致选择框循环重弹。建议用 npc-choice 命令一键生成。", file=sys.stderr)
+    if not any(value.rstrip("\n\r ").endswith(s) for s in ["/", "/%%", "%%%", "\\C ", "\\C", "/%"]):
+        print("警告: 对话文本应使用标准格式结尾", file=sys.stderr)
+        print("  中间页: 以 / 结尾", file=sys.stderr)
+        print("  末页: 以 /%% 结尾", file=sys.stderr)
+        print("  选择: 以 \\C 结尾", file=sys.stderr)
+
+    v_key = _csx_verbatim_escape(key)
+    v_val = _csx_verbatim_escape(value)
+    esc_key = _csx_escape(key)
+    csx = f'''
+try {{
+    string gml = GetDecompiledText(Data.Code.ByName("gml_Script_textdata_en"));
+    string search = @"ds_map_add(global.text_data_en, ""{v_key}"", ";
+    string newLine = @"ds_map_add(global.text_data_en, ""{v_key}"", ""{v_val}"");";
+    var lines = gml.Split(new[] {{ "\\r\\n", "\\r", "\\n" }}, StringSplitOptions.None);
+    int updated = 0;
+    for (int i = 0; i < lines.Length; i++) {{
+        if (lines[i].TrimStart().StartsWith(search)) {{
+            int indent = lines[i].Length - lines[i].TrimStart().Length;
+            lines[i] = new string(' ', indent) + newLine;
+            updated++;
+        }}
+    }}
+    if (updated == 0) {{
+        ScriptMessage("ERROR: No entry found for key '{esc_key}' (use add-textentry first)");
+        return;
+    }}
+    string newGml = string.Join("\\r\\n", lines);
+    CodeImportGroup importGroup = new(Data)
+    {{
+        MainThreadAction = MainThreadAction
+    }};
+    importGroup.QueueReplace(Data.Code.ByName("gml_Script_textdata_en"), newGml);
+    importGroup.Import();
+    ScriptMessage("OK: Updated " + updated + " entry(s) for '" + "{esc_key}" + "'");
 }} catch (Exception ex) {{
     ScriptMessage("ERROR: " + ex.Message);
 }}
@@ -2137,6 +2414,18 @@ if (objNativeInteract)
     ScriptMessage("WARN: 该对象继承原生交互系统 (obj_readablesolid/obj_interactable)");
     ScriptMessage("     若注入 myinteract 距离触发会与默认对话重叠 → 改用 flag 状态机 + 守卫 Alarm_0,");
     ScriptMessage("     或直接用 npc-dialogue / guard-npc-alarm 命令。");
+}}
+// Self-destructing pickup detection (experiment 20: obj_pie_pickup hides via instance_destroy in Step_1).
+// Exact whitelist only: these 3 pickups vanish every frame once their "taken" flag is set.
+string objSelName = objDef.Name?.Content ?? "";
+string objSelFlag = "";
+if (objSelName == "obj_pie_pickup") objSelFlag = "global.flag[103]";
+else if (objSelName == "obj_knife_pickup") objSelFlag = "global.flag[102]";
+else if (objSelName == "obj_ribbon_pickup") objSelFlag = "global.flag[100]";
+if (objSelFlag.Length > 0)
+{{
+    ScriptMessage("WARN: " + objSelName + " 是自毁拾取物 → " + objSelFlag + "==1 时每帧 instance_destroy()，spawn 后可能立刻消失");
+    ScriptMessage("     若只是摆放展示，改用无自毁逻辑的对象（如 obj_bigpie / obj_pie_onshelf）。");
 }}
 // Check for nearby objects (overlap warning)
 int nearCount = 0;
@@ -3440,40 +3729,24 @@ ScriptMessage("  Index: " + (Data.Rooms.Count - 1) + "  View follows: " + follow
     _update_rooms_json(room_name, caption or room_name)
 
 
-def cmd_set_room_bg(game_file: Path, room_name: str, index: int = 0,
-                    enable: bool | None = None,
-                    bg_name: str | None = None,
-                    foreground: bool | None = None,
-                    x: int | None = None, y: int | None = None,
-                    speedx: float | None = None, speedy: float | None = None,
-                    tiled_h: bool | None = None,
-                    tiled_v: bool | None = None,
-                    stretch: bool | None = None) -> None:
-    """Configure a background layer in a room."""
-    for warn_line in ROOM_BG_WARNING:
-        print(warn_line, file=sys.stderr)
-    esc_room = _csx_escape(room_name)
-    # Build CSX parts
-    parts = []
-    parts.append(f'''
-var room = Data.Rooms.ByName("{esc_room}");
-if (room == null) {{
-    for (int r = 0; r < Data.Rooms.Count; r++) {{
-        if (Data.Rooms[r].Name.Content.IndexOf("{esc_room}", StringComparison.OrdinalIgnoreCase) >= 0) {{
-            room = Data.Rooms[r];
-            break;
-        }}
-    }}
-}}
-if (room == null) {{
-    ScriptMessage("ERROR: Room not found: {esc_room}");
-    return;
-}}
-''')
+def build_set_room_bg_stmts(index: int,
+                            enable: bool | None = None,
+                            bg_name: str | None = None,
+                            foreground: bool | None = None,
+                            x: int | None = None, y: int | None = None,
+                            speedx: float | None = None, speedy: float | None = None,
+                            tiled_h: bool | None = None,
+                            tiled_v: bool | None = None,
+                            stretch: bool | None = None,
+                            keep_bg_color: bool = False) -> str:
+    """Build the C# statements for one background layer (pure, testable).
 
+    Only properties explicitly passed (not None) are emitted, so callers must
+    pass x/y=None unless the user really asked to move the layer.
+    """
     stmts = ""
-    if enable is True:
-        stmts += f"room.DrawBackgroundColor = false;\n"
+    if enable is True and not keep_bg_color:
+        stmts += "room.DrawBackgroundColor = false;\n"
     if enable is not None:
         stmts += f"room.Backgrounds[{index}].Enabled = " + ("true" if enable else "false") + ";\n"
     if bg_name is not None:
@@ -3505,9 +3778,51 @@ if (bgDef != null) {{
         stmts += f"room.Backgrounds[{index}].TiledVertically = " + ("true" if tiled_v else "false") + ";\n"
     if stretch is not None:
         stmts += f"room.Backgrounds[{index}].Stretch = " + ("true" if stretch else "false") + ";\n"
+    return stmts
+
+
+def cmd_set_room_bg(game_file: Path, room_name: str, index: int = 0,
+                    enable: bool | None = None,
+                    bg_name: str | None = None,
+                    foreground: bool | None = None,
+                    x: int | None = None, y: int | None = None,
+                    speedx: float | None = None, speedy: float | None = None,
+                    tiled_h: bool | None = None,
+                    tiled_v: bool | None = None,
+                    stretch: bool | None = None,
+                    keep_bg_color: bool = False) -> None:
+    """Configure a background layer in a room."""
+    for warn_line in ROOM_BG_WARNING:
+        print(warn_line, file=sys.stderr)
+    esc_room = _csx_escape(room_name)
+    # Build CSX parts
+    parts = []
+    parts.append(f'''
+var room = Data.Rooms.ByName("{esc_room}");
+if (room == null) {{
+    for (int r = 0; r < Data.Rooms.Count; r++) {{
+        if (Data.Rooms[r].Name.Content.IndexOf("{esc_room}", StringComparison.OrdinalIgnoreCase) >= 0) {{
+            room = Data.Rooms[r];
+            break;
+        }}
+    }}
+}}
+if (room == null) {{
+    ScriptMessage("ERROR: Room not found: {esc_room}");
+    return;
+}}
+''')
+
+    stmts = build_set_room_bg_stmts(
+        index, enable=enable, bg_name=bg_name, foreground=foreground,
+        x=x, y=y, speedx=speedx, speedy=speedy,
+        tiled_h=tiled_h, tiled_v=tiled_v, stretch=stretch,
+        keep_bg_color=keep_bg_color,
+    )
 
     if not stmts:
-        print("错误: 没有指定要修改的属性", file=sys.stderr)
+        print("错误: 没有指定要修改的属性 (set-room-bg 只接受层属性; "
+              "颜色请用 set-room-prop --bg-color)", file=sys.stderr)
         return
 
     parts.append(stmts)
@@ -3715,6 +4030,204 @@ ScriptMessage("  Use: set-room-bg --bg \\"" + bgName + "\\" --index N");
             print(line, file=sys.stderr)
         elif line.startswith("OK:"):
             print(line)
+
+
+# ============================================================
+# Solid-color background + background diagnostics
+# ============================================================
+
+def _read_room_size(game_file: Path, room_name: str) -> tuple[int, int]:
+    """Return (width, height) of a room via a read-only UTMT pass."""
+    esc = _csx_escape(room_name)
+    csx = _resolve_room_csx(esc) + '''
+ScriptMessage("SIZE:" + room.Width + ":" + room.Height);
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        if line.startswith("SIZE:"):
+            _, w, h = line.split(":", 2)
+            return int(w), int(h)
+    raise RuntimeError(f"无法读取房间尺寸: {room_name}")
+
+
+def _bg_asset_exists(game_file: Path, bg_name: str) -> bool:
+    """Return True if a background asset with this name already exists."""
+    esc = _csx_escape(bg_name)
+    csx = f'''
+var bg = Data.Backgrounds.ByName("{esc}");
+ScriptMessage("EXISTS:" + (bg != null));
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    for line in _parse_msg(out):
+        if line.startswith("EXISTS:"):
+            return line.split(":", 1)[1].strip().lower() == "true"
+    return False
+
+
+def _enabled_bg_layers(game_file: Path, room_name: str) -> list[int]:
+    """Return the indices of the room's currently-enabled background layers."""
+    esc = _csx_escape(room_name)
+    csx = _resolve_room_csx(esc) + '''
+for (int i = 0; i < (room.Backgrounds?.Count ?? 0); i++) {
+    if (room.Backgrounds[i].Enabled) ScriptMessage("ENABLED:" + i);
+}
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    res: list[int] = []
+    for line in _parse_msg(out):
+        if line.startswith("ENABLED:"):
+            res.append(int(line.split(":", 1)[1]))
+    return res
+
+
+def _assign_room_bg_layers(game_file: Path, room_name: str, bg_name: str,
+                           layers: list[int]) -> None:
+    """Point the given room background layers at bg_name (room-data edit)."""
+    esc_room = _csx_escape(room_name)
+    esc_bg = _csx_escape(bg_name)
+    assigns = ""
+    for i in layers:
+        assigns += f'''
+if (room.Backgrounds.Count > {i}) {{
+    room.Backgrounds[{i}].BackgroundDefinition = bgDef;
+    room.Backgrounds[{i}].Enabled = true;
+    room.Backgrounds[{i}].TiledHorizontally = true;
+    room.Backgrounds[{i}].TiledVertically = true;
+    room.Backgrounds[{i}].X = 0;
+    room.Backgrounds[{i}].Y = 0;
+    room.Backgrounds[{i}].Foreground = false;
+}}
+'''
+    layer_list = ",".join(str(i) for i in layers)
+    csx = _resolve_room_csx(esc_room) + f'''
+var bgDef = Data.Backgrounds.ByName("{esc_bg}");
+if (bgDef == null) {{ ScriptMessage("ERROR: Background not found: {esc_bg}"); return; }}
+{assigns}
+ScriptMessage("OK: Assigned {esc_bg} to layers [{layer_list}] of " + room.Name.Content);
+'''
+    out = _run_utmt(csx, game_file, save=True)
+    for line in _parse_msg(out):
+        if line.startswith("ERROR:"):
+            print(line, file=sys.stderr)
+        elif line.startswith("OK:"):
+            print(line)
+
+
+def cmd_set_room_solid_bg(game_file: Path, room_name: str, color: str,
+                          asset_name: str | None = None,
+                          layers: str | None = None,
+                          runtime: bool = True) -> None:
+    """One-shot: make a room's background a solid color.
+
+    Workflow (previously manual): read room size -> generate a solid PNG ->
+    create-bg-asset -> point all enabled layers at it (room data) ->
+    optionally inject a runtime override (gml-bg with --hide-above).
+    """
+    color = color.lstrip("#").upper()
+    if len(color) != 6 or any(c not in "0123456789ABCDEF" for c in color):
+        print(f"错误: 颜色须为 6 位 hex RGB (如 0000FF): {color}", file=sys.stderr)
+        return
+    rgb = int(color, 16)
+    if asset_name is None:
+        asset_name = f"bg_solid_{color.lower()}"
+
+    # 1) room size (so the image covers the room without relying on tiling)
+    w, h = _read_room_size(game_file, room_name)
+
+    # 2) generate solid PNG
+    try:
+        from PIL import Image
+    except ImportError:
+        print("错误: 需要 Pillow (pip install Pillow)", file=sys.stderr)
+        return
+    import tempfile
+    fd, png_path = tempfile.mkstemp(suffix=".png", prefix="det_solid_")
+    os.close(fd)
+    try:
+        Image.new("RGBA", (w, h),
+                  ((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, 255)
+                  ).save(png_path)
+        # 3) create asset (reuse if present)
+        if _bg_asset_exists(game_file, asset_name):
+            print(f"提示: 背景资源已存在，复用 {asset_name}", file=sys.stderr)
+        else:
+            cmd_create_bg_asset(game_file, asset_name, png_path)
+    finally:
+        try:
+            os.unlink(png_path)
+        except OSError:
+            pass
+
+    # 4) target layers: explicit > currently-enabled > [0]
+    target = _parse_layers(layers)
+    if not target:
+        target = _enabled_bg_layers(game_file, room_name) or [0]
+
+    # 5) room data
+    _assign_room_bg_layers(game_file, room_name, asset_name, target)
+
+    # 6) runtime override (covers object-driven rooms and hides occluders)
+    if runtime:
+        cmd_gml_bg(game_file, room_name, asset_name,
+                   slot=target[0],
+                   layers=",".join(str(s) for s in target),
+                   hide_above=True)
+
+
+def cmd_room_bg_info(game_file: Path, room_name: str) -> None:
+    """Diagnose how a room renders its background (category A / B / C)."""
+    esc = _csx_escape(room_name)
+    csx = _resolve_room_csx(esc) + '''
+ScriptMessage("=== Room BG Info ===");
+ScriptMessage("Name:  " + room.Name.Content);
+ScriptMessage("Size:  " + room.Width + " x " + room.Height);
+int enabled = 0;
+for (int i = 0; i < (room.Backgrounds?.Count ?? 0); i++) {
+    var bg = room.Backgrounds[i];
+    string bgName = bg?.BackgroundDefinition?.Name?.Content ?? "(none)";
+    if (bg.Enabled) {
+        enabled++;
+        ScriptMessage("  BG[" + i + "] ENABLED bg=" + bgName
+            + " fg=" + bg.Foreground
+            + " tiled=(" + bg.TiledHorizontally + "," + bg.TiledVertically + ")");
+    }
+}
+bool hasBgObj = false;
+if (room.GameObjects != null) {
+    foreach (var go in room.GameObjects) {
+        string on = go.ObjectDefinition?.Name?.Content ?? "";
+        if (on.StartsWith("obj_backgrounder_")) {
+            hasBgObj = true;
+            ScriptMessage("  backgrounder obj: " + on);
+        }
+    }
+}
+ScriptMessage("ENABLEDCOUNT:" + enabled);
+ScriptMessage("HASBG:" + hasBgObj);
+'''
+    out = _run_utmt(csx, game_file, save=False)
+    enabled = 0
+    has_bg_obj = False
+    for line in _parse_msg(out):
+        if line.startswith("ENABLEDCOUNT:"):
+            enabled = int(line.split(":", 1)[1])
+        elif line.startswith("HASBG:"):
+            has_bg_obj = line.split(":", 1)[1].strip().lower() == "true"
+        else:
+            print(line)
+    if enabled == 0 and not has_bg_obj:
+        cat = "A (纯 Tile 房)"
+        hint = ("渲染器跳过背景阶段；房间数据改动无效。"
+                "需先 set-room-bg --enable true 启用一层，或放 backgrounder 对象")
+    elif has_bg_obj:
+        cat = "C (对象驱动)"
+        hint = "obj_backgrounder_* 在运行时覆盖房间数据；用 gml-bg 注入（可 --hide-above）"
+    else:
+        cat = "B (房间数据驱动)"
+        hint = "房间数据即渲染来源；set-room-bg 有效，注意高 slot 层会盖住低层"
+    print(f"Category: {cat}")
+    print(f"Hint:     {hint}")
+    print("Tip:      可用 `search-vars --value <背景资源名>` 复核（无命中=>B类）")
 
 
 # ============================================================
@@ -4980,8 +5493,6 @@ if (frameNum < 0) {{
     for line in _parse_msg(out):
         if line.startswith("ERROR:"):
             print(line, file=sys.stderr)
-        elif line.startswith("OK:"):
-            print(line)
         else:
             print(line)
 
@@ -5527,6 +6038,10 @@ def main():
   %(prog)s --action verify-instances --file data_win
   %(prog)s --action verify-instances --fix --file data_win
 
+  # Lock LV-derived stats so the game stops recomputing them (writes file0 + patches game scripts)
+  %(prog)s --action set-derived --key HP --value 50
+  %(prog)s --action set-derived --key AT --value 99
+
   # Code append/prepend (新增，无需完全替换)
   %(prog)s --action append-code --key "gml_Object_obj_dummy1_Step_0" --value "if (global.flag[510]==99) instance_destroy();" --file data_win
   %(prog)s --action append-code --key "gml_Object_obj_dummy1_Step_0" --value "./append.gml" --file-path --file data_win
@@ -5575,9 +6090,10 @@ def main():
                                  "list-codes", "decompile-code",
                                  "replace-code", "find-replace-code",
                                  "append-code", "prepend-code",
-                                 "search-textdata", "add-textentry", "delete-textentry",
-                                  "batch-add-textentry",
-                                  "guided-add-dialogue",
+                                  "search-textdata", "add-textentry", "update-textentry",
+                                  "delete-textentry",
+                                   "batch-add-textentry",
+                                   "guided-add-dialogue",
                                  "search-vars", "create-script",
                                    "room-objects", "search-sctext",
                                     "spawn-obj", "remove-obj",
@@ -5596,7 +6112,7 @@ def main():
                                     "room-info", "create-room",
                                     "set-room-bg", "set-room-prop", "set-room-view",
                                     "list-game-bgs", "create-bg-asset",
-                                    "gml-bg",
+                                    "gml-bg", "set-room-solid-bg", "room-bg-info",
                                      "remove-tile",
                                      "handler-extract",
                                      "create-door",
@@ -5604,7 +6120,7 @@ def main():
                                      "remove-door",
                                      "create-pit",
                                      "create-battle",
-                                     "verify-nsid", "verify-instances"])
+                                     "verify-nsid", "verify-instances", "set-derived"])
     parser.add_argument("--key", help="键名或数字索引 (file0 用数字)")
     parser.add_argument("--value", help="要设置/搜索的值 (set/find 操作必需)")
     parser.add_argument("--old", help="replace-string 的旧文本")
@@ -5623,9 +6139,9 @@ def main():
                         help="--value 是文件路径而非内联内容 (replace-code 用)")
     parser.add_argument("--backup", type=str, default=None,
                         help="备份时间戳 (undo 恢复到指定版本, list-backups 可查看)")
-    parser.add_argument("--x", type=int, default=320,
+    parser.add_argument("--x", type=int, default=None,
                         help="X 坐标 (spawn-obj/create-door 用, 默认: 320)")
-    parser.add_argument("--y", type=int, default=240,
+    parser.add_argument("--y", type=int, default=None,
                         help="Y 坐标 (spawn-obj/create-door 用, 默认: 240)")
     parser.add_argument("--spawn-x", type=int, default=160,
                         help="目标房间出生 X (create-door 用, 默认: 160)")
@@ -5733,7 +6249,30 @@ def main():
                         help="PNG 图片路径 (create-bg-asset 用)")
     parser.add_argument("--slot", type=int, default=0,
                         help="背景槽位索引 (gml-bg 用, 默认: 0)")
+    parser.add_argument("--layers", type=str, default=None,
+                        help="背景层索引列表, 逗号分隔 (gml-bg/set-room-solid-bg 用, 如 0,1)")
+    parser.add_argument("--all-layers", action="store_true",
+                        help="应用到全部 8 个背景层 (gml-bg 用)")
+    parser.add_argument("--hide-above", action="store_true",
+                        help="隐藏目标层之上的所有层, 防止遮挡 (gml-bg 用)")
+    parser.add_argument("--keep-bg-color", action="store_true",
+                        help="启用背景层时保留 DrawBackgroundColor (set-room-bg 用)")
+    parser.add_argument("--color", type=str, default=None,
+                        help="纯色 hex RGB, 6 位 (set-room-solid-bg 用, 如 0000FF)")
+    parser.add_argument("--asset-name", type=str, default=None,
+                        help="背景资源名 (set-room-solid-bg 用, 默认 bg_solid_<color>)")
+    parser.add_argument("--no-runtime", action="store_true",
+                        help="只改房间数据, 不注入运行时覆盖 (set-room-solid-bg 用)")
     args = parser.parse_args()
+
+    # --x/--y default to None so remove-door can require explicit coordinates;
+    # other commands keep the historical 320/240 default.
+    x_explicit = args.x is not None
+    y_explicit = args.y is not None
+    if args.x is None:
+        args.x = 320
+    if args.y is None:
+        args.y = 240
 
     # Activate sandbox mode
     if args.sandbox:
@@ -5755,6 +6294,23 @@ def main():
             sandbox_path.unlink()
             print(f"✓ 沙箱备份已恢复: {sandbox_path.name} → {game_file.name}")
         except FileNotFoundError as e:
+            print(f"错误: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    # Handle set-derived before file-type checks (touches both file0 and data_win)
+    if args.action == "set-derived":
+        if args.key is None or args.value is None:
+            parser.error("set-derived 需要 --key (HP/MAXHP/AT/DF) 和 --value")
+        try:
+            save_dir = find_save_dir(args.dir)
+            game_file = find_game_data_file(args.dir)
+        except FileNotFoundError as e:
+            print(f"错误: {e}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            cmd_set_derived(save_dir, game_file, args.key, args.value)
+        except (FileNotFoundError, ValueError, RuntimeError, DeterlineError) as e:
             print(f"错误: {e}", file=sys.stderr)
             sys.exit(1)
         return
@@ -5830,6 +6386,11 @@ def main():
                 if args.key is None:
                     parser.error("--key 是必需的 (要删除的 textdata key)")
                 cmd_textdata_delete(game_file, args.key)
+            elif args.action == "update-textentry":
+                if args.key is None or args.value is None:
+                    parser.error("--key 和 --value 是必需的 (已存在的 textdata key + 新文本)")
+                cmd_textdata_update(game_file, args.key, args.value,
+                                    face=args.face, emotion=args.emotion)
             elif args.action == "search-vars":
                 if args.value is None:
                     parser.error("--value 是必需的 (变量名)")
@@ -5891,9 +6452,12 @@ def main():
             elif args.action == "remove-door":
                 if args.value is None:
                     parser.error("--value 是必需的 (房间名)")
-                if not args.all and (args.x is None or args.y is None):
+                if not args.all and not (x_explicit and y_explicit):
                     parser.error("--x 和 --y (坐标) 或 --all (全部移除) 是必需的")
-                cmd_remove_door(game_file, args.value, args.x, args.y, remove_all=args.all)
+                cmd_remove_door(game_file, args.value,
+                                args.x if x_explicit else None,
+                                args.y if y_explicit else None,
+                                remove_all=args.all)
             elif args.action == "create-pit":
                 if args.value is None or args.key is None:
                     parser.error("--value (当前房间名) 和 --key (目标房间名) 是必需的")
@@ -5931,11 +6495,28 @@ def main():
                                 enable=_bool_or_none(args.enable),
                                 bg_name=args.bg,
                                 foreground=_bool_or_none(args.foreground),
-                                x=args.x, y=args.y,
+                                x=(args.x if x_explicit else None),
+                                y=(args.y if y_explicit else None),
                                 speedx=args.speedx, speedy=args.speedy,
                                 tiled_h=_bool_or_none(args.tiled_h),
                                 tiled_v=_bool_or_none(args.tiled_v),
-                                stretch=_bool_or_none(args.stretch))
+                                stretch=_bool_or_none(args.stretch),
+                                keep_bg_color=args.keep_bg_color)
+            elif args.action == "set-room-solid-bg":
+                if args.value is None or args.color is None:
+                    parser.error("--value (房间名) 和 --color (6位hex RGB) 是必需的")
+                try:
+                    _parse_layers(args.layers)
+                except ValueError as e:
+                    parser.error(str(e))
+                cmd_set_room_solid_bg(game_file, args.value, args.color,
+                                      asset_name=args.asset_name,
+                                      layers=args.layers,
+                                      runtime=not args.no_runtime)
+            elif args.action == "room-bg-info":
+                if args.value is None:
+                    parser.error("--value 是必需的 (房间名)")
+                cmd_room_bg_info(game_file, args.value)
             elif args.action == "set-room-prop":
                 if args.value is None:
                     parser.error("--value 是必需的 (房间名)")
@@ -5962,8 +6543,16 @@ def main():
             elif args.action == "gml-bg":
                 if args.value is None or args.bg is None:
                     parser.error("--value (房间名) 和 --bg (背景名/ID) 是必需的")
+                try:
+                    _parse_layers(args.layers)
+                except ValueError as e:
+                    parser.error(str(e))
                 cmd_gml_bg(game_file, args.value, args.bg, args.slot,
-                           args.speedx, args.speedy)
+                           args.speedx, args.speedy,
+                           layers=args.layers, all_layers=args.all_layers,
+                           hide_above=args.hide_above,
+                           vtiled=(_bool_or_none(args.tiled_v) is not False),
+                           foreground=(_bool_or_none(args.foreground) is True))
             elif args.action == "remove-tile":
                 if args.value is None:
                     parser.error("--value 是必需的 (房间名)")
@@ -6091,11 +6680,12 @@ def main():
             elif args.action == "undo":
                 if not args.value:
                     parser.error("--value 是必需的 (ini, file0, 或 data_win)")
-                cmd_undo(save_dir, args.value, backup_ts=args.backup)
+                cmd_undo(save_dir, args.value, backup_ts=args.backup,
+                         dir_override=args.dir)
             elif args.action == "list-backups":
                 if not args.value:
                     parser.error("--value 是必需的 (ini, file0, 或 data_win)")
-                cmd_list_backups(save_dir, args.value)
+                cmd_list_backups(save_dir, args.value, dir_override=args.dir)
             elif args.action == "create-system-info":
                 if args.value is None:
                     parser.error("--value 是必需的 (962 或 963)")
