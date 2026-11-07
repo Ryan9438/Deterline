@@ -1,0 +1,173 @@
+Trying to load file: '/Users/ryan/Desktop/UT 存档修改/Deterline/game.ios'
+=== P1 FONT INVENTORY ===
+FONTCOUNT:20
+TEXTPAGEITEM_COUNT:6550
+EMBEDDEDTEX_COUNT:26
+NOTE:Data.Textures does not exist in this UTMT build (CS1061 confirmed in first run)
+FONT|fnt_wingdings|glyphs=96|range=32-127|charset=1|aa=0|emSize=12(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=Wingdings
+  TPI#6530/emb#18 src=2,262 256x128 target=0,0 256x128 bounding=256x128 name=PageItem 6530
+FONT|fnt_main|glyphs=269|range=32-12540|charset=1|aa=0|emSize=24(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=8bitoperator JVE (DO NOT EDIT IN GAMEMAKER, Japanese characters will disappear)
+  TPI#6531/emb#19 src=0,0 256x1024 target=0,0 256x1024 bounding=256x1024 name=PageItem 6531
+FONT|fnt_maintext|glyphs=269|range=32-12540|charset=1|aa=0|emSize=12(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=8bitoperator JVE (DO NOT EDIT IN GAMEMAKER, Japanese characters will disappear)
+  TPI#6532/emb#19 src=768,0 256x256 target=0,0 256x256 bounding=256x256 name=PageItem 6532
+FONT|fnt_small|glyphs=96|range=32-127|charset=1|aa=0|emSize=6(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=Crypt of Tomorrow
+  TPI#6533/emb#18 src=262,262 128x64 target=0,0 128x64 bounding=128x64 name=PageItem 6533
+FONT|fnt_plain|glyphs=269|range=32-12540|charset=1|aa=0|emSize=12(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=True|italic=False|dispName=DotumChe (DO NOT EDIT IN GAMEMAKER, Japanese characters will disappear)
+  TPI#6534/emb#19 src=768,256 256x256 target=0,0 256x256 bounding=256x256 name=PageItem 6534
+FONT|fnt_plainbig|glyphs=96|range=32-127|charset=1|aa=0|emSize=48(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=True|italic=False|dispName=DotumChe
+  TPI#6535/emb#19 src=256,0 512x512 target=0,0 512x512 bounding=512x512 name=PageItem 6535
+FONT|fnt_dmg|glyphs=96|range=32-127|charset=1|aa=0|emSize=24(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=True|italic=False|dispName=Hachicro
+  TPI#6536/emb#18 src=0,2 512x256 target=0,0 512x256 bounding=512x256 name=PageItem 6536
+FONT|fnt_curs|glyphs=96|range=32-127|charset=1|aa=0|emSize=18(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=Mars Needs Cunnilingus
+  TPI#6537/emb#18 src=2,394 256x128 target=0,0 256x128 bounding=256x128 name=PageItem 6537
+FONT|fnt_comicsans|glyphs=96|range=32-127|charset=1|aa=0|emSize=10(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=True|italic=False|dispName=Comic Sans MS
+  TPI#6538/emb#19 src=256,512 256x128 target=0,0 256x128 bounding=256x128 name=PageItem 6538
+FONT|fnt_papyrus|glyphs=96|range=32-127|charset=1|aa=0|emSize=8(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=True|italic=False|dispName=Papyrus
+  TPI#6539/emb#19 src=512,512 128x128 target=0,0 128x128 bounding=128x128 name=PageItem 6539
+FONT|fnt_ja_comicsans|glyphs=780|range=32-65439|charset=1|aa=1|emSize=12(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=HappyRuikaKyohkan-07 - DO NOT EDIT IN GAMEMAKER
+  TPI#6540/emb#20 src=1024,512 512x512 target=0,0 512x512 bounding=512x512 name=PageItem 6540
+FONT|fnt_ja_comicsans_big|glyphs=780|range=32-65439|charset=1|aa=1|emSize=24(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=HappyRuikaKyohkan-07 - DO NOT EDIT IN GAMEMAKER
+  TPI#6541/emb#20 src=0,0 1024x1024 target=0,0 1024x1024 bounding=1024x1024 name=PageItem 6541
+FONT|fnt_ja_curs|glyphs=268|range=32-12540|charset=1|aa=0|emSize=13(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=JF Dot Shinonome Gothic 16 - DO NOT EDIT IN GAMEMAKER
+  TPI#6542/emb#20 src=1536,1024 512x256 target=0,0 512x256 bounding=512x256 name=PageItem 6542
+FONT|fnt_ja_main|glyphs=780|range=32-65439|charset=1|aa=0|emSize=22(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=JF Dot Shinonome Gothic 14 - DO NOT EDIT IN GAMEMAKER
+  TPI#6543/emb#20 src=0,1024 1024x1024 target=0,0 1024x1024 bounding=1024x1024 name=PageItem 6543
+FONT|fnt_ja_maintext|glyphs=780|range=32-65439|charset=1|aa=0|emSize=11(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=JF Dot Shinonome Gothic 14 - DO NOT EDIT IN GAMEMAKER
+  TPI#6544/emb#20 src=1536,512 512x512 target=0,0 512x512 bounding=512x512 name=PageItem 6544
+FONT|fnt_ja_papyrus|glyphs=780|range=32-65439|charset=1|aa=1|emSize=18(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=True|italic=False|dispName=Tanuki Permanent Marker - DO NOT EDIT IN GAMEMAKER
+  TPI#6545/emb#20 src=1024,0 1024x512 target=0,0 1024x512 bounding=1024x512 name=PageItem 6545
+FONT|fnt_ja_papyrus_btl|glyphs=780|range=32-65439|charset=1|aa=1|emSize=13(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=True|italic=False|dispName=Tanuki Permanent Marker - DO NOT EDIT IN GAMEMAKER
+  TPI#6546/emb#20 src=1024,1024 512x512 target=0,0 512x512 bounding=512x512 name=PageItem 6546
+FONT|fnt_ja_plain|glyphs=780|range=32-65439|charset=1|aa=1|emSize=12(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=FTT-UDKakugoC80 M - DO NOT EDIT IN GAMEMAKER
+  TPI#6547/emb#20 src=1024,1536 512x512 target=0,0 512x512 bounding=512x512 name=PageItem 6547
+FONT|fnt_ja_plainbig|glyphs=3|range=32-12397|charset=1|aa=0|emSize=56(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=False|italic=False|dispName=FTT-UD角ゴC80 M
+  TPI#6548/emb#20 src=1536,1280 256x128 target=0,0 256x128 bounding=256x128 name=PageItem 6548
+FONT|fnt_ja_plainsmall|glyphs=181|range=32-12540|charset=1|aa=0|emSize=9(float=False)|lineHeight=0|ascender=0/0|scale=1,1|bold=True|italic=False|dispName=FTT-UD角ゴC80 M
+  TPI#6549/emb#20 src=1792,1280 256x128 target=0,0 256x128 bounding=256x128 name=PageItem 6549
+=== GLYPH SAMPLES fnt_ja_comicsans (first 10 of 780) ===
+  U+0020 '?' | srcXY=2,2 | WH=1x16 | Offset=3 | Shift=5 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0021 '!' | srcXY=5,2 | WH=5x16 | Offset=0 | Shift=6 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0022 '"' | srcXY=12,2 | WH=7x16 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0023 '#' | srcXY=21,2 | WH=13x16 | Offset=0 | Shift=13 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0024 '$' | srcXY=36,2 | WH=10x16 | Offset=0 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0025 '%' | srcXY=48,2 | WH=14x16 | Offset=0 | Shift=15 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0026 '&' | srcXY=64,2 | WH=13x16 | Offset=0 | Shift=13 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0027 ''' | srcXY=79,2 | WH=5x16 | Offset=0 | Shift=6 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0028 '(' | srcXY=86,2 | WH=8x16 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0029 ')' | srcXY=96,2 | WH=7x16 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+=== GLYPH SAMPLES fnt_ja_comicsans_big (first 10 of 780) ===
+  U+0020 '?' | srcXY=2,2 | WH=1x30 | Offset=8 | Shift=10 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0021 '!' | srcXY=5,2 | WH=8x30 | Offset=2 | Shift=12 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0022 '"' | srcXY=15,2 | WH=13x30 | Offset=1 | Shift=17 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0023 '#' | srcXY=30,2 | WH=24x30 | Offset=1 | Shift=27 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0024 '$' | srcXY=56,2 | WH=19x30 | Offset=1 | Shift=22 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0025 '%' | srcXY=77,2 | WH=27x30 | Offset=1 | Shift=29 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0026 '&' | srcXY=106,2 | WH=25x30 | Offset=1 | Shift=26 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0027 ''' | srcXY=133,2 | WH=8x30 | Offset=1 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0028 '(' | srcXY=143,2 | WH=13x30 | Offset=2 | Shift=15 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0029 ')' | srcXY=158,2 | WH=13x30 | Offset=0 | Shift=15 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+=== GLYPH SAMPLES fnt_ja_curs (first 10 of 268) ===
+  U+0020 '?' | srcXY=2,2 | WH=1x20 | Offset=6 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0021 '!' | srcXY=5,2 | WH=4x20 | Offset=2 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0022 '"' | srcXY=11,2 | WH=7x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0023 '#' | srcXY=20,2 | WH=8x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0024 '$' | srcXY=30,2 | WH=8x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0025 '%' | srcXY=40,2 | WH=8x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0026 '&' | srcXY=50,2 | WH=8x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0027 ''' | srcXY=60,2 | WH=4x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0028 '(' | srcXY=66,2 | WH=6x20 | Offset=2 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0029 ')' | srcXY=74,2 | WH=6x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+=== GLYPH SAMPLES fnt_ja_main (first 10 of 780) ===
+  U+0020 '?' | srcXY=4,4 | WH=2x36 | Offset=10 | Shift=14 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0021 '!' | srcXY=10,4 | WH=4x36 | Offset=4 | Shift=14 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0022 '"' | srcXY=18,4 | WH=12x36 | Offset=0 | Shift=14 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0023 '#' | srcXY=34,4 | WH=12x36 | Offset=0 | Shift=14 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0024 '$' | srcXY=50,4 | WH=12x36 | Offset=0 | Shift=14 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0025 '%' | srcXY=66,4 | WH=12x36 | Offset=0 | Shift=14 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0026 '&' | srcXY=82,4 | WH=12x36 | Offset=0 | Shift=14 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0027 ''' | srcXY=98,4 | WH=6x36 | Offset=2 | Shift=14 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0028 '(' | srcXY=108,4 | WH=10x36 | Offset=2 | Shift=14 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0029 ')' | srcXY=122,4 | WH=10x36 | Offset=0 | Shift=14 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+=== GLYPH SAMPLES fnt_ja_maintext (first 10 of 780) ===
+  U+0020 '?' | srcXY=2,2 | WH=1x18 | Offset=5 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0021 '!' | srcXY=5,2 | WH=2x18 | Offset=2 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0022 '"' | srcXY=9,2 | WH=6x18 | Offset=0 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0023 '#' | srcXY=17,2 | WH=6x18 | Offset=0 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0024 '$' | srcXY=25,2 | WH=6x18 | Offset=0 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0025 '%' | srcXY=33,2 | WH=6x18 | Offset=0 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0026 '&' | srcXY=41,2 | WH=6x18 | Offset=0 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0027 ''' | srcXY=49,2 | WH=3x18 | Offset=1 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0028 '(' | srcXY=54,2 | WH=5x18 | Offset=1 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0029 ')' | srcXY=61,2 | WH=5x18 | Offset=0 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+=== GLYPH SAMPLES fnt_ja_papyrus (first 10 of 780) ===
+  U+0020 '?' | srcXY=2,2 | WH=1x24 | Offset=9 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0021 '!' | srcXY=5,2 | WH=4x24 | Offset=4 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0022 '"' | srcXY=11,2 | WH=9x24 | Offset=0 | Shift=9 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0023 '#' | srcXY=22,2 | WH=11x24 | Offset=0 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0024 '$' | srcXY=35,2 | WH=10x24 | Offset=0 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0025 '%' | srcXY=47,2 | WH=11x24 | Offset=0 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0026 '&' | srcXY=60,2 | WH=11x24 | Offset=0 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0027 ''' | srcXY=73,2 | WH=6x24 | Offset=1 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0028 '(' | srcXY=81,2 | WH=8x24 | Offset=3 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0029 ')' | srcXY=91,2 | WH=7x24 | Offset=0 | Shift=11 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+=== GLYPH SAMPLES fnt_ja_papyrus_btl (first 10 of 780) ===
+  U+0020 '?' | srcXY=2,2 | WH=1x18 | Offset=6 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0021 '!' | srcXY=5,2 | WH=4x18 | Offset=2 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0022 '"' | srcXY=11,2 | WH=6x18 | Offset=0 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0023 '#' | srcXY=19,2 | WH=8x18 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0024 '$' | srcXY=29,2 | WH=8x18 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0025 '%' | srcXY=39,2 | WH=8x18 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0026 '&' | srcXY=49,2 | WH=8x18 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0027 ''' | srcXY=59,2 | WH=5x18 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0028 '(' | srcXY=66,2 | WH=6x18 | Offset=2 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0029 ')' | srcXY=74,2 | WH=6x18 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+=== GLYPH SAMPLES fnt_ja_plain (first 10 of 780) ===
+  U+0020 '?' | srcXY=2,2 | WH=1x20 | Offset=6 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0021 '!' | srcXY=5,2 | WH=4x20 | Offset=1 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0022 '"' | srcXY=11,2 | WH=6x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0023 '#' | srcXY=19,2 | WH=8x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0024 '$' | srcXY=29,2 | WH=7x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0025 '%' | srcXY=38,2 | WH=8x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0026 '&' | srcXY=48,2 | WH=8x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0027 ''' | srcXY=58,2 | WH=4x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0028 '(' | srcXY=64,2 | WH=5x20 | Offset=2 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+0029 ')' | srcXY=71,2 | WH=5x20 | Offset=0 | Shift=8 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+=== GLYPH SAMPLES fnt_ja_plainbig (first 10 of 3) ===
+  U+0020 '?' | srcXY=110,2 | WH=37x75 | Offset=0 | Shift=37 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+3057 '?' | srcXY=62,2 | WH=46x71 | Offset=11 | Shift=60 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+306D '?' | srcXY=2,2 | WH=58x73 | Offset=2 | Shift=60 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+=== GLYPH SAMPLES fnt_ja_plainsmall (first 10 of 181) ===
+  U+0020 '?' | srcXY=162,107 | WH=7x12 | Offset=0 | Shift=7 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+2026 '?' | srcXY=179,107 | WH=9x8 | Offset=1 | Shift=10 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+3002 '?' | srcXY=201,107 | WH=4x13 | Offset=1 | Shift=10 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+3041 '?' | srcXY=92,92 | WH=8x13 | Offset=2 | Shift=10 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+3042 '?' | srcXY=156,47 | WH=9x13 | Offset=1 | Shift=10 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+3043 '?' | srcXY=152,92 | WH=8x13 | Offset=2 | Shift=10 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+3044 '?' | srcXY=145,47 | WH=9x13 | Offset=1 | Shift=10 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+3045 '?' | srcXY=108,107 | WH=7x13 | Offset=2 | Shift=10 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+3046 '?' | srcXY=222,92 | WH=8x12 | Offset=1 | Shift=10 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+  U+3047 '?' | srcXY=202,92 | WH=8x12 | Offset=2 | Shift=10 | UnknownAlwaysZero=0 | TextureItem=MISSING:TextureItem
+=== FONT TEXTURE PAGE OCCUPANCY ===
+OCC|fnt_wingdings|page emb#18 0x0|texdataWH=512x1024|tpiRegion=2,262 256x128|glyphBox=2,2 - 253,107 (251x105)|tpiRegionOverlapsPage=False
+OCC|fnt_main|page emb#19 0x0|texdataWH=1024x1024|tpiRegion=0,0 256x1024|glyphBox=2,2 - 254,886 (252x884)|tpiRegionOverlapsPage=False
+OCC|fnt_maintext|page emb#19 0x0|texdataWH=1024x1024|tpiRegion=768,0 256x256|glyphBox=1,2 - 254,230 (253x228)|tpiRegionOverlapsPage=False
+OCC|fnt_small|page emb#18 0x0|texdataWH=512x1024|tpiRegion=262,262 128x64|glyphBox=2,2 - 121,39 (119x37)|tpiRegionOverlapsPage=False
+OCC|fnt_plain|page emb#19 0x0|texdataWH=1024x1024|tpiRegion=768,256 256x256|glyphBox=1,2 - 254,230 (253x228)|tpiRegionOverlapsPage=False
+OCC|fnt_plainbig|page emb#19 0x0|texdataWH=1024x1024|tpiRegion=256,0 512x512|glyphBox=2,2 - 509,336 (507x334)|tpiRegionOverlapsPage=False
+OCC|fnt_dmg|page emb#18 0x0|texdataWH=512x1024|tpiRegion=0,2 512x256|glyphBox=2,2 - 503,188 (501x186)|tpiRegionOverlapsPage=False
+OCC|fnt_curs|page emb#18 0x0|texdataWH=512x1024|tpiRegion=2,394 256x128|glyphBox=2,2 - 252,126 (250x124)|tpiRegionOverlapsPage=False
+OCC|fnt_comicsans|page emb#19 0x0|texdataWH=1024x1024|tpiRegion=256,512 256x128|glyphBox=2,2 - 250,84 (248x82)|tpiRegionOverlapsPage=False
+OCC|fnt_papyrus|page emb#19 0x0|texdataWH=1024x1024|tpiRegion=512,512 128x128|glyphBox=2,2 - 123,125 (121x123)|tpiRegionOverlapsPage=False
+OCC|fnt_ja_comicsans|page emb#20 0x0|texdataWH=2048x2048|tpiRegion=1024,512 512x512|glyphBox=2,2 - 510,396 (508x394)|tpiRegionOverlapsPage=False
+OCC|fnt_ja_comicsans_big|page emb#20 0x0|texdataWH=2048x2048|tpiRegion=0,0 1024x1024|glyphBox=2,2 - 1021,640 (1019x638)|tpiRegionOverlapsPage=False
+OCC|fnt_ja_curs|page emb#20 0x0|texdataWH=2048x2048|tpiRegion=1536,1024 512x256|glyphBox=2,2 - 509,176 (507x174)|tpiRegionOverlapsPage=False
+OCC|fnt_ja_main|page emb#20 0x0|texdataWH=2048x2048|tpiRegion=0,1024 1024x1024|glyphBox=4,4 - 1020,840 (1016x836)|tpiRegionOverlapsPage=False
+OCC|fnt_ja_maintext|page emb#20 0x0|texdataWH=2048x2048|tpiRegion=1536,512 512x512|glyphBox=2,2 - 510,420 (508x418)|tpiRegionOverlapsPage=False
+OCC|fnt_ja_papyrus|page emb#20 0x0|texdataWH=2048x2048|tpiRegion=1024,0 1024x512|glyphBox=2,2 - 1020,416 (1018x414)|tpiRegionOverlapsPage=False
+OCC|fnt_ja_papyrus_btl|page emb#20 0x0|texdataWH=2048x2048|tpiRegion=1024,1024 512x512|glyphBox=2,2 - 510,480 (508x478)|tpiRegionOverlapsPage=False
+OCC|fnt_ja_plain|page emb#20 0x0|texdataWH=2048x2048|tpiRegion=1024,1536 512x512|glyphBox=2,2 - 510,440 (508x438)|tpiRegionOverlapsPage=False
+OCC|fnt_ja_plainbig|page emb#20 0x0|texdataWH=2048x2048|tpiRegion=1536,1280 256x128|glyphBox=2,2 - 147,77 (145x75)|tpiRegionOverlapsPage=False
+OCC|fnt_ja_plainsmall|page emb#20 0x0|texdataWH=2048x2048|tpiRegion=1792,1280 256x128|glyphBox=2,2 - 253,120 (251x118)|tpiRegionOverlapsPage=False
+=== CO-OCCUPANTS OF PAGE USED BY fnt_marsneedcunnilingus ===
+JSON_WRITTEN:fonts_dump.json bytes=1945376
+P1_DONE

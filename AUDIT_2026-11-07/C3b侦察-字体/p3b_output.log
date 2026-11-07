@@ -1,0 +1,58 @@
+Trying to load file: '/Users/ryan/Desktop/UT 存档修改/Deterline/game.ios'
+=== P3b TEXTURE PAGE SYSTEM ===
+--- UndertaleTextureGroupInfo shape ---
+  TGPROP UndertaleString Directory
+  TGPROP UndertaleString Extension
+  TGPROP UndertaleSimpleResourcesList`2 Fonts
+  TGPROP TextureGroupLoadType LoadType
+  TGPROP UndertaleString Name
+  TGPROP UndertaleSimpleResourcesList`2 SpineSprites
+  TGPROP UndertaleSimpleResourcesList`2 Sprites
+  TGPROP UndertaleSimpleResourcesList`2 TexturePages
+  TGPROP UndertaleSimpleResourcesList`2 Tilesets
+--- EmbeddedTextures inventory ---
+EMB|0|name=Texture 0|WH=1024x1024|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|1|name=Texture 1|WH=2048x1024|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|2|name=Texture 2|WH=1024x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|3|name=Texture 3|WH=512x512|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|4|name=Texture 4|WH=1024x1024|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|5|name=Texture 5|WH=1024x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|6|name=Texture 6|WH=1024x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|7|name=Texture 7|WH=1024x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|8|name=Texture 8|WH=512x1024|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|9|name=Texture 9|WH=1024x1024|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|10|name=Texture 10|WH=1024x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|11|name=Texture 11|WH=2048x1024|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|12|name=Texture 12|WH=512x1024|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|13|name=Texture 13|WH=512x512|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|14|name=Texture 14|WH=2048x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|15|name=Texture 15|WH=1024x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|16|name=Texture 16|WH=1024x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|17|name=Texture 17|WH=1024x1024|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|18|name=Texture 18|WH=512x1024|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|19|name=Texture 19|WH=1024x1024|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|20|name=Texture 20|WH=2048x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|21|name=Texture 21|WH=1024x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|22|name=Texture 22|WH=1024x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|23|name=Texture 23|WH=2048x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|24|name=Texture 24|WH=1024x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+EMB|25|name=Texture 25|WH=2048x2048|fmtBZ2=False|fmtQOI=False|IndexInGroup=0|group=(null)|external=False|scaled=0|mips=0|loaded=True
+PAGE emb#18 512x1024 tpis=63 usedCells8px=4031/8192 (49%) | largestFreeRect=496x480 at 16,544
+  TPIs: 51:262,330+118x30(PageItem 51); 83:410,406+30x30(PageItem 83); 89:482,406+18x30(PageItem 89); 95:394,282+30x30(PageItem 95); 97:478,282+30x30(PageItem 97); 102:434,350+30x30(PageItem 102); 108:446,406+30x30(PageItem 108); 112:262,426+30x30(PageItem 112); 121:478,318+30x30(PageItem 121); 126:430,282+30x30(PageItem 126); 130:298,426+30x30(PageItem 130); 2080:430,442+13x10(PageItem 2080); 2084:2,526+18x14(PageItem 2084); 2090:2,546+12x12(PageItem 2090); 2104:298,518+14x10(PageItem 2104); 2106:302,502+12x12(PageItem 2106); 2111:490,262+16x14(PageItem 2111); 2112:282,518+12x12(PageItem 2112); 2116:66,526+12x12(PageItem 2116); 2119:470,374+16x7(PageItem 2119); 2123:410,350+15x12(PageItem 2123); 2130:470,354+14x14(PageItem 2130); 2137:334,426+14x14(PageItem 2137); 2142:298,462+14x14(PageItem 2142); 2143:394,318+21x8(PageItem 2143); 2150:422,386+82x14(PageItem 2150); 2156:386,330+86x14(PageItem 2156); 2161:394,262+90x14(PageItem 2161); 2167:414,442+12x12(PageItem 2167); 2175:394,426+12x12(PageItem 2175); 2186:354,458+17x9(PageItem 2186); 2194:262,498+14x14(PageItem 2194); 2198:26,526+14x14(PageItem 2198); 2206:490,354+14x14(PageItem 2206); 2207:262,406+141x16(PageItem 2207); 2210:374,426+16x11(PageItem 2210); 2213:262,386+153x16(PageItem 2213); 2218:262,366+166x16(PageItem 2218); 2225:378,458+12x12(PageItem 2225); 2230:394,458+13x10(PageItem 2230); 2241:318,482+17x9(PageItem 2241); 2246:354,426+14x14(PageItem 2246); 2252:82,526+14x10(PageItem 2252); 2260:334,446+14x14(PageItem 2260); 2265:282,502+15x11(PageItem 2265); 2289:46,526+13x12(PageItem 2289); 2290:318,498+12x12(PageItem 2290); 2295:394,442+13x12(PageItem 2295); 2298:334,498+13x10(PageItem 2298); 2301:338,466+12x12(PageItem 2301); 2303:2,562+12x12(PageItem 2303); 2307:386,350+18x12(PageItem 2307); 2314:374,442+14x12(PageItem 2314); 2315:298,482+14x14(PageItem 2315); 2321:318,514+14x9(PageItem 2321); 2322:318,466+14x12(PageItem 2322); 2326:262,518+14x14(PageItem 2326); 2328:422,318+16x7(PageItem 2328); 6526:264,464+28x28(PageItem 6526); 6530:2,262+256x128(PageItem 6530); 6533:262,262+128x64(PageItem 6533); 6536:0,2+512x256(PageItem 6536); 6537:2,394+256x128(PageItem 6537)
+PAGE emb#19 1024x1024 tpis=11 usedCells8px=11012/16384 (67%) | largestFreeRect=768x384 at 256,640
+  TPIs: 2096:640,512+12x7(PageItem 2096); 2180:640,512+12x7(PageItem 2180); 2235:652,512+12x7(PageItem 2235); 2309:652,512+12x7(PageItem 2309); 6332:640,520+2x2(PageItem 6332); 6531:0,0+256x1024(PageItem 6531); 6532:768,0+256x256(PageItem 6532); 6534:768,256+256x256(PageItem 6534); 6535:256,0+512x512(PageItem 6535); 6538:256,512+256x128(PageItem 6538); 6539:512,512+128x128(PageItem 6539)
+PAGE emb#20 2048x2048 tpis=11 usedCells8px=60417/65536 (92%) | largestFreeRect=512x632 at 1536,1416
+  TPIs: 5785:1536,1408+2x2(PageItem 5785); 6540:1024,512+512x512(PageItem 6540); 6541:0,0+1024x1024(PageItem 6541); 6542:1536,1024+512x256(PageItem 6542); 6543:0,1024+1024x1024(PageItem 6543); 6544:1536,512+512x512(PageItem 6544); 6545:1024,0+1024x512(PageItem 6545); 6546:1024,1024+512x512(PageItem 6546); 6547:1024,1536+512x512(PageItem 6547); 6548:1536,1280+256x128(PageItem 6548); 6549:1792,1280+256x128(PageItem 6549)
+--- users of emb#20 TPIs ---
+  TPI#5785 fonts=[] sprite=spr_fonts_ja_preload bg=-
+  TPI#6540 fonts=[fnt_ja_comicsans] sprite=- bg=-
+  TPI#6541 fonts=[fnt_ja_comicsans_big] sprite=- bg=-
+  TPI#6542 fonts=[fnt_ja_curs] sprite=- bg=-
+  TPI#6543 fonts=[fnt_ja_main] sprite=- bg=-
+  TPI#6544 fonts=[fnt_ja_maintext] sprite=- bg=-
+  TPI#6545 fonts=[fnt_ja_papyrus] sprite=- bg=-
+  TPI#6546 fonts=[fnt_ja_papyrus_btl] sprite=- bg=-
+  TPI#6547 fonts=[fnt_ja_plain] sprite=- bg=-
+  TPI#6548 fonts=[fnt_ja_plainbig] sprite=- bg=-
+  TPI#6549 fonts=[fnt_ja_plainsmall] sprite=- bg=-
+P3b_DONE

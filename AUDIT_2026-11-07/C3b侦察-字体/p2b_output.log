@@ -1,0 +1,55 @@
+Trying to load file: '/Users/ryan/Desktop/UT 存档修改/Deterline/game.ios'
+=== P2b DIALOGUE CODE DUMP ===
+DUMP_COUNT:9
+HIT|gml_Object_obj_dialoguer_Create_0:11| if (global.language == "ja" && global.facechoice == 4)
+HIT|gml_Object_obj_dialoguer_Create_0:30| if (global.language == "ja" && global.facechoice == 4)
+WROTE|gml_Object_obj_dialoguer_Create_0 lines=47
+WROTE|gml_Object_obj_dialoguer_Destroy_0 lines=8
+HIT|gml_Object_obj_dialoguer_Step_0:68| if (global.language == "ja")
+WROTE|gml_Object_obj_dialoguer_Step_0 lines=117
+WROTE|gml_Object_obj_dialoguer_Draw_0 lines=46
+HIT|gml_Script_scr_setfont:1| var newfont = argument0;
+HIT|gml_Script_scr_setfont:2| if (global.language == "ja")
+HIT|gml_Script_scr_setfont:4| if (newfont == fnt_main)
+HIT|gml_Script_scr_setfont:6| newfont = fnt_ja_main;
+HIT|gml_Script_scr_setfont:8| if (newfont == fnt_maintext)
+HIT|gml_Script_scr_setfont:10| newfont = fnt_ja_maintext;
+HIT|gml_Script_scr_setfont:12| if (newfont == fnt_plain)
+HIT|gml_Script_scr_setfont:14| newfont = fnt_ja_plain;
+HIT|gml_Script_scr_setfont:17| draw_set_font(newfont);
+WROTE|gml_Script_scr_setfont lines=18
+HIT|gml_Script_SCR_TEXTTYPE:7| script_execute(SCR_TEXTSETUP, fnt_main, c_white, x + 20, y + 20, x + (global.idealborder[1] - 55), 1, 1, SND_TXT2, 16, 32);
+HIT|gml_Script_SCR_TEXTTYPE:11| script_execute(SCR_TEXTSETUP, fnt_plain, c_black, x, y, x + 190, 43, 2, SND_TXT1, 9, 20);
+HIT|gml_Script_SCR_TEXTTYPE:15| script_execute(SCR_TEXTSETUP, fnt_curs, c_teal, x, y, x + 100, 39, 3, SND_TXT1, 10, 10);
+HIT|gml_Script_SCR_TEXTTYPE:19| script_execute(SCR_TEXTSETUP, fnt_maintext, c_white, x + 20, y + 20, view_xview[view_current] + 290, 0, 1, snd_txttor, 8, 18);
+HIT|gml_Script_SCR_TEXTTYPE:23| script_execute(SCR_TEXTSETUP, fnt_maintext, c_white, x + 20, y + 20, view_xview[view_current] + 290, 0, 1, SND_TXT1, 8, 18);
+HIT|gml_Script_SCR_TEXTTYPE:27| script_execute(SCR_TEXTSETUP, fnt_plain, c_black, x, y, x + 200, 0, 1, snd_floweytalk1, 9, 20);
+HIT|gml_Script_SCR_TEXTTYPE:31| script_execute(SCR_TEXTSETUP, fnt_plain, c_black, x, y, x + 200, 2, 2, snd_floweytalk2, 9, 20);
+HIT|gml_Script_SCR_TEXTTYPE:35| script_execute(SCR_TEXTSETUP, fnt_plain, c_black, x, y, x + 200, 0, 1, snd_txttor, 9, 20);
+HIT|gml_Script_SCR_TEXTTYPE:39| script_execute(SCR_TEXTSETUP, fnt_maintext, c_white, x + 20, y + 20, view_xview[view_current] + 290, 0, 1, snd_floweytalk1, 8, 18);
+HIT|gml_Script_SCR_TEXTTYPE:43| script_execute(SCR_TEXTSETUP, fnt_maintext, c_white, x + 20, y + 20, view_xview[view_current] + 290, 0, 1, snd_nosound, 8, 18);
+HIT|gml_Script_SCR_TEXTTYPE:47| script_execute(SCR_TEXTSETUP, fnt_maintext, c_white, x + 20, y + 20, view_xview[view_current] + 290, 0, 2, SND_TXT2, 9, 18);
+HIT|gml_Script_SCR_TEXTTYPE:51| script_execute(SCR_TEXTSETUP, fnt_plain, c_black, x, y, x + 200, 1, 3, snd_txttor2, 10, 20);
+WROTE|gml_Script_SCR_TEXTTYPE lines=545
+HIT|gml_Object_obj_base_writer_Draw_0:171| if (myfont == fnt_papyrus || myfont == fnt_ja_papyrus_btl)
+HIT|gml_Object_obj_base_writer_Draw_0:221| if (myfont == fnt_main || myfont == fnt_ja_main)
+HIT|gml_Object_obj_base_writer_Draw_0:225| if (myfont == fnt_main || myfont == fnt_maintext)
+HIT|gml_Object_obj_base_writer_Draw_0:229| if (myfont == fnt_ja_papyrus_btl)
+HIT|gml_Object_obj_base_writer_Draw_0:233| if (myfont == fnt_papyrus && icontype == 1)
+HIT|gml_Object_obj_base_writer_Draw_0:260| if (myfont == fnt_ja_comicsans_big)
+HIT|gml_Object_obj_base_writer_Draw_0:336| if (global.language == "en")
+HIT|gml_Object_obj_base_writer_Draw_0:378| else if (global.language == "ja")
+HIT|gml_Object_obj_base_writer_Draw_0:380| if (vtext && (myfont == fnt_ja_papyrus || myfont == fnt_ja_papyrus_btl))
+HIT|gml_Object_obj_base_writer_Draw_0:387| else if (myfont == fnt_ja_maintext || myfont == fnt_ja_main)
+HIT|gml_Object_obj_base_writer_Draw_0:390| if (myfont == fnt_ja_main)
+HIT|gml_Object_obj_base_writer_Draw_0:407| scr_setfont(myfont);
+WROTE|gml_Object_obj_base_writer_Draw_0 lines=615
+WROTE|gml_Object_obj_base_writer_Create_0 lines=17
+HIT|gml_Script_scr_draw_name_curs:3| var use_font;
+HIT|gml_Script_scr_draw_name_curs:4| if (global.language == "ja")
+HIT|gml_Script_scr_draw_name_curs:6| use_font = 12;
+HIT|gml_Script_scr_draw_name_curs:11| use_font = 7;
+HIT|gml_Script_scr_draw_name_curs:16| use_font = 12;
+HIT|gml_Script_scr_draw_name_curs:22| draw_set_font(use_font);
+WROTE|gml_Script_scr_draw_name_curs lines=25
+P2b_DONE

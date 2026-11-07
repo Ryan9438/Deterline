@@ -1,0 +1,11 @@
+Trying to load file: '/Users/ryan/Desktop/UT 存档修改/Deterline/game.ios'
+=== P3c IN-MEMORY FONT CONSTRUCTION (no save) ===
+TPI_NEW_OK: index=6550 src=1536,1416 512x512 page=emb#20 name=PageItem c3b_probe
+TPI_READBACK_OK: 1536,1416 512x512 page==emb20:True
+FONT_ADD_OK: Data.Fonts.Count=20->21
+FONT_READBACK_OK: name=fnt_c3b_probe glyphs=4 emSize=24 range=19968-40959 texture=TPI#6550 firstGlyph=U+4E2D
+KERNING_ADD_OK: count=1 [0].Character=25991 ShiftModifier=2
+EXISTING_FONT_APPEND_OK: fnt_ja_main glyphs 780->781
+CLEANUP_OK: Data.Fonts.Count=20 jaMain.Glyphs=780
+NOTE: in-memory mutations are discarded because CLI is run WITHOUT -o (nothing saved to disk)
+P3c_DONE

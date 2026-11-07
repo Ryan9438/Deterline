@@ -1,0 +1,47 @@
+Trying to load file: '/Users/ryan/Desktop/UT 存档修改/Deterline/game.ios'
+=== P3d EMBEDDED TEXTURE API SHAPE (no embedding) ===
+GMIMAGE_TYPE:UndertaleModLib.Util.GMImage
+--- GMImage properties ---
+  PROP ImageFormat Format
+  PROP Int32 Height
+  PROP Int32 Width
+--- GMImage static methods ---
+  STATIC FromBinaryReader(IBinaryReader reader, Int64 maxEndOfStreamPosition, Boolean gm2022_5)
+  STATIC FromBz2Qoi(Byte[] compressedData, Int32 width, Int32 height, Int32 uncompressedLength)
+  STATIC FromDds(Byte[] data)
+  STATIC FromMagickImage(IMagickImage`1 image)
+  STATIC FromPng(Byte[] data, Boolean verifyHeader)
+  STATIC FromQoi(Byte[] data)
+  STATIC FromUnknown(Byte[] data)
+--- GMImage instance methods ---
+  METHOD ConvertToBz2Qoi(MemoryStream sharedStream)
+  METHOD ConvertToDds()
+  METHOD ConvertToFormat(ImageFormat format, MemoryStream sharedStream)
+  METHOD ConvertToPng()
+  METHOD ConvertToQoi()
+  METHOD ConvertToRawBgra()
+  METHOD Equals(Object obj)
+  METHOD GetHashCode()
+  METHOD GetMagickImage()
+  METHOD GetRawImageData()
+  METHOD GetType()
+  METHOD SavePng(Stream stream)
+  METHOD ToSpan(Boolean gm2022_5)
+  METHOD ToString()
+  METHOD WriteToBinaryWriter(BinaryWriter writer, Boolean gm2022_5)
+  NESTED ImageFormat
+--- Magick.NET availability ---
+MAGICK_TYPE:ImageMagick.MagickImage
+GMIMAGE_MAGICK_FACTORY:UndertaleModLib.Util.GMImage FromMagickImage(ImageMagick.IMagickImage`1[System.Byte])
+--- TexData in-memory dry run (4x4, never added to Data.EmbeddedTextures) ---
+FACTORIES:FromBinaryReader,FromPng,FromBz2Qoi,FromQoi,FromDds,FromUnknown,FromMagickImage (NOTE: no FromRgba/FromBgra in this build)
+TEXDATA_DRYRUN_OK: Image built via SavePng(68163B)->FromPng (round-trip) W=1024 H=1024 imgType=GMImage fmtBZ2=False fmtQOI=False addedToData=false (will be dropped)
+EXISTING_emb18: W=512 H=1024 ImageType=UndertaleModLib.Util.GMImage
+--- extraction proof: emb#19 -> png ---
+EXTRACT_OK: emb#19 1024x1024 fmt=Png -> emb19_font_page_extract.png (68163 bytes)
+--- check UndertaleEmbeddedTexture.BuildUncached / serialization hooks (info only) ---
+  SER Serialize(UndertaleWriter)
+  SER SerializeBlob(UndertaleWriter)
+  SER Unserialize(UndertaleReader)
+  SER UnserializeBlob(UndertaleReader)
+P3d_DONE

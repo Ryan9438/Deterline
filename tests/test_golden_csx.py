@@ -194,5 +194,17 @@ class TestGoldenGenerators(unittest.TestCase):
         _check_golden(self, "gen_npc_choice_repeat", [block])
 
 
+class TestGoldenCjkFont(unittest.TestCase):
+    """C3b：cjk-font 两段 CSX 模板钉形（work_dir 用固定假路径保证字节稳定）。"""
+
+    def test_cjk_pass1_csx(self):
+        _check_golden(self, "cjk_pass1",
+                      [ms._build_cjk_pass1_csx("/tmp/golden_cjk_work")])
+
+    def test_cjk_pass2_csx(self):
+        _check_golden(self, "cjk_pass2",
+                      [ms._build_cjk_pass2_csx("/tmp/golden_cjk_work")])
+
+
 if __name__ == "__main__":
     unittest.main()

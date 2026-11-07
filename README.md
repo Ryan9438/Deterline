@@ -107,7 +107,7 @@ python run.py --action quest-init
 ### 全部命令（自动生成 · 与 SKILL.md/COMMANDS.md 逐字节一致）
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 82 个命令 · 版本 2.3.0 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 83 个命令 · 版本 2.3.0 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -150,8 +150,12 @@ python run.py --action quest-init
 | `batch-add-textentry --value entries.json` | 从 JSON 文件批量导入（[{"key":"k","text":"t"}]，支持 --face/--emotion） | sandbox |
 | `guided-add-dialogue --key "obj_x" --value "* 文本/%%"` | 引导式对话创建（分步打印进度） | static |
 | `search-sctext --value "* 你好"` | 在 SCR_TEXT 用例表中搜索文本 | static |
+| `cjk-font --value build/font_cjk` | 注入中文字体管线（sandbox 已验证；⚠️ 游戏内渲染被 Mac runner 机制阻塞，见 AUDIT_2026-11-07/C3b-游戏内验证报告） | sandbox |
 
 > ⚠️ `replace-string`: 全局替换，先 search-strings 确认影响面
+> ⚠️ `cjk-font`: --value 须为 font_cjk_build.py 输出目录（OFL 字体自生成）
+> ⚠️ `cjk-font`: 已证实 3 条硬约束：不能新增字体资产 / 中文须空格预折行 / global.language≠zh
+> ⚠️ `cjk-font`: 完成后自动 verify-code gml_Script_scr_setfont（域F 协议）
 
 ### 📜 脚本编辑 — --file data_win，反编译/重编译 GML（6272 个脚本）
 

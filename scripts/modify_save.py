@@ -6393,6 +6393,270 @@ def cmd_sprite_dump_all(game_file: Path, output_dir: str) -> None:
 
 
 # ============================================================
+# C3b: 中文字体注入（方案 B —— 侦察报告 AUDIT_2026-11-07/C3b侦察-字体/）
+# ============================================================
+
+# pass1（只读）：dump 源字体行式元数据 + 共享纹理页 PNG 到 work_dir
+_CJK_PASS1_CSX = r'''// C3b pass1 (READ-ONLY): dump source fonts metadata + shared texture page
+using System;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
+string dumpDir = @"__WORKDIR__";
+string[] srcNames = { "fnt_main", "fnt_maintext", "fnt_plain" };
+try {
+    if (Data.Fonts.Any(f => f.Name != null && f.Name.Content == "fnt_cjk_main")) {
+        ScriptMessage("ERROR: fnt_cjk_main 已存在（重复注入）——先 experiment-restore/undo 回滚");
+        return;
+    }
+    var sb = new System.Text.StringBuilder();
+    UndertaleEmbeddedTexture page = null;
+    foreach (string nm in srcNames) {
+        var f = Data.Fonts.FirstOrDefault(x => x.Name != null && x.Name.Content == nm);
+        if (f == null || f.Texture == null) { ScriptMessage("ERROR: font not found: " + nm); return; }
+        var tpi = f.Texture;
+        var emb = tpi.TexturePage;
+        if (emb == null || emb.TextureData == null) { ScriptMessage("ERROR: no texture page for " + nm); return; }
+        if (page == null) { page = emb; }
+        else if (page != emb) { ScriptMessage("ERROR: 源字体不在同一纹理页（MVP 仅支持共享页布局）"); return; }
+        sb.AppendLine("PAGE " + nm + " " + tpi.SourceX + " " + tpi.SourceY + " " + tpi.SourceWidth + " " + tpi.SourceHeight
+                      + " " + emb.TextureData.Width + " " + emb.TextureData.Height);
+        sb.AppendLine("FONT " + nm + " " + f.EmSize + " " + (f.EmSizeIsFloat ? 1 : 0) + " " + f.Charset + " "
+                      + f.AntiAliasing + " " + f.LineHeight + " " + f.Ascender + " " + f.AscenderOffset + " "
+                      + f.RangeStart + " " + f.RangeEnd + " " + (f.Bold ? 1 : 0) + " "
+                      + tpi.SourceX + " " + tpi.SourceY + " " + tpi.SourceWidth + " " + tpi.SourceHeight);
+        foreach (var g in f.Glyphs) {
+            string kern = "";
+            foreach (var k in g.Kerning) kern += " " + k.Character + ":" + k.ShiftModifier;
+            sb.AppendLine("GLYPH " + nm + " " + g.Character + " " + g.SourceX + " " + g.SourceY + " "
+                          + g.SourceWidth + " " + g.SourceHeight + " " + g.Offset + " " + g.Shift + " "
+                          + g.Kerning.Count + kern);
+        }
+    }
+    File.WriteAllText(Path.Combine(dumpDir, "fonts.txt"), sb.ToString());
+    using (var fs = File.Create(Path.Combine(dumpDir, "emb_page.png"))) {
+        page.TextureData.Image.SavePng(fs);
+    }
+    ScriptMessage("CJK_PASS1_OK fonts=" + srcNames.Length + " page=" + page.TextureData.Width + "x" + page.TextureData.Height);
+} catch (Exception ex) {
+    ScriptMessage("ERROR: " + ex.GetType().Name + ": " + ex.Message);
+}'''
+
+# pass2（写入）：新 EmbeddedTexture×2 + TexturePageItem×3 + UndertaleFont×3
+#              + scr_setfont 加 zh 分支（方案 B 唯一代码改动点）
+_CJK_PASS2_CSX = r'''// C3b pass2 (WRITE): inject CJK fonts — plan B (recon report §4 方案B)
+using System;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
+using UndertaleModLib.Util;   // GMImage.FromPng 静态调用需要（p3d 实证签名 (byte[], bool verifyHeader)）
+string workDir = @"__WORKDIR__";
+try {
+    if (Data.Fonts.Any(f => f.Name != null && f.Name.Content == "fnt_cjk_main")) {
+        ScriptMessage("ERROR: fnt_cjk_main 已存在（重复注入）");
+        return;
+    }
+    var spec = System.Text.Json.JsonDocument.Parse(
+        File.ReadAllText(Path.Combine(workDir, "atlas_glyphs.json"))).RootElement;
+    // 1) 新纹理页 ×2（GMImage.FromPng；本文件页格式为直通 alpha PNG，已由探针 3d 往返实证）
+    var texs = new UndertaleEmbeddedTexture[2];
+    for (int i = 0; i < 2; i++) {
+        byte[] png = File.ReadAllBytes(Path.Combine(workDir, "atlas_page_" + i + ".png"));
+        var img = GMImage.FromPng(png, false);
+        var tex = new UndertaleEmbeddedTexture();
+        tex.Name = Data.Strings.MakeString("Texture " + (Data.EmbeddedTextures.Count + i));
+        tex.Scaled = 0; tex.GeneratedMips = 0; tex.TextureLoaded = true;
+        tex.TextureWidth = img.Width; tex.TextureHeight = img.Height;
+        tex.TextureData = new UndertaleEmbeddedTexture.TexData();
+        tex.TextureData.Image = img;
+        Data.EmbeddedTextures.Add(tex);
+        texs[i] = tex;
+    }
+    // 2) TexturePageItem ×3（区域 = 字体行带）
+    var fontRoot = spec.GetProperty("fonts");
+    var tpis = new System.Collections.Generic.Dictionary<string, UndertaleTexturePageItem>();
+    foreach (var fdef in new[] { "fnt_cjk_main", "fnt_cjk_maintext", "fnt_cjk_plain" }) {
+        var fr = fontRoot.GetProperty(fdef);
+        int pageIdx = fr.GetProperty("page").GetInt32();
+        int y0 = fr.GetProperty("region_y0").GetInt32();
+        int rows = fr.GetProperty("rows").GetInt32();
+        int cellH = fr.GetProperty("cell")[1].GetInt32();
+        int h = rows * cellH;
+        var tpi = new UndertaleTexturePageItem();
+        tpi.Name = Data.Strings.MakeString("PageItem " + (Data.TexturePageItems.Count + tpis.Count));
+        tpi.SourceX = 0; tpi.SourceY = (ushort)y0;
+        tpi.SourceWidth = 2048; tpi.SourceHeight = (ushort)h;
+        tpi.TargetX = 0; tpi.TargetY = 0;   // Target 为 TPI 相对（侦察 dump: ja_main target=(0,0,1024,1024)）
+        tpi.TargetWidth = 2048; tpi.TargetHeight = (ushort)h;
+        tpi.BoundingWidth = 2048; tpi.BoundingHeight = (ushort)h;
+        tpi.TexturePage = texs[pageIdx];
+        Data.TexturePageItems.Add(tpi);
+        tpis[fdef] = tpi;
+    }
+    // 3) UndertaleFont ×3（标量克隆源字体；ASCII 字形已拷入新图集，中英混排可用）
+    var displayNames = new System.Collections.Generic.Dictionary<string, string> {
+        { "fnt_cjk_main", "Fusion Pixel CJK Main" },
+        { "fnt_cjk_maintext", "Fusion Pixel CJK Maintext" },
+        { "fnt_cjk_plain", "Fusion Pixel CJK Plain" },
+    };
+    int glyphTotal = 0;
+    foreach (var fdef in new[] { "fnt_cjk_main", "fnt_cjk_maintext", "fnt_cjk_plain" }) {
+        var fr = fontRoot.GetProperty(fdef);
+        var f = new UndertaleFont();
+        f.Name = Data.Strings.MakeString(fdef);
+        f.DisplayName = Data.Strings.MakeString(displayNames[fdef]);
+        f.EmSize = fr.GetProperty("emSize").GetSingle();
+        f.EmSizeIsFloat = fr.GetProperty("emSizeIsFloat").GetBoolean();
+        f.Charset = fr.GetProperty("charset").GetByte();
+        f.AntiAliasing = fr.GetProperty("antiAliasing").GetByte();
+        f.RangeStart = (ushort)fr.GetProperty("rangeStart").GetInt32();
+        f.RangeEnd = (uint)fr.GetProperty("rangeEnd").GetInt32();
+        f.LineHeight = (uint)fr.GetProperty("lineHeight").GetInt32();
+        f.Ascender = (uint)fr.GetProperty("ascender").GetInt32();
+        f.AscenderOffset = fr.GetProperty("ascenderOffset").GetInt32();
+        f.ScaleX = 1f; f.ScaleY = 1f; f.SDFSpread = 0;
+        f.Bold = fr.GetProperty("bold").GetBoolean(); f.Italic = false;
+        f.Texture = tpis[fdef];
+        foreach (var ge in fr.GetProperty("glyphs").EnumerateArray()) {
+            var g = new UndertaleFont.Glyph();
+            g.Character = (ushort)ge[0].GetInt32();
+            g.SourceX = (ushort)ge[1].GetInt32();
+            g.SourceY = (ushort)ge[2].GetInt32();
+            g.SourceWidth = (ushort)ge[3].GetInt32();
+            g.SourceHeight = (ushort)ge[4].GetInt32();
+            g.Offset = (short)ge[5].GetInt32();
+            g.Shift = (short)ge[6].GetInt32();
+            g.UnknownAlwaysZero = 0;
+            foreach (var ke in ge[7].EnumerateArray()) {
+                var k = new UndertaleFont.Glyph.GlyphKerning();
+                k.Character = (short)ke[0].GetInt32();
+                k.ShiftModifier = (short)ke[1].GetInt32();
+                g.Kerning.Add(k);
+            }
+            f.Glyphs.Add(g);
+        }
+        glyphTotal += f.Glyphs.Count;
+        Data.Fonts.Add(f);
+    }
+    // 3b) 预加载精灵 ×2（Mac runner 不按需加载新页——ja 页即经 scr_preload_textures
+    //     的 sprite_prefetch(spr_fonts_ja_preload) 预加载；游戏内空框实证必要）
+    var tpiMain = tpis["fnt_cjk_main"]; var tpiSmall = tpis["fnt_cjk_maintext"];
+    var sprA = new UndertaleSprite();
+    sprA.Name = Data.Strings.MakeString("spr_fonts_cjk_preload_main");
+    sprA.Width = 2; sprA.Height = 2;
+    sprA.Textures.Add(new UndertaleSprite.TextureEntry { Texture = tpiMain });
+    Data.Sprites.Add(sprA);
+    var sprB = new UndertaleSprite();
+    sprB.Name = Data.Strings.MakeString("spr_fonts_cjk_preload_small");
+    sprB.Width = 2; sprB.Height = 2;
+    sprB.Textures.Add(new UndertaleSprite.TextureEntry { Texture = tpiSmall });
+    Data.Sprites.Add(sprB);
+    // 3c) scr_preload_textures：ja/en 之间插 zh 分支
+    var preCode = Data.Code.ByName("gml_Script_scr_preload_textures");
+    if (preCode == null) { ScriptMessage("ERROR: gml_Script_scr_preload_textures not found"); return; }
+    string preGml = GetDecompiledText("gml_Script_scr_preload_textures");
+    // 4) 代码改动：preload zh 分支 + scr_setfont zh 映射（单一 CodeImportGroup）
+    var importGroup = new CodeImportGroup(Data) { MainThreadAction = MainThreadAction };
+    if (preGml.Contains("spr_fonts_cjk_preload_main")) {
+        ScriptMessage("SKIP: preload already patched");
+    } else {
+        const string anchor = "}\nelse\n{\n    sprite_prefetch(spr_fonts_en_preload);\n}";
+        if (!preGml.Contains(anchor)) { ScriptMessage("ERROR: preload anchor not found"); return; }
+        preGml = preGml.Replace(anchor,
+            "}\nelse if (global.language == \"zh\")\n{\n" +
+            "    sprite_prefetch(spr_fonts_cjk_preload_main);\n" +
+            "    sprite_prefetch(spr_fonts_cjk_preload_small);\n" +
+            "}\nelse\n{\n    sprite_prefetch(spr_fonts_en_preload);\n}");
+        importGroup.QueueReplace(preCode, preGml);
+    }
+    var code = Data.Code.ByName("gml_Script_scr_setfont");
+    if (code == null) { ScriptMessage("ERROR: gml_Script_scr_setfont not found"); return; }
+    string gml = GetDecompiledText("gml_Script_scr_setfont");
+    if (gml.Contains("fnt_cjk_main")) {
+        ScriptMessage("SKIP: scr_setfont already patched");
+    } else {
+        int anchor = gml.IndexOf("draw_set_font(newfont);");
+        if (anchor < 0) { ScriptMessage("ERROR: scr_setfont anchor not found"); return; }
+        string zh = "if (global.language == \"zh\")\n{\n" +
+                    "    if (newfont == fnt_main)\n    {\n        newfont = fnt_cjk_main;\n    }\n" +
+                    "    if (newfont == fnt_maintext)\n    {\n        newfont = fnt_cjk_maintext;\n    }\n" +
+                    "    if (newfont == fnt_plain)\n    {\n        newfont = fnt_cjk_plain;\n    }\n" +
+                    "}\n";
+        gml = gml.Insert(anchor, zh);
+        importGroup.QueueReplace(code, gml);
+    }
+    importGroup.Import();
+    ScriptMessage("CJK_PASS2_OK fonts=3 textures=2 tpis=3 sprites=2 glyphs=" + glyphTotal);
+} catch (Exception ex) {
+    ScriptMessage("ERROR: " + ex.GetType().Name + ": " + ex.Message);
+}'''
+
+
+def _build_cjk_pass1_csx(work_dir: str) -> str:
+    """pass1 CSX（work_dir 占位替换；纯函数，供 golden 钉形）。"""
+    return _CJK_PASS1_CSX.replace("__WORKDIR__", work_dir)
+
+
+def _build_cjk_pass2_csx(work_dir: str) -> str:
+    """pass2 CSX（work_dir 占位替换；纯函数，供 golden 钉形）。"""
+    return _CJK_PASS2_CSX.replace("__WORKDIR__", work_dir)
+
+
+def cmd_cjk_font(game_file: Path, build_dir: Path,
+                 work_dir: Path = None, skip_pass1: bool = False) -> bool:
+    """C3b：注入中文字体（方案 B）。四步管线：
+
+    1. pass1（只读 CSX）：dump 源字体元数据 + 共享纹理页 PNG → work_dir
+    2. tools/font_cjk_atlas.py：ASCII 拷贝 + CJK 排版 → 两张 2048 图集 + glyph 规格
+    3. pass2（写 CSX，默认沙箱）：新纹理/TPI/字体 ×3 + scr_setfont zh 分支
+    4. verify-code gml_Script_scr_setfont（域F 教训：代码改动必须字节级体检）
+
+    build_dir 为 tools/font_cjk_build.py 的输出（meta.json/glyphs.json/cjk_page_*.png）。
+    游戏内验证（语言 zh 分支生效、字形渲染）属 C3b-4，未包含在本命令。
+    """
+    import json as _json
+    work_dir = work_dir or (game_file.parent / "cjk_work")
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1) build_dir 校验
+    meta_path = build_dir / "meta.json"
+    if not meta_path.exists():
+        raise RuntimeError(f"缺 {meta_path}——先运行 tools/font_cjk_build.py 生成字形页")
+    meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+    if meta.get("px") != 12 or meta.get("cell") != 13:
+        raise RuntimeError(f"build_dir 度量不符（px={meta.get('px')} cell={meta.get('cell')}，"
+                           f"需 12/13）——重新运行 font_cjk_build.py")
+    if not (build_dir / "glyphs.json").exists() or not (build_dir / "cjk_page_0.png").exists():
+        raise RuntimeError(f"build_dir 缺 glyphs.json/cjk_page_*.png: {build_dir}")
+
+    # 2) pass1（只读）
+    if not skip_pass1:
+        out = _run_utmt(_build_cjk_pass1_csx(str(work_dir)), game_file, save=False)
+        if "CJK_PASS1_OK" not in out:
+            raise RuntimeError(f"pass1 失败（未注入任何内容）:\n{out}")
+
+    # 3) 图集构建（纯 Python，确定性）
+    atlas_tool = Path(__file__).resolve().parent.parent / "tools" / "font_cjk_atlas.py"
+    r = subprocess.run(
+        [sys.executable, str(atlas_tool),
+         "--build-dir", str(build_dir), "--pass1-dir", str(work_dir),
+         "--out-dir", str(work_dir)],
+        capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError("图集构建失败:\n" + r.stdout + r.stderr)
+    print(r.stdout.strip())
+
+    # 4) pass2（写，默认沙箱）
+    out = _run_utmt(_build_cjk_pass2_csx(str(work_dir)), game_file, save=True)
+    if "CJK_PASS2_OK" not in out:
+        raise RuntimeError(f"pass2 失败（沙箱未变更/回退）:\n{out}")
+
+    # 5) scr_setfont 字节级体检（WARN/不稳定 → 返回 False）
+    print("→ verify-code gml_Script_scr_setfont（域F 协议）")
+    return cmd_verify_code(game_file, "gml_Script_scr_setfont")
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -6655,7 +6919,7 @@ def main():
                                      "create-pit",
                                      "create-battle",
                                      "verify-nsid", "verify-instances", "verify-code", "smoke-test", "diff-snapshots", "set-derived",
-                                     "md5"])
+                                     "cjk-font", "md5"])
     parser.add_argument("--key", help="键名或数字索引 (file0 用数字)")
     parser.add_argument("--value", help="要设置/搜索的值 (set/find 操作必需)")
     parser.add_argument("--old", help="replace-string 的旧文本 (decompile-code 兼容别名，等同 --search)")
@@ -6738,6 +7002,8 @@ def main():
                         help="C3a: 放行 CJK 对话文本（需中文字体注入支持，否则显示空白）")
     parser.add_argument("--asm", action="store_true",
                         help="verify-code: 输出完整反汇编文本（ASM| 行）")
+    parser.add_argument("--work-dir", type=str, default=None,
+                        help="cjk-font: 中间产物目录（pass1 dump/图集；默认 game 文件旁 cjk_work/）")
     parser.add_argument("--auto-snapshot", action="store_true",
                         help="每次写入操作前自动创建实验快照")
     parser.add_argument("--apply", action="store_true",
@@ -7235,6 +7501,12 @@ def main():
                 if args.value is None:
                     parser.error("--value 是必需的 (输出目录)")
                 cmd_sprite_dump_all(game_file, args.value)
+            elif args.action == "cjk-font":
+                if args.value is None:
+                    parser.error("--value 是必需的 (font_cjk_build.py 输出目录)")
+                if not cmd_cjk_font(game_file, Path(args.value).expanduser(),
+                                    Path(args.work_dir).expanduser() if args.work_dir else None):
+                    sys.exit(1)  # scr_setfont 字节级体检 WARN 必须非零退出
             else:
                 parser.error(f"'{args.action}' 不支持 data_win 文件")
         except (FileNotFoundError, ValueError, IndexError, RuntimeError, DeterlineError) as e:

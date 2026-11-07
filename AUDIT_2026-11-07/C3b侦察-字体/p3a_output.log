@@ -1,0 +1,60 @@
+Trying to load file: '/Users/ryan/Desktop/UT 存档修改/Deterline/game.ios'
+=== P3a GLYPH STRUCTURE ===
+GLYPH_TYPE:UndertaleModLib.Models.UndertaleFont+Glyph
+  PROP System.UInt16 Character
+  PROP UndertaleModLib.UndertaleSimpleListShort`1[[UndertaleModLib.Models.UndertaleFont+Glyph+GlyphKerning, UndertaleModLib, Version=0.9.1.2, Culture=neutral, PublicKeyToken=null]] Kerning
+  PROP System.Int16 Offset
+  PROP System.Int16 Shift
+  PROP System.UInt16 SourceHeight
+  PROP System.UInt16 SourceWidth
+  PROP System.UInt16 SourceX
+  PROP System.UInt16 SourceY
+  PROP System.Int16 UnknownAlwaysZero
+KERNING_LIST_TYPE:UndertaleModLib.UndertaleSimpleListShort`1[[UndertaleModLib.Models.UndertaleFont+Glyph+GlyphKerning, UndertaleModLib, Version=0.9.1.2, Culture=neutral, PublicKeyToken=null]]
+KERNING_ELEM_TYPE:UndertaleModLib.Models.UndertaleFont+Glyph+GlyphKerning
+  KPROP Int16 Character
+  KPROP Int16 ShiftModifier
+--- fnt_main first 10 of 269 ---
+  U+0020 src=198,122 6x32 off=0 shift=6 uaz=0
+  U+0021 src=188,122 8x26 off=2 shift=12 uaz=0
+  U+0022 src=220,122 10x16 off=0 shift=12 uaz=0
+  U+0023 src=104,2 14x26 off=0 shift=16 uaz=0
+  U+0024 src=184,2 12x30 off=0 shift=14 uaz=0
+  U+0025 src=88,2 14x26 off=0 shift=16 uaz=0
+  U+0026 src=136,2 14x26 off=0 shift=16 uaz=0
+  U+0027 src=14,156 4x16 off=0 shift=6 uaz=0
+  U+0028 src=178,122 8x26 off=0 shift=10 uaz=0
+  U+0029 src=158,122 8x26 off=0 shift=10 uaz=0
+--- fnt_maintext first 10 of 269 ---
+  U+0020 src=79,81 3x16 off=0 shift=3 uaz=0
+  U+0021 src=73,81 4x13 off=1 shift=6 uaz=0
+  U+0022 src=92,81 5x8 off=0 shift=6 uaz=0
+  U+0023 src=60,2 7x13 off=0 shift=8 uaz=0
+  U+0024 src=105,2 6x15 off=0 shift=7 uaz=0
+  U+0025 src=51,2 7x13 off=0 shift=8 uaz=0
+  U+0026 src=78,2 7x13 off=0 shift=8 uaz=0
+  U+0027 src=119,81 2x8 off=0 shift=3 uaz=0
+  U+0028 src=67,81 4x13 off=0 shift=5 uaz=0
+  U+0029 src=55,81 4x13 off=0 shift=5 uaz=0
+--- fnt_curs first 10 of 96 ---
+  U+0020 src=100,62 9x24 off=0 shift=9 uaz=0
+  U+0021 src=44,22 12x18 off=0 shift=15 uaz=0
+  U+0022 src=238,88 9x9 off=0 shift=12 uaz=0
+  U+0023 src=121,2 15x18 off=0 shift=18 uaz=0
+  U+0024 src=19,2 15x18 off=0 shift=18 uaz=0
+  U+0025 src=125,62 12x18 off=0 shift=15 uaz=0
+  U+0026 src=36,2 15x18 off=0 shift=18 uaz=0
+  U+0027 src=35,108 3x9 off=0 shift=6 uaz=0
+  U+0028 src=191,88 9x18 off=0 shift=12 uaz=0
+  U+0029 src=147,88 9x18 off=0 shift=12 uaz=0
+--- fnt_ja_main sample CJK glyphs (first 6 with char>=0x4E00) ---
+  U+4E00 src=600,244 28x36 off=0 shift=28
+  U+4E03 src=632,244 28x36 off=0 shift=28
+  U+4E09 src=664,244 28x36 off=0 shift=28
+  U+4E0A src=696,244 28x36 off=0 shift=28
+  U+4E0B src=728,244 28x36 off=0 shift=28
+  U+4E0D src=760,244 28x36 off=0 shift=28
+--- in-memory Glyph construction test ---
+GLYPH_NEW_OK: U+4E2D src=100,100 20x20 off=0 shift=22
+GLYPH_ATTACH_OK: tmpFont.Glyphs.Count=1
+P3a_DONE

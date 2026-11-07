@@ -105,6 +105,14 @@
     { "action": "search-sctext", "group": "text", "verify": "static",
       "summary": "在 SCR_TEXT 用例表中搜索文本",
       "example": "search-sctext --value \"* 你好\"" },
+    { "action": "cjk-font", "group": "text", "verify": "sandbox",
+      "summary": "注入中文字体管线（sandbox 已验证；⚠️ 游戏内渲染被 Mac runner 机制阻塞，见 AUDIT_2026-11-07/C3b-游戏内验证报告）",
+      "example": "cjk-font --value build/font_cjk",
+      "notes": [
+        "--value 须为 font_cjk_build.py 输出目录（OFL 字体自生成）",
+        "已证实 3 条硬约束：不能新增字体资产 / 中文须空格预折行 / global.language≠zh",
+        "完成后自动 verify-code gml_Script_scr_setfont（域F 协议）"
+      ] },
 
     { "action": "list-codes", "group": "code", "verify": "static",
       "summary": "列出脚本名",

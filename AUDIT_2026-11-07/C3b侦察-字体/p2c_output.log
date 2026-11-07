@@ -1,0 +1,11 @@
+Trying to load file: '/Users/ryan/Desktop/UT 存档修改/Deterline/game.ios'
+=== P2c LAST LINK ===
+SCR_TEXTSETUP lines=15
+  | myfont = argument0;
+--- global.language assignment scan ---
+LANGSET|gml_Object_obj_settingsmenu_Draw_0 | global.language = "ja";
+LANGSET|gml_Object_obj_time_Create_0 | global.language = substr(global.locale, 1, 2);
+LANGSET|gml_Object_obj_time_Step_1 | global.language = lang;
+SCAN:6272 entries, language-setter codes=3
+--- scripts with 'lang' in name ---
+P2c_DONE
