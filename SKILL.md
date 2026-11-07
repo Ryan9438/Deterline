@@ -135,30 +135,164 @@ deterline/
 
 ## 命令总览
 
-### 📁 存档编辑（`--file ini` / `--file file0`）
+<!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
+> 全量 82 个命令 · 版本 2.3.0 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
-| 命令 | 功能 |
-|---|---|
-| `get --key Love` | 读取 INI 键值 |
-| `set --key Love --value 20` | 修改 LOVE（**自动同步 file0，游戏以 file0 为准**） |
-| `set --key Love --value 20 --file file0` | 直接改 file0 LOVE（推荐，无需动 INI） |
-| `set --key Kills --value 100` | 修改击杀数（**自动同步 file0**） |
-| `set --key Room --value "雪镇 - 船夫(妇)"` | 支持中文房间名（自动同步 file0）。⚠️ 须用**唯一名**——"托丽尔的家"匹配 6 个房间会报错并列出候选 |
-| `list` | 列出 INI 全部配置 |
-| `find --value 4 --file file0` | 在 file0 中搜索数值 |
-| `set --key HP --value 50 --file file0` | 修改 file0 的 maxhp（**进战斗会被按 LV 重算**，见下方警告） |
-| `set-derived --key HP --value 50` | **固定 HP/AT/DF**：写 file0 + 改写游戏脚本，阻止按 LV 重算 |
-| `set-derived --key AT --value 99` | 固定 AT（同理支持 DF / MAXHP） |
-| `set --key WEAPON --value 52 --file file0` | 换武器（自动计算 AT） |
-| `set --key TORIEL --value 5 --file file0` | 修改 Boss 状态 |
-| `room-list --value "雪镇"` | 搜索/列出房间 |
-| `room-list` | 列出全部房间 |
-| `reset-flags` | 重置屠杀线标记 |
-| `reset-all` | **全量重置**（BOSS、物品、击杀、plot），保留自定义 flag |
-| `create-system-info --value 962` | 创建屠杀线结局标记 |
-| `undo --value ini` / `file0` / `data_win` | 从 `.bak` 恢复 |
-| `undo --value data_win --backup 20240714_193500` | 恢复到指定时间戳版本 |
-| `list-backups --value data_win` | 列出所有备份 |
+### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
+
+| 命令 | 功能 | 验证 |
+|---|---|---|
+| `get --key Love` | 读取 INI 键值（--file file0 读核心属性） | static |
+| `set --key Love --value 20 --file file0` | 修改属性。Love/Kills/Room 自动同步 file0；HP/EXP/GOLD 等核心属性必须 --file file0；Room 支持中文房间名（须唯一名） | static |
+| `list` | 列出 INI 全部配置（--file file0 列 file0） | static |
+| `find --value 42 --file file0` | 在存档中按值搜索（file0 数值搜索） | static |
+| `set-derived --key HP --value 50` | 固定由 LV 推导的属性（HP/AT/DF/MAXHP）：写 file0 并改写游戏脚本阻止重算 | sandbox |
+| `reset-flags` | 重置屠杀线标记 | static |
+| `reset-all` | 全量重置（Boss/物品/击杀/plot），保留自定义 flag | static |
+| `create-system-info --value 962` | 创建屠杀线结局标记（962/963） | static |
+| `room-list --value "雪镇"` | 搜索/列出房间（支持中文模糊搜索） | static |
+| `undo --value data_win` | 从 .bak 恢复最后一次写入（仅一步；--backup 指定时间戳版本） | static |
+| `list-backups --value data_win` | 列出所有备份（--value ini\|file0\|data_win） | static |
+
+> ⚠️ `set`: HP/maxhp 进战斗会被按 LV 重算——永久固定用 set-derived
+> ⚠️ `set`: WEAPON/ARMOR 自动计算 AT/DF
+> ⚠️ `set`: HP/EXP/GOLD 等写 ini 会被警告（游戏只认 file0）
+> ⚠️ `set-derived`: 永久改写 game.ios、对所有存档生效；恢复用 undo --value data_win
+> ⚠️ `room-list`: 模糊名多匹配会报错并列出候选，须用唯一名
+
+### 💬 对话文本编辑 — --file data_win，UTMT CLI 编辑 STRG 与 textdata_en
+
+| 命令 | 功能 | 验证 |
+|---|---|---|
+| `list-strings --limit 30` | 列出 STRG 字符串（--limit/--offset/--hex） | static |
+| `get-string --key 500` | 查看指定索引字符串 | static |
+| `set-string --key 500 --value "新文本"` | 替换指定索引字符串（无长度限制） | sandbox |
+| `add-string --value "* 新对话/%%"` | 新增字符串并返回索引 | sandbox |
+| `delete-string --key 64000` | 删除字符串（索引整体重排，引用该索引的代码需自查） | sandbox |
+| `replace-string --old "A" --value "B"` | 全局批量替换（--old 旧文本 → --value 新文本） | sandbox |
+| `search-strings --value "Toriel"` | 搜索字符串 | static |
+| `search-textdata --value "obj_cactus"` | 搜索 textdata_en key（⚠️ 行序 ≠ 台词顺序） | static |
+| `add-textentry --key "obj_quest" --value "* Hello!/%%" --face 3` | 新增对话条目（自动去重；--face/--emotion 自动插入 \F\E 控制符） | sandbox |
+| `update-textentry --key "obj_quest" --value "* 新文本/%%"` | 替换已存在 key 的文本（幂等） | sandbox |
+| `delete-textentry --key "obj_quest"` | 按 key 删除条目 | sandbox |
+| `batch-add-textentry --value entries.json` | 从 JSON 文件批量导入（[{"key":"k","text":"t"}]，支持 --face/--emotion） | sandbox |
+| `guided-add-dialogue --key "obj_x" --value "* 文本/%%"` | 引导式对话创建（分步打印进度） | static |
+| `search-sctext --value "* 你好"` | 在 SCR_TEXT 用例表中搜索文本 | static |
+
+> ⚠️ `replace-string`: 全局替换，先 search-strings 确认影响面
+
+### 📜 脚本编辑 — --file data_win，反编译/重编译 GML（6272 个脚本）
+
+| 命令 | 功能 | 验证 |
+|---|---|---|
+| `list-codes --limit 10` | 列出脚本名 | static |
+| `decompile-code --key "gml_Script_scr_damage"` | 反编译脚本为 GML 源码（--search 过滤行） | static |
+| `replace-code --key "gml_Script_x" --value "return 0;"` | 替换整个脚本后重编译（--file-path 从文件读，--show-diff 预览） | sandbox |
+| `find-replace-code --key "gml_Object_x" --old "旧" --value "新"` | 源码内搜索替换后重编译（--dry-run 预览匹配数） | sandbox |
+| `append-code --key "gml_Object_obj_dummy1_Step_0" --value "// code"` | 追加 GML 到脚本末尾（不改原逻辑） | sandbox |
+| `prepend-code --key "gml_Object_obj_dummy1_Step_0" --value "// code"` | 插入 GML 到脚本开头 | sandbox |
+| `create-script --key "gml_Script_myfunc" --value "return 0;"` | 创建全新代码条目并自动注册 | sandbox |
+| `search-vars --value "global.flag" --limit 30` | 在全部脚本中搜索变量引用 | static |
+| `search-code --value "global.flag"` | search-vars 的别名（行为完全一致） | static |
+
+> ⚠️ `replace-code`: 整段替换覆盖原逻辑；操作后用 verify-code 做字节级体检
+
+### 🗺️ 房间布局与背景 — --file data_win；只能改造已有房间（禁止 create-room 新建），选房见 ROOMS_GUIDE.md
+
+| 命令 | 功能 | 验证 |
+|---|---|---|
+| `room-info --value room_myarea` | 显示房间全部属性 | static |
+| `room-objects --value "torielroom"` | 列出房间内全部对象实例（ID/坐标/精灵/事件） | static |
+| `spawn-obj --value "room_asrielroom" --key "obj_dummy1" --x 160 --y 120` | 在房间指定坐标生成对象实例（自动分配唯一 InstanceID） | sandbox |
+| `remove-obj --value "room_x" --key "obj_dummy1" --all` | 移除实例（--instance 优先；--key 移除第一个匹配；--all 全部） | sandbox |
+| `create-room（已禁用，只能改造已有房间）` | ❌ 已废弃：调用即报错。禁止新建房间序号（运行时无法识别，曾导致传送错房遇神烦狗） | static |
+| `set-room-bg --value room_x --index 0 --enable true --bg "bg_my"` | 配置房间背景层（对 B1 数据驱动房有效；B2 对象驱动房须用 gml-bg） | in-game |
+| `set-room-prop --value room_x --caption "标题"` | 修改房间属性（--width/--height/--speed/--caption/--persistent/--bg-color；不触碰 Views[0]） | sandbox |
+| `set-room-view --value room_x --view-w 320 --view-h 240 --port-w 640 --port-h 480 --follow obj_mainchara` | 配置摄像机视图（View 必须 320×240 / port 640×480；640×480 视角跟随失效——S2 大量实验验证） | in-game |
+| `remove-tile --value room_x` | 清除房间 Tile（不传 --instance 清全部） | sandbox |
+| `list-game-bgs` | 列出全部背景资产 | static |
+| `create-bg-asset --value "bg_my" --image "bg.png"` | 将 PNG 注入为新背景资产 | sandbox |
+| `gml-bg --value room_x --bg "bg_my" --slot 0 --speedx 0.5` | 注入运行时背景 GML + 视差到 obj_mainchara_Step_0（B2 对象驱动房/兜底手段；B1 用 set-room-bg） | in-game |
+| `set-room-solid-bg --value room_x --color 101010` | 房间背景设为纯色（--color 6 位 hex；--layers 选层，--no-runtime 关闭运行时层） | sandbox |
+| `room-bg-info --value room_x` | 诊断房间背景渲染类别（A 纯 Tile / B1 数据驱动 / B2 对象驱动） | in-game |
+
+> ⚠️ `spawn-obj`: 新实例重进房间才加载；用 room-objects 查 ID 后 remove-obj
+> ⚠️ `set-room-bg`: 必须覆盖所有启用层（高 slot 遮挡低 slot）
+> ⚠️ `set-room-bg`: A 类纯 Tile 房 8 层全禁用时无效，须先启用一层
+> ⚠️ `set-room-bg`: 2026-11 域D 实测裁决；room-bg-info 诊断房间归属
+
+### 🧍 NPC 交互 / 门 / 战斗 — --file data_win，注入已验证扁平触发形态
+
+| 命令 | 功能 | 验证 |
+|---|---|---|
+| `npc-dialogue --value "room_torielroom" --key "obj_cactus" --x 170 --y 180 --text-key "obj_cactus_hi" --text "* Hi/%%"` | 一键安全 NPC 对话：加对话条目 + 生成实例 + 注入已验证扁平距离触发块 + 自动 Alarm_0 守卫。默认可重复；--once 触发后 NPC 自毁 | in-game |
+| `npc-choice --value "room_water_undynefinal" --key "obj_kitchentable" --x 160 --y 420 --text-key "obj_table_ask" --text "* Let's go?& &         Yes         No      \C " --yes-text-key "obj_table_yes" --yes-text "* Okay!/%%" --no-text-key "obj_table_no" --no-text "* .../%%" --goto "雪镇 - 船夫(妇)" --item 48 --range 160` | 一键 YES/NO 选择 NPC：触发文本（须含 \C，≤3 行）→ 选择框 → YES/NO 分支文本替换。--goto 传送 / --item 给物品；默认单次，--repeat 可重复 | in-game |
+| `guard-npc-alarm --key "obj_cactus" --instance 113927` | 给已注入 myinteract 触发、与默认对话重叠的 NPC 补 Alarm_0 守卫（幂等） | sandbox |
+| `create-door --value "room_x" --key "room_y" --x 320 --y 240 --spawn-x 160 --spawn-y 120` | 创建传送门（--value 当前房 --key 目标房；--x/--y 位置，--spawn-x/--spawn-y 出生点） | sandbox |
+| `list-doors --value "room_x"` | 列出房间内全部 Deterline 门 | static |
+| `remove-door --value "room_x" --all` | 移除门（--x/--y 坐标 或 --all 全部） | sandbox |
+| `create-pit --value "room_x" --key "room_y" --x 320 --y 240` | 创建坑/陷阱（踩上传送到目标房） | sandbox |
+| `create-battle --value "room_x" --key 0 --x 320 --y 240` | 创建战斗触发区（--key = battlegroup 数字 ID；--border 边框样式） | sandbox |
+| `handler-extract` | 分析 obj_time_Step_2 自定义逻辑（--apply 应用抽取） | static |
+
+> ⚠️ `npc-dialogue`: 扁平形态 = 15 次游戏内启动实验矩阵实证（AUDIT_2026-11-07/域F）；状态机形态在当前 UTMT 环境是游戏内死代码，禁止手写
+> ⚠️ `npc-dialogue`: 不锁移动（v2.3.0 起）；--text 含 \C 会报错并引导改用 npc-choice
+> ⚠️ `npc-dialogue`: --range 自定义触发距离（默认 50px）
+> ⚠️ `npc-choice`: --text 必须含 \C（≤3 行）；YES/NO 分支文本不得含 \C（自动校验，防止选择框循环重弹）
+> ⚠️ `npc-choice`: 默认单次 = 答完后 NPC 自毁；分支文本自动替换 msg[0]
+
+### 🎨 精灵 / 对象 / 纹理 — --file data_win，P4 管线
+
+| 命令 | 功能 | 验证 |
+|---|---|---|
+| `list-sprites --limit 30` | 列出精灵（名称/尺寸/帧数） | static |
+| `search-sprite --value "sans"` | 按名称搜索精灵 | static |
+| `get-obj --key "obj_sans_actor"` | 查看对象属性（当前精灵/尺寸/可见性/深度/父类/事件数） | static |
+| `set-obj-sprite --key "obj_sans_actor" --value "spr_sans_dangerous"` | 切换对象的 Sprite 引用（全局影响该对象所有实例；尺寸一致时碰撞盒无偏移风险） | sandbox |
+| `list-textures --limit 10` | 列出嵌入纹理图谱（26 张） | static |
+| `export-sprite --key "spr_sans_d" --value "out.png" --frame 0` | 导出精灵帧为 PNG（--frame 指定帧；--value 以 .png 结尾单帧导出，目录则全部帧） | static |
+| `replace-sprite --key "spr_sans_d" --value "edit.png" --frame 0` | 替换精灵单帧纹理（合成回图谱对应区域，不影响同图谱其他精灵；PNG 自动 resize） | in-game |
+| `duplicate-sprite --key "spr_a" --value "spr_a_copy"` | 复制精灵为新名（独立编辑不影响原精灵） | sandbox |
+| `preview-sprite --key "spr_sans_d"` | 终端 ASCII 预览精灵 | static |
+| `colorize-sprite --key "spr_sans_d" --value "spr_sans_d_red" --hue-from "180-260" --hue-to 0` | 复制精灵并按 HSV 范围选择性变色（--hue-from "min-max" --hue-to 角度） | sandbox |
+| `export-texture --value "./textures"` | 导出纹理图谱为 PNG（--key 单张；缺省导出全部 26 张） | static |
+| `replace-texture --key "Texture 0" --value "tex0.png"` | 替换整个纹理图谱（影响图谱上所有精灵；经 GMImage 自动处理 QOI/BZ2 格式转换） | in-game |
+| `dump-sprites --value "./sprites"` | 批量导出全部 2583 个精灵（UTMT CLI 内置） | static |
+
+> ⚠️ `replace-sprite`: P4-1-1 已验证无损循环：export→replace→export MD5 一致
+> ⚠️ `replace-texture`: 影响面大，替换前先 export-texture 留底
+
+### 🎯 支线任务 flag — global.flag 自定义区（默认 510）
+
+| 命令 | 功能 | 验证 |
+|---|---|---|
+| `quest-init` | 重置任务 flag 为 0（--flag 默认 510） | static |
+| `quest-status` | 查看自定义任务 flag 状态 | static |
+
+### 🔒 验证 / 快照 / 写入安全 — V1/V4/W3/O7 机制与备份恢复
+
+| 命令 | 功能 | 验证 |
+|---|---|---|
+| `verify-nsid` | 检查损坏变量 NameStringID（读取即崩溃的陷阱；--fix 自动修复） | sandbox |
+| `verify-instances` | 检查全房间实例 ID 异常（ID=0/重复/空对象/Nonexistent；--fix 自动分配唯一 ID） | sandbox |
+| `verify-code --key "gml_Object_obj_cactus_Step_1"` | 字节级体检指定代码条目：反汇编指纹 + 变量读写普查 + 往返稳定性（WARN/不稳定退出码 1；--asm 输出完整反汇编） | sandbox |
+| `smoke-test --value room_torielroom --key obj_cactus` | 游戏内冒烟测试：注入扁平触发块 + 标记文件 → steam 启动 → 断言 → 自动恢复原文件（FAIL 退出码 1；--keys osascript 需辅助功能权限） | in-game |
+| `diff-snapshots --key baseline.ios --value after.ios` | 两份 game.ios 结构化差异报告（LastObj/实例/代码条目/字符串计数/自定义变量——实验隔离与泄漏取证） | sandbox |
+| `sandbox-restore` | 将沙箱副本应用回原文件（⚠️ 覆盖原文件） | sandbox |
+| `md5` | 打印 game.ios MD5（一行校验"是否真的改过"） | static |
+| `experiment-snapshot --value "test1"` | 创建命名实验快照（game.ios + file0） | static |
+| `experiment-list` | 列出全部实验快照 | static |
+| `experiment-restore --value "test1"` | 从命名快照恢复（⚠️ 覆盖 game.ios + file0） | static |
+
+> ⚠️ `verify-code`: V1 收窄版；注入实验后必跑，能区分活/死代码形态的指纹差异
+> ⚠️ `smoke-test`: ≈90 秒/次；环境敏感（无人值守开场动画可能卡住）；结束后自动还原并清理
+> ⚠️ `diff-snapshots`: --key 基线文件，--value 对比文件
+<!-- END generated:commands -->
+
+## 关键约束与注意事项（手工维护）
+
+### 存档：file0 vs INI（已对照游戏源码核实）
 
 > ⚠️ **重要（已对照游戏源码 scr_load / scr_saveprocess 核实）**：
 > 核心属性 **LOVE/LV、HP(最大生命)、AT、DF、EXP、GOLD、Kills、装备、Boss 状态、flag 都存在 `file0`**，读档瞬间从 file0 读取。
@@ -175,57 +309,7 @@ deterline/
 > `set-derived --key HP|AT|DF --value N`（它同时改写 file0 与上述两个脚本）。注意 `set-derived` 会永久改写
 > `game.ios`、对**所有存档**生效，可用 `undo --value data_win` 恢复。LV5 对应的原版值为 HP36 / AT18 / DF11。
 
-
-### 💬 对话文本编辑（`--file data_win`）
-
-通过 UTMT CLI 编辑游戏字符串表（STRG），**无长度限制**。
-
-| 命令 | 功能 |
-|---|---|
-| `list-strings --limit 30` | 列出字符串 |
-| `get-string --key 500` | 查看指定字符串 |
-| `set-string --key 500 --value "新文本"` | 替换（无长度限制） |
-| `add-string --value "新对话"` | **新增字符串，返回索引** |
-| `delete-string --key 50000` | **删除字符串** |
-| `search-strings --value "Toriel"` | 搜索 |
-| `replace-string --old "A" --value "B"` | 批量替换 |
-| `search-textdata --value "key前缀"` | 搜索 textdata key（⚠️ 行序 ≠ 台词顺序） |
-
-### 📜 脚本编辑（`--file data_win`）
-
-将游戏 GML 字节码反编译为可读源码，修改后重新编译。**支持 6272 个游戏脚本。**
-
-| 命令 | 功能 |
-|---|---|
-| `list-codes --limit 10` | 列出脚本名 |
-| `decompile-code --key "gml_Script_xxx"` | 反编译为 GML 源码 |
-| `replace-code --key "脚本名" --value "GML"` | **替换整个脚本后重编译** |
-| `replace-code --key "脚本名" --value "file.gml" --file-path` | 从文件加载 GML |
-| `append-code --key "脚本名" --value "GML"` | 追加到脚本末尾（不改原逻辑） |
-| `append-code --key "脚本名" --value "file.gml" --file-path` | 从文件加载 GML 后追加 |
-| `prepend-code --key "脚本名" --value "GML"` | 插入到脚本开头（同样支持 `--file-path`） |
-| `find-replace-code --key "脚本" --old "旧" --value "新"` | **源码搜索替换后重编译** |
-| `create-script --key "gml_Script_xxx" --value "GML"` | **创建全新脚本，自动注册** |
-
-### 🗺️ 文本数据表（`--file data_win`）
-
-管理 `global.text_data_en` 映射表——**游戏所有文本的中央数据库（16457 行 GML，158 万字符）。**
-
-| 命令 | 功能 |
-|---|---|
-| `search-textdata --value "sans"` | 搜索 textdata key（⚠️ 行序 ≠ 台词顺序） |
-| `add-textentry --key "obj_xxx" --value "文本/"` | **新增对话条目（自动去重）** |
-| `update-textentry --key "obj_xxx" --value "新文本/"` | **改已有对话条目（替换已存在 key 的文本，幂等）** |
-| `delete-textentry --key "obj_xxx"` | 按 key 删除条目 |
-
-### 🔍 跨脚本搜索（`--file data_win`）
-
-| 命令 | 功能 |
-|---|---|
-| `search-vars --value "global.flag"` | **在所有 6272 个脚本中搜索变量引用** |
-| `room-objects --value "torielroom"` | **列出房间内的全部对象实例** |
-
-### 🏗️ 房间编辑与选房规则（`--file data_win`）
+### 选房规则（强制）
 
 > ⚠️ **强制规则（必须遵守）**：用户要求自定义/新建房间时，**禁止 `create-room` 新建房间序号**（游戏运行时无法识别新增房间）。只能**修改已有房间**。房间选择必须查阅 **`ROOMS_GUIDE.md`**（Deterline 目录下，336 个房间全量分类清单）。
 >
@@ -235,33 +319,17 @@ deterline/
 > 3. 提供候选时列出房间号 + 尺寸 + 中文名，供用户挑选，不得擅自决定
 > 4. 用户要求**加背景时**，必须询问：是否要背景视差？视差速度（speedx）多少？（默认 0.3）
 > 5. 多层视差参考房：`room_lastruins_corridor`（230，B2 类，7 层多深度视差）。其余 obj_backgrounder_* 房间（tundra/dock/core/castle 等）也有单层视差公式
->
-> 常用房间编辑命令见下表；分类详见 ROOMS_GUIDE.md。
 
-### 🏗️ 房间布局编辑（`--file data_win`）
+### 房间背景三类归属（2026-11 审计裁决）
 
-在任意房间生成或移除游戏对象实例，不限于原本就在该房间的对象。
+- `set-room-bg` 对**数据驱动（B1）房间有效**——引擎加载时用 ROOM 数据初始化运行时背景数组；但必须覆盖**所有启用层**（高 slot 遮挡低 slot）。
+- **对象驱动（B2）房间**（含 `obj_backgrounder_*` 的房）其 Create 会覆盖房间数据，须用 `gml-bg`。
+- **纯 Tile（A 类）房** 8 层全禁用时二者均无效，须先 `set-room-bg --enable true` 启用一层。
+- 用 `room-bg-info` 查房间归属；View 的 width/height 必须是 320×240（S2 大量实验验证）。
 
-| 命令 | 功能 |
-|---|---|
-| `spawn-obj --value "room_asrielroom" --key "obj_dummy1" --x 160 --y 120` | 在房间指定坐标生成对象 |
-| `remove-obj --value "room_asrielroom" --instance 113930` | 按实例 ID 移除 |
-| `remove-obj --value "room_asrielroom" --key "obj_dummy1"` | 按对象类型移除第一个 |
-| `remove-obj --value "room_asrielroom" --key "obj_dummy1" --all` | 移除该类型全部实例 |
-| `npc-dialogue --value "room_torielroom" --key "obj_cactus" --x 170 --y 180 --text-key "obj_cactus_hi" --text "* Hi/%%"` | **一键安全 NPC 对话**：加对话 + 生成实例 + 注入已验证扁平距离触发块 + 自动守卫 Alarm_0。默认 = 可重复（关对话后仍在范围内会再弹，走出范围停止） |
-| `npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi/%%" --once` | **单次触发**：触发后 NPC 自毁消失（永久只一次）。⚠️ v2.3.0 起不再锁移动——状态机形态在当前 UTMT 环境下产生游戏内死代码（2026-11 审计，见 AUDIT_2026-11-07/域F） |
-| `npc-dialogue ... --range 160` | 自定义触发距离（默认 50px） |
-| `npc-choice --value "room_water_undynefinal" --key "obj_kitchentable" --x 160 --y 420 --text-key "obj_table_ask" --text "* Let's go?& &         Yes         No      \C " --yes-text-key "obj_table_yes" --yes-text "* Okay!/%%" --no-text-key "obj_table_no" --no-text "* .../%%" --goto "雪镇 - 船夫(妇)" --item 48 --range 160` | **一键安全 YES/NO 选择 NPC**：加 2-3 条对话 + 生成实例 + 注入选择状态机（触发 → `\C` 选择框 → YES 分支[文本/给物品/传送] / NO 分支[文本]）。**默认单次触发**，分支文本自动替换 msg[0]，从根源杜绝选择框循环重弹 |
-| `npc-choice ... --repeat` | 可重复触发（默认单次 = 答完后 NPC 自毁消失；--repeat 保留 NPC，走开再靠近可再问） |
-| `guard-npc-alarm --key "obj_cactus" --instance 113927` | 给已有冲突 NPC 补 `Alarm_0` 守卫（幂等） |
-| `verify-nsid` | 检查损坏变量 NameStringID（读取会崩溃的陷阱）；`--fix` 自动修复 |
-| `verify-instances` | 检查全房间实例 ID 异常（ID=0 / 重复 / 空对象 / Nonexistent）；`--fix` 为 ID=0/重复实例自动分配唯一 ID |
+### NPC 注入语义（v2.3.0，扁平形态）
 
-注意事项：
-- 修改的是 `game.ios/data.win` 中的房间布局数据，不是存档
-- 新实例在**重新进入房间时加载**，不立即生效
-- 建议操作后用 `set --key Room --value 房间ID` 传送触发刷新
-- 用 `room-objects` 查看实例 ID 后再 `remove-obj --instance`
+- 修改的是 `game.ios/data.win` 中的房间布局数据，不是存档；新实例在**重新进入房间时加载**，不立即生效（可用 `set --key Room --value 房间ID` 传送触发刷新）
 - 生成的实例保留完整的对象行为（碰撞、事件、交互、AI）
 - **新增实例必须唯一非 0 的 InstanceID**：多个实例 ID=0 会共享 per-instance 变量表 → Create 事件写入（`phase`、`image_xscale` 等）不生效 → 读 `other.<变量>` 崩溃 + 布局异常（漏口）。ad-hoc CSX 直接 `new UndertaleRoom.GameObject()` 必须设 `InstanceID = Data.GeneralInfo.LastObj++`；工具命令（spawn-obj/npc-dialogue/create-door 等）已自动处理。操作后用 `verify-instances` 检查
 - `npc-dialogue` / `npc-choice`（v2.3.0）生成**已验证扁平触发块**（游戏内实测；状态机形态在当前 UTMT 环境下游戏内死代码，禁止手写）；原生 readable 对象额外加 `Alarm_0` 守卫；Create 事件自动初始化 `deterline_state = 0;` 仅为 NSID 兼容保留（触发块不读写）
@@ -269,43 +337,8 @@ deterline/
 - `npc-choice` 的 `--text` 必须是含 `\C ` 的 3 行以内选择文本（`"* 提问& &         Yes         No      \C "`）；YES/NO 分支文本**不得含 `\C`**（命令行会自动校验，`npc-dialogue` 遇到 `\C` 文本会报错并引导改用 npc-choice）
 - 可用 `--sandbox` 做安全测试，确认无误后 `sandbox-restore` 恢复
 
-### 🎨 精灵/对象编辑（`--file data_win`）— P4-1
+### 房间改造工作流（已验证）
 
-浏览和修改游戏对象的 Sprite 引用，用已有精灵更换 NPC 动作。
-
-| 命令 | 功能 |
-|------|------|
-| `list-sprites --limit 30` | 列出所有精灵（名称、尺寸、帧数、类型） |
-| `search-sprite --value "sans"` | 按名称搜索精灵 |
-| `get-obj --key "obj_sans_actor"` | 查看对象属性：当前精灵、尺寸、可见性、深度、父类、事件数 |
-| `set-obj-sprite --key "obj_sans_actor" --value "spr_sans_dangerous"` | **切换对象的 Sprite 引用**（用已有精灵换动作，全局影响所有实例） |
-
-**注意事项**：
-- `set-obj-sprite` 修改对象定义，影响该对象的所有实例（全局）
-- 精灵尺寸一致（如 25x32 ↔ 25x32）时碰撞盒无偏移风险
-- 用 `search-sprite` 和 `get-obj` 先确认可用精灵和目标对象
-- 建议用 `--sandbox` 测试
-
-### 🏗️ 房间编辑（P4-2）
-
-创建、查看和修改游戏房间。**关键约束：View 必须 320×240（port 640×480，2x 缩放）**。设成 640×480 会导致视角跟随失效。
-
-| 命令 | 功能 |
-|------|------|
-| ~~`create-room`~~ | **❌ 废弃：禁止新建房间序号**（游戏运行时无法识别新增房间，曾导致传送进错房间遇神烦狗）。只能修改已有房间，选房见 ROOMS_GUIDE.md |
-| `room-info --value room_myarea` | 显示房间全部属性 |
-| `set-room-prop --value room_myarea --caption "标题"` | 修改房间属性（可选 `--width`/`--height`/`--speed`） |
-| `set-room-view --view-w 320 --view-h 240 --port-w 640 --port-h 480 --follow obj_mainchara` | 配置摄像机 |
-| `room-objects --value "torielroom"` | 列出房间内的对象 + 事件 |
-| `spawn-obj --value "room_xxx" --key "obj_dummy1" --x 160 --y 120` | 在房间生成对象 |
-| `remove-obj --value "room_xxx" --key "obj_solidtall" --all` | 移除指定类型的全部对象 |
-| `remove-tile --value room_xxx` | 清除房间全部 Tile |
-| `gml-bg --value room_xxx --bg "bg_asset" --slot 0 --speedx 0.5` | **注入运行时背景 GML + 视差**（B2 对象驱动房/兜底手段；B1 数据驱动房用 set-room-bg，`room-bg-info` 诊断） |
-| `bg_generator.py` | PIL 像素背景生成（独立脚本，5 种图案） |
-| `create-bg-asset --value "bg_my" --image "bg.png"` | 将 PNG 注入为游戏背景资产 |
-| `list-game-bgs` | 列出所有可用背景资产 |
-
-**房间改造工作流（已验证）**：
 ```
 1. remove-obj --all + remove-tile 清空房间
 2. set-room-prop --width 640 --height 480     ← 房间 > View 才有滚动空间
@@ -318,28 +351,8 @@ deterline/
 7. set --key Room "房间ID" → 进入验证
 ```
 
-**注意事项**：
-- `set-room-bg`（2026-11 审计修正）：对**数据驱动（B1）房间有效**——引擎加载时用 ROOM 数据初始化运行时背景数组；但必须覆盖**所有启用层**（高 slot 遮挡低 slot）。**对象驱动（B2）房间**（含 `obj_backgrounder_*` 的房）其 Create 会覆盖房间数据，须用 `gml-bg`。**纯 Tile（A 类）房** 8 层全禁用时二者均无效，须先 `set-room-bg --enable true` 启用一层。用 `room-bg-info` 查房间归属
-- View 的 width/height 必须是 320×240（经过 S2 大量实验验证）
-- `remove-tile` 不传 `--instance` 时清除所有 Tile
-- `gml-bg` 将代码注入 `obj_mainchara_Step_0`，代码每帧执行设置背景和视差
+### 纹理替换工作流与技术细节
 
-### 🖼️ 纹理替换（`--file data_win`）— P4-1-1
-
-导出精灵纹理为 PNG → 编辑 → 替换回游戏，实现**自定义美术内容**。
-
-| 命令 | 功能 |
-|------|------|
-| `list-textures --limit 10` | 列出 26 张嵌入纹理图谱（名称、尺寸） |
-| `export-sprite --key "spr_sans_d" --value "out.png" --frame 0` | 导出精灵单帧为 PNG |
-| `export-sprite --key "spr_sans_d" --value "out_dir/"` | 导出精灵全部帧到目录 |
-| `replace-sprite --key "spr_sans_d" --value "edit.png" --frame 0` | **替换精灵单帧纹理**（合成回纹理图谱对应区域） |
-| `export-texture --key "Texture 0" --value "out_dir/"` | 导出单个纹理图谱为 PNG |
-| `export-texture --value "out_dir/"` | 导出全部 26 个纹理图谱到目录 |
-| `replace-texture --key "Texture 0" --value "tex.png"` | **替换整个纹理图谱**（影响该图谱上所有精灵） |
-| `dump-sprites --value "out_dir/"` | 批量导出全部 2583 个精灵（UTMT CLI 内置） |
-
-**纹理替换工作流**：
 ```
 export-sprite --key "spr_sans_d" --value "sans.png" --frame 0
   → (用 PIL / Photoshop / Aseprite 编辑 PNG)
@@ -348,17 +361,12 @@ replace-sprite --key "spr_sans_d" --value "sans_edit.png" --frame 0 --sandbox
 sandbox-restore  (不满意就恢复)
 ```
 
-**技术细节**：
-- 2583 个精灵共享 26 张纹理图谱（Texture 0~25）
-- 纹理图谱尺寸 512x512 ~ 2048x2048 像素（512/1024/2048 混合，2026-11 审计实测）
+- 2583 个精灵共享 26 张纹理图谱（Texture 0~25）；图谱尺寸 512/1024/2048 混合（2026-11 审计实测）
 - `replace-sprite` 只替换精灵在纹理图谱上对应 SourceX/Y/Width/Height 的区域，不影响同图谱其他精灵
-- 编辑 PNG 会自动 Resize 匹配原尺寸
-- 替换后通过 `GMImage` 自动处理格式转换（QOI/BZ2 等）
+- 编辑 PNG 会自动 Resize 匹配原尺寸；替换后通过 `GMImage` 自动处理格式转换（QOI/BZ2 等）
 - 已验证无损循环：`export-texture → replace-texture → export-texture` MD5 完全一致
 
----
-
-### 🔒 沙箱模式与写入安全（v2.3.0+）
+### 沙箱模式与写入安全（v2.3.0+）
 
 **data_win 写操作默认沙箱**：不带 `--commit` 的写命令只落 `game.ios.sandbox` 副本（真实文件与 Steam 零接触），每次写入打印回执（影响文件 + MD5 前后 + 退路）。确认后 `--commit` 直写（含 Steam 同步，可用 `--no-steam-sync` 抑制），或 `sandbox-restore` 应用沙箱。`--sandbox` 与 `--commit` 互斥。
 

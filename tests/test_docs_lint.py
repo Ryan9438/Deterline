@@ -1,16 +1,19 @@
-"""O1a 文档漂移 lint（MVP）：版本一致性 + 已知失实模式黑名单。
+"""O1a/O1b 文档漂移 lint：版本一致性 + 失实模式黑名单 + 生成区块一致性。
 
 背景：两轮审计共勘误 97+ 条，其中相当一部分是"同一事实多处手工陈述"
-（版本号 3 种、行数/计数漂移）。本测试把最易漂移的模式固化为断言；
-O1b（commands.json 生成机制）落地后，本文件再扩展为生成一致性校验。
+（版本号 3 种、行数/计数漂移）。本测试把最易漂移的模式固化为断言。
+O1b 落地后增加：commands.json（SSOT）↔ 三份文档生成区块 ↔ argparse choices
+三方的同步校验（机制见 tools/gen_docs.py）。
 """
 
 import re
+import sys
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 ROOT = REPO.parent
+sys.path.insert(0, str(REPO / "tools"))
 
 # 已被审计裁决为失实、不允许在任何现行文档中复现的模式
 STALE_PATTERNS = [
@@ -67,6 +70,44 @@ class TestStalePatterns(unittest.TestCase):
                     if not re.search(r"修正|有误|~~|旧|审计|已废弃|实测", line_text):
                         self.fail(f"{f.name}:{line}: 失实模式 {pat!r} 复现（{why}）\n"
                                   f"  行: {line_text.strip()[:90]}")
+
+
+class TestGeneratedDocs(unittest.TestCase):
+    """O1b：commands.json（SSOT）→ gen_docs.py → 三份文档 的同步校验。"""
+
+    def test_generated_tables_in_sync(self):
+        """三份文档的生成区块必须与 commands.json 渲染结果逐字节一致。"""
+        import gen_docs
+        problems = gen_docs.check()
+        self.assertEqual(problems, [],
+                         "文档命令表漂移——改了 commands.json 就运行 "
+                         "python3 tools/gen_docs.py；不要手改生成区块")
+
+    def test_commands_json_covers_argparse(self):
+        """新增/删除 --action 必须同步 commands.json（否则本测试失败）。"""
+        import gen_docs
+        problems = gen_docs.validate_json(gen_docs.load_data())
+        self.assertEqual(problems, [])
+
+    def test_generated_region_is_byte_identical_across_docs(self):
+        """三份文档嵌入的生成区块逐字节相同（O1 验收标准）。"""
+        import gen_docs
+        blocks = []
+        for path in gen_docs.TARGETS:
+            found = gen_docs.BLOCK_RE.findall(path.read_text(encoding="utf-8"))
+            self.assertEqual(len(found), 1, f"{path.name}: 生成区块应恰有 1 个")
+            blocks.append(found[0])
+        self.assertEqual(blocks[0], blocks[1])
+        self.assertEqual(blocks[1], blocks[2])
+
+    def test_version_in_commands_json_matches_code(self):
+        """commands.json 的 version 字段也是受管版本声明之一。"""
+        import gen_docs
+        ver = re.search(r'__version__ = "([^"]+)"',
+                        (REPO / "scripts" / "modify_save.py").read_text(encoding="utf-8")
+                        ).group(1)
+        self.assertEqual(gen_docs.load_data()["version"], ver,
+                         "commands.json version 与 modify_save.py __version__ 不一致")
 
 
 if __name__ == "__main__":
