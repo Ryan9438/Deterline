@@ -358,16 +358,17 @@ sandbox-restore  (不满意就恢复)
 
 ---
 
-### 🔒 沙箱模式
+### 🔒 沙箱模式与写入安全（v2.3.0+）
 
-在不修改原 `game.ios` 的情况下测试修改：
+**data_win 写操作默认沙箱**：不带 `--commit` 的写命令只落 `game.ios.sandbox` 副本（真实文件与 Steam 零接触），每次写入打印回执（影响文件 + MD5 前后 + 退路）。确认后 `--commit` 直写（含 Steam 同步，可用 `--no-steam-sync` 抑制），或 `sandbox-restore` 应用沙箱。`--sandbox` 与 `--commit` 互斥。
 
 ```bash
-# 在副本上操作
-python run.py --action spawn-obj --value "room_asrielroom" --key "obj_dummy1" --sandbox --file data_win
+# 默认：写入自动隔离到沙箱副本（打印写入回执）
+python run.py --action spawn-obj --value "room_asrielroom" --key "obj_dummy1" --file data_win
 
-# 确认效果后，恢复副本到原文件
-python run.py --action sandbox-restore
+# 确认效果后二选一：
+python run.py --action sandbox-restore          # 应用沙箱到原文件
+python run.py --action spawn-obj ... --commit   # 下一次写入直接落盘（含 Steam 同步）
 ```
 
 沙箱自动创建 `game.ios.sandbox` 作为工作副本，所有操作只影响副本。
@@ -940,8 +941,8 @@ if (deterline_state == 2 && distance_to_object(obj_mainchara) >= 60)
 **冲突根因**：在 Step 事件里设 `myinteract = 1` 做距离触发，会同时被父类 Step_0 捕获 → 默认对话 + 你的对话两个对话框重叠。
 
 **正确做法（二选一）**：
-1. 用 `npc-dialogue` 命令（自动用 `deterline_state` 状态机 + `Alarm_0` 加 `if (id == N) exit;` 守卫）
-2. 手工：Step 用 `deterline_state`/`flag[510]` 状态机（不要碰 `myinteract`）+ `Alarm_0` 头部加 `if (id == <实例ID>) exit;`
+1. 用 `npc-dialogue` 命令（v2.3.0：生成游戏内已验证扁平触发块 + `Alarm_0` 加 `if (id == N) exit;` 守卫；状态机形态已废弃——游戏内死代码）
+2. 手工（⚠️ 状态机形态游戏内死代码，勿照此写——只允许 npc-dialogue 生成的扁平形态；守卫部分仍有效）：`Alarm_0` 头部加 `if (id == <实例ID>) exit;`
 
 **如何识别**：`get-obj --key obj_xxx` 会显示完整父链并打印警告；`spawn-obj` 生成这类对象时也会提示。
 
@@ -1014,7 +1015,7 @@ game_restart();            // 重启游戏
 | WEAPON/ARMOR 自动 AT/DF | 设置装备时自动同步加成值 |
 | `undo --value data_win` | 恢复 `game.ios` 到修改前状态（用 `.bak.时间戳` 可恢复到指定版本） |
 | `remove-obj --instance ID` | 精确移除单个实例，不影响其他对象 |
-| **沙箱模式** `--sandbox` | 在 `game.ios.sandbox` 副本上操作，原文件不受影响。用 `sandbox-restore` 恢复 |
+| **写入默认沙箱** | v2.3.0：写命令默认只落 `*.sandbox` 副本 + 写入回执；`--commit` 直写；`--no-steam-sync` 抑制 Steam 同步 |
 | **`verify-nsid` 变量体检** | 检查损坏的变量 NameStringID（读取会崩溃的陷阱），`--fix` 自动修复 |
 | **变量自动初始化** | `npc-dialogue`/`guard-npc-alarm` 自动在 Create 事件写 `deterline_state = 0;`，防止新变量 NSID 损坏崩溃 |
 | **精灵搜索** `search-sprite` | 零匹配以退出码 3 结束（推荐逻辑仅 get-obj/spawn-obj 有） |
@@ -1045,6 +1046,9 @@ game_restart();            // 重启游戏
 15. `set-room-bg` 对数据驱动（B1）房间有效，但须覆盖所有启用层；对象驱动（B2）房用 `gml-bg`；纯 Tile（A 类）房需先启用一层。用 `room-bg-info` 诊断（2026-11 审计修正，旧"一律被忽略"结论有误）
 16. `gml-bg` 将代码注入 `obj_mainchara_Step_0`，每帧执行设置背景和视差。一次注入永久生效，直到代码被清除
 17. 跨平台：macOS/Windows 路径自动识别
+17a. **写入安全（v2.3.0）**：data_win 写命令默认沙箱 + 写入回执；`--commit` 直写；`--no-steam-sync` 抑制 Steam 同步
+17b. **`verify-code`**：代码条目字节级体检（反汇编指纹 + 变量读写普查 + 反编译↔重编译往返稳定性判定）
+17c. **`smoke-test`**：游戏内冒烟测试（注入触发块+标记文件 → 启动游戏 → 断言 → 自动恢复；验证级别 in-game）
 18. Skill 通过符号链接安装，工作区修改自动同步到 OpenCode
 19. `set-obj-sprite` 修改对象定义，影响所有实例。如需实例级只改一个 NPC，用 GML `sprite_index` 运行时赋值
 20. `replace-sprite` 修改纹理图谱对应区域，帧 0 和帧 2 可能共享同纹理区域（SourceX/Y 相同）

@@ -254,14 +254,22 @@ python run.py --action md5
 
 ---
 
-## 🔒 沙箱模式
+## 🔒 沙箱模式与写入安全（v2.3.0+）
 
 ```bash
-# 在 game.ios.sandbox 副本上操作
-python run.py --action spawn-obj --value "room_asrielroom" --key "obj_dummy1" --sandbox --file data_win
+# 默认：data_win 写操作自动隔离到沙箱副本（打印写入回执：MD5 前后 + 退路）
+python run.py --action spawn-obj --value "room_asrielroom" --key "obj_dummy1" --file data_win
 
-# 确认后恢复副本到原文件
-python run.py --action sandbox-restore
+# 确认后二选一：
+python run.py --action sandbox-restore            # 应用沙箱到原文件
+python run.py --action spawn-obj ... --commit     # 直写真实文件（含 Steam 同步）
+python run.py --action spawn-obj ... --commit --no-steam-sync  # 直写但不同步 Steam
+
+# 代码条目字节级体检（反汇编指纹 + 变量读写普查 + 往返稳定性）
+python run.py --action verify-code --key "gml_Object_obj_cactus_Create_0" --file data_win
+
+# 游戏内冒烟测试（注入+启动+断言+自动恢复；验证级别 in-game）
+python run.py --action smoke-test --value room_torielroom --key obj_cactus --x 160 --y 150 --file data_win
 ```
 
 ---

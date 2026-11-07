@@ -51,7 +51,7 @@
 
 ### 🤖 自定义 NPC 支线（需 UTMT CLI）
 - **距离自动触发对话**（`distance_to_object`，无需 Z 键）
-- **多阶段状态机**（`flag[510]`，0→1→2→...）
+- ~~多阶段状态机~~（v2.3.0：状态机形态在当前 UTMT 环境下游戏内死代码——现为已验证扁平触发块；`--once` 用触发后自毁实现单次。2026-11 审计）
 - **YES/NO 选择分支** + 2 帧窗口截获机制
 - **物品奖励**（`scr_itemget`）+ **战斗触发**（`battlegroup`）
 - **任务管理**（`quest-init` / `quest-status`）
@@ -208,7 +208,7 @@ deterline/
 - `replace-code` 会覆盖整个脚本；`append-code` / `prepend-code` 不覆盖原逻辑
 - LOVE、Kills、Room 同时存在于 INI 和 file0，`set --key Room` 自动同步
 - `facechoice` 范围 0-9（0=无头像, 1=Toriel, 2=Flowey, 3=Sans, ...），**不要用 10+**
-- **`--sandbox` 模式**：在 `game.ios.sandbox` 副本上操作，原文件不受影响。确认后用 `sandbox-restore` 恢复
+- **写入默认沙箱（v2.3.0）**：data_win 写命令默认只落 `*.sandbox` 副本并打印写入回执；`--commit` 直写（含 Steam 同步）；`--no-steam-sync` 抑制同步；`sandbox-restore` 应用沙箱
 - **安装 UTMT CLI 后**才能使用 `--file data_win` 相关命令
 - **房间 View 必须为 320×240（port 640×480）**——设成 640×480 会导致视角跟随失效（`view_xview` 被钳位到 0）
 - **背景修改按房间分类选命令**（`room-bg-info` 诊断）：数据驱动（B1）房 `set-room-bg` 有效（须覆盖所有启用层）；对象驱动（B2）房用 `gml-bg` 注入；纯 Tile（A 类）房须先启用一层。2026-11 审计修正：旧"set-room-bg 一律被运行时忽略"结论有误
