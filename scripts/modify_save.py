@@ -6716,7 +6716,7 @@ def main():
     parser.add_argument("--range", type=int, default=50,
                         help="触发距离像素 (npc-dialogue/npc-choice 用, 默认: 50)")
     parser.add_argument("--repeat", action="store_true",
-                        help="可重复触发（走开 >60px 再靠近可再触发；npc-choice 用，默认单次）")
+                        help="可重复触发（走开再靠近可再触发；npc-choice 用，默认单次）")
     parser.add_argument("--frame", type=int, default=None,
                         help="帧索引 (export-sprite/replace-sprite 用, 默认: replace 全部帧的 0 / export 全部帧到目录; "
                              "export 时 --value 以 .png 结尾则默认单帧导出到该文件)")
@@ -6743,7 +6743,7 @@ def main():
     parser.add_argument("--apply", action="store_true",
                         help="应用模式 (handler-extract 用, 默认仅诊断)")
     parser.add_argument("--once", action="store_true",
-                        help="单次触发 + 对话期间锁移动 (npc-dialogue 用)")
+                        help="单次触发（触发后 NPC 自毁消失；不锁移动——状态机形态 v2.3.0 已废弃）")
     parser.add_argument("--timeout", type=int, default=None,
                         help="smoke-test 轮询超时秒数 (默认 120)")
     parser.add_argument("--keys", type=str, default=None, choices=["external", "osascript"],
@@ -6765,7 +6765,7 @@ def main():
     parser.add_argument("--persistent", action="store_true",
                         help="房间是否持久化 (set-room-prop 用)")
     parser.add_argument("--bg", type=str, default=None,
-                        help="背景资源名 (set-room-bg/create-bg-asset 用)")
+                        help="背景资源名 (set-room-bg/gml-bg 用; create-bg-asset 的资产名走 --value, PNG 走 --image)")
     parser.add_argument("--index", type=int, default=0,
                         help="背景/视图层索引 (set-room-bg/set-room-view 用, 默认: 0)")
     parser.add_argument("--enable", type=str, default=None,

@@ -62,7 +62,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 > ⚠️ `set-derived`: 永久改写 game.ios、对所有存档生效；恢复用 undo --value data_win
 > ⚠️ `room-list`: 模糊名多匹配会报错并列出候选，须用唯一名
 
-### 💬 对话文本编辑 — --file data_win，UTMT CLI 编辑 STRG 与 textdata_en
+### 💬 对话文本编辑 — --file data_win，STRG 与 textdata_en 中央数据库（16457 行 / 158 万字符）
 
 | 命令 | 功能 | 验证 |
 |---|---|---|
@@ -122,6 +122,8 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 > ⚠️ `set-room-bg`: 必须覆盖所有启用层（高 slot 遮挡低 slot）
 > ⚠️ `set-room-bg`: A 类纯 Tile 房 8 层全禁用时无效，须先启用一层
 > ⚠️ `set-room-bg`: 2026-11 域D 实测裁决；room-bg-info 诊断房间归属
+> ⚠️ `gml-bg`: 域D B.6 悬案：A 类房（room_ruins7A）的 gml-bg 路径建议游戏内复测
+> ⚠️ `room-bg-info`: 分类结论经域D 游戏内实验裁决（A/B1/B2 归属）
 
 ### 🧍 NPC 交互 / 门 / 战斗 — --file data_win，注入已验证扁平触发形态
 
@@ -142,6 +144,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 > ⚠️ `npc-dialogue`: --range 自定义触发距离（默认 50px）
 > ⚠️ `npc-choice`: --text 必须含 \C（≤3 行）；YES/NO 分支文本不得含 \C（自动校验，防止选择框循环重弹）
 > ⚠️ `npc-choice`: 默认单次 = 答完后 NPC 自毁；分支文本自动替换 msg[0]
+> ⚠️ `npc-choice`: in-game 依据（2026-11 复核标注）：触发块与 npc-dialogue 同为域F 已验证扁平形态（W3 smoke-test 证明游戏内执行）；\C 选择框为原生 obj_choicer 机制；YES/NO 分支替换为 sandbox 反编译验证
 
 ### 🎨 精灵 / 对象 / 纹理 — --file data_win，P4 管线
 
@@ -153,16 +156,16 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 | `set-obj-sprite --key "obj_sans_actor" --value "spr_sans_dangerous"` | 切换对象的 Sprite 引用（全局影响该对象所有实例；尺寸一致时碰撞盒无偏移风险） | sandbox |
 | `list-textures --limit 10` | 列出嵌入纹理图谱（26 张） | static |
 | `export-sprite --key "spr_sans_d" --value "out.png" --frame 0` | 导出精灵帧为 PNG（--frame 指定帧；--value 以 .png 结尾单帧导出，目录则全部帧） | static |
-| `replace-sprite --key "spr_sans_d" --value "edit.png" --frame 0` | 替换精灵单帧纹理（合成回图谱对应区域，不影响同图谱其他精灵；PNG 自动 resize） | in-game |
+| `replace-sprite --key "spr_sans_d" --value "edit.png" --frame 0` | 替换精灵单帧纹理（合成回图谱对应区域，不影响同图谱其他精灵；PNG 自动 resize） | sandbox |
 | `duplicate-sprite --key "spr_a" --value "spr_a_copy"` | 复制精灵为新名（独立编辑不影响原精灵） | sandbox |
 | `preview-sprite --key "spr_sans_d"` | 终端 ASCII 预览精灵 | static |
 | `colorize-sprite --key "spr_sans_d" --value "spr_sans_d_red" --hue-from "180-260" --hue-to 0` | 复制精灵并按 HSV 范围选择性变色（--hue-from "min-max" --hue-to 角度） | sandbox |
 | `export-texture --value "./textures"` | 导出纹理图谱为 PNG（--key 单张；缺省导出全部 26 张） | static |
-| `replace-texture --key "Texture 0" --value "tex0.png"` | 替换整个纹理图谱（影响图谱上所有精灵；经 GMImage 自动处理 QOI/BZ2 格式转换） | in-game |
+| `replace-texture --key "Texture 0" --value "tex0.png"` | 替换整个纹理图谱（影响图谱上所有精灵；经 GMImage 自动处理 QOI/BZ2 格式转换） | sandbox |
 | `dump-sprites --value "./sprites"` | 批量导出全部 2583 个精灵（UTMT CLI 内置） | static |
 
-> ⚠️ `replace-sprite`: P4-1-1 已验证无损循环：export→replace→export MD5 一致
-> ⚠️ `replace-texture`: 影响面大，替换前先 export-texture 留底
+> ⚠️ `replace-sprite`: 已验证无损循环：export→replace→export MD5 一致（域C sandbox 字节级）；游戏内目视验证未单独立案
+> ⚠️ `replace-texture`: 影响面大，替换前先 export-texture 留底；域C 字节级验证（无损循环），游戏内目视未单独立案
 
 ### 🎯 支线任务 flag — global.flag 自定义区（默认 510）
 

@@ -115,7 +115,8 @@ def render_inner(data: dict) -> str:
         out.append("|---|---|---|")
         for c in members:
             summary = c["summary"].replace("|", "\\|")
-            out.append(f"| `{c['example']}` | {summary} | {c['verify']} |")
+            example = c["example"].replace("|", "\\|")
+            out.append(f"| `{example}` | {summary} | {c['verify']} |")
         noted = [c for c in members if c.get("notes")]
         if noted:
             out.append("")
