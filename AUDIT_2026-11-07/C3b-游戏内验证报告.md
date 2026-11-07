@@ -66,3 +66,32 @@ python3 run.py --action cjk-font --value build/font_cjk --file data_win
 # 诊断脚本存档：build/cjk_verify/*.csx（A0~PD 全部可复现）
 # 回滚：experiment-restore pre_c3b（快照保留中）
 ```
+
+---
+
+## 八、B1/B2 系列（2026-11-07 深夜，face0 bug 发现与渲染突破）
+
+用户协同走位 + 逐步二分，**推翻了此前两项"定论"并打通渲染**：
+
+### 新定论（证据充分）
+1. **⚠️ 手写触发块两大陷阱**（此前 15+ 次 boot 观察被其污染）：
+   - **缺 `global.msc = 0`**：writer 关框后 msc 停留 1+，后续触发读 `msg[1]="%%%"` → writer 每帧自毁 → 永远空框、Z 无效、走路正常（"幽灵框"的真身）。
+   - **缺 `global.facechoice`（默认 0）**：facechoice=0 时 writer 的文字渲染整体不可见（B1h/B1k 实证；facechoice=3 立即正常——B1j/B1l 实证）。机理待查（疑 Draw 内 face 分支的坐标计算）。
+2. **✅ 文字渲染已打通**：B2 系列（页内图集 + 无条件映射 + face3 修正）里 T-CTRL（fnt_curs 原版）**渲染出了文字**（teal 色）——writer/字体/glyph 查找链路活着。
+3. **⚠️ 遗留两问题**：(a) T-CTRL 的字符**叠字**（每字符横向推进异常，字符互相重叠、且画出框外）；(b) C-ARM（fnt_ja_maintext@共享图集）框空。Scale2 已排除（去掉后叠字依旧）。需离线精读 obj_base_writer_Draw_0 的排版数学（myx 推进与 Offset/Shift 语义）后修正图集度量约定。
+4. **⚠️ Mac runner 退出（SIGTERM）会回写 game.ios**——pkill 后必须重新 restore 才是干净基线。
+5. **约束④（新页不加载）证据被 face0 污染**——PW 实验用的是 face0 臂；新页路线待用 face3 修正版重测（B2 的 Arm-N 机制已备好）。
+
+### B1/B2 实验矩阵速查（CSX 归档于 C3b-实验CSX/）
+| boot | 状态 | 结果 |
+|---|---|---|
+| B1/B1c/B1f | 手写臂（face0+无msc+无/） | 幽灵框（msc+face0 复合） |
+| B1h/B1k | 单臂 face0 | 幽灵框（face0） |
+| B1j | face3 + scr_gettext 镜像 | ✅ "✱ HELLO B1J" 完美渲染（含头像） |
+| B1l | 双臂 face3/face0 | face3 臂渲染✓（Z 推进待查）；face0 臂未观察到 |
+| B2/B2c | 页内图集+映射+四臂face3 | T-CTRL 渲染✓但叠字；C-ARM 空；Scale2 已排除 |
+
+### 下一步（离线优先，不烧 boot）
+1. 精读 obj_base_writer_Draw_0 的 myx 推进/换行/Offset-Shift 语义 → 修正图集度量 → sandbox → 1 boot 复测四臂。
+2. 用 face3 修正版重测 Arm-N（新页）→ 关闭约束④。
+3. GO 后按价值派 S6 集成（折行 util + --typer + 文档）。

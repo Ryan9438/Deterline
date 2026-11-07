@@ -184,14 +184,127 @@ def build_atlases(build_dir: Path, pass1_dir: Path, out_dir: Path) -> dict:
     return out
 
 
+def build_inpage_atlas(build_dir: Path, pass1_dir: Path, out_dir: Path,
+                       region: int = 1024) -> dict:
+    """研讨会2 价值派 A1 方案（S0）：共享 12px 图集（页内重排用）。
+
+    单 region×region 画布（落点 = ja_main 的 TPI 区域，页身份不变）。
+    - ASCII 95：像素+度量从 fnt_maintext（pass1 dump，emb19）原样拷贝——en 零回归
+    - 假名+CJK：Fusion Pixel 12px（统一 12px advance；与价值派"假名取原版像素"
+      的偏差见报告修订注：原版假名 7×15 与 12px CJK 混排 advance 不一致，统一取
+      Fusion 换取度量一致性；kana 外观回归在 B3 验证）
+    - 全表按码点升序 + 去重（RV-B 不变量）；cell 自动 = (max_w+2, max_h+2)
+    - canary：表外码位，glyph 坐标指到 emb20 页内 TPI 矩形之外（(1536,1408)
+      自由矩形）——B1 用它测引擎是否按 TPI 钳位 UV（假设 U2b）
+
+    输出：font_atlas_inpage.png / glyphs_inpage.json / meta_inpage.json
+    glyph 元素: [code, x, y, w, h, offset, shift, kern]（x/y 为 region 内相对坐标）
+    """
+    fonts, _pages = parse_pass1(pass1_dir)
+    src = fonts["fnt_maintext"]
+    ascii_glyphs = [g for g in src["glyphs"] if ASCII_MIN <= g["char"] <= ASCII_MAX]
+
+    cjk = [g for g in json.loads((build_dir / "glyphs.json").read_text(encoding="utf-8"))
+           if g["code"] > ASCII_MAX]  # ASCII 已由第 1 步原样拷贝，重复会破坏排序不变量
+    cjk_pages = {i: Image.open(build_dir / f"cjk_page_{i}.png").convert("RGBA")
+                 for i in {g["page"] for g in cjk}}
+
+    emb = Image.open(pass1_dir / "emb_page.png").convert("RGBA")
+    tpi_x, tpi_y = src["tpi"][0], src["tpi"][1]
+
+    canvas = Image.new("RGBA", (region, region), (0, 0, 0, 0))
+    specs = []
+
+    # 1) ASCII 原样拷贝（度量原样：shift/offset 来自 fnt_maintext）
+    for g in ascii_glyphs:
+        tile = emb.crop((tpi_x + g["sx"], tpi_y + g["sy"],
+                         tpi_x + g["sx"] + g["sw"], tpi_y + g["sy"] + g["sh"]))
+        specs.append([g["char"], 0, 0, g["sw"], g["sh"],
+                      g["offset"], g["shift"], g["kern"], ("src", tile)])
+    # 2) 非 ASCII（假名+CJK）全部 Fusion 12px
+    for g in cjk:
+        specs.append([g["code"], 0, 0, g["w"], g["h"], 0, 12, [], ("fusion", g)])
+
+    # cell 自动：位图最大宽/高 + 余量；余量按 2→1px 逐级放宽（确定性回退）
+    max_w = max(s[3] for s in specs if s[3] > 0)
+    max_h = max(s[4] for s in specs if s[4] > 0)
+    cell_w = cell_h = cols = rows_cap = capacity = None
+    for mw, mh in ((2, 2), (2, 1), (1, 2), (1, 1)):
+        cw, ch = max_w + mw, max_h + mh
+        cap = (region // cw) * (region // ch)
+        if len(specs) <= cap:
+            cell_w, cell_h, cols, rows_cap, capacity = cw, ch, region // cw, region // ch, cap
+            break
+    if cell_w is None:
+        raise ValueError(f"in-page 容量不足: 即使 1px 边距 (region={region}, "
+                         f"需求 {len(specs)})")
+    if (cell_w, cell_h) != (max_w + 2, max_h + 2):
+        print(f"WARN: 边距放宽至 {cell_w - max_w}/{cell_h - max_h}px "
+              f"(cell {cell_w}x{cell_h})——B1 目视检查字形蹭边")
+
+    col = row = 0
+    for s in specs:
+        if col >= cols:
+            col = 0
+            row += 1
+        gx, gy = col * cell_w, row * cell_h
+        s[1], s[2] = gx, gy
+        tag, payload = s[8]
+        if tag == "src":
+            canvas.paste(payload, (gx, gy), payload)
+        else:
+            tile = cjk_pages[payload["page"]].crop(
+                (payload["x"], payload["y"],
+                 payload["x"] + payload["w"], payload["y"] + payload["h"]))
+            canvas.paste(tile, (gx, gy), tile)
+        s.pop()
+        col += 1
+
+    specs.sort(key=lambda s: s[0])  # 引擎字形查找假定按码点有序（RV-B 不变量）
+    codes = [s[0] for s in specs]
+    assert codes == sorted(codes) and len(codes) == len(set(codes))
+
+    # canary：表外码位 + TPI 矩形外坐标（emb20 自由矩形 (1536,1408)）
+    canary_code = 0x9FFF
+    assert canary_code not in codes
+    canary = {"code": canary_code, "x": 1536, "y": 1408, "w": 12, "h": 12,
+              "offset": 0, "shift": 12, "note":
+              "坐标在 TPI(1024²) 之外——B1 测引擎 UV 钳位（U2b）"}
+
+    out = {"mode": "in-page", "region": region, "cell": [cell_w, cell_h],
+           "cols": cols, "capacity": capacity,
+           "glyph_count": len(specs), "canary": canary,
+           "kana_policy": "fusion-uniform-12px（偏离价值派'原版像素'，度量一致性优先）",
+           "glyphs": specs}
+    canvas.save(out_dir / "font_atlas_inpage.png")
+    (out_dir / "glyphs_inpage.json").write_text(
+        json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    (out_dir / "meta_inpage.json").write_text(json.dumps({
+        "cell": [cell_w, cell_h], "cols": cols, "rows_used": row + 1,
+        "capacity": capacity, "glyph_count": len(specs),
+        "fill": f"{len(specs)}/{capacity}",
+        "ascii_source": "fnt_maintext 原版像素（emb19 dump）",
+        "nonascii_source": "Fusion Pixel 12px（build_dir）",
+        "canary": canary_code,
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--build-dir", required=True)
     ap.add_argument("--pass1-dir", required=True)
     ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--mode", choices=["dual", "in-page"], default="dual",
+                    help="dual=双页图集（C3b 原管线）；in-page=共享 12px 单页图集（研讨会2 A1 页内重排）")
     args = ap.parse_args()
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    if args.mode == "in-page":
+        result = build_inpage_atlas(Path(args.build_dir), Path(args.pass1_dir), out)
+        print(f"in-page OK: {result['glyph_count']} glyphs cell={result['cell']} "
+              f"capacity={result['capacity']} canary=U+{result['canary']['code']:04X}")
+        return 0
     result = build_atlases(Path(args.build_dir), Path(args.pass1_dir), out)
     for n, f in result["fonts"].items():
         print(f"{n}: {f['glyph_count']} glyphs cell={f['cell']} "
