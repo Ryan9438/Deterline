@@ -225,7 +225,7 @@ deterline/
 > ⚠️ `set-room-bg`: 必须覆盖所有启用层（高 slot 遮挡低 slot）
 > ⚠️ `set-room-bg`: A 类纯 Tile 房 8 层全禁用时无效，须先启用一层
 > ⚠️ `set-room-bg`: 2026-11 域D 实测裁决；room-bg-info 诊断房间归属
-> ⚠️ `gml-bg`: 域D B.6 悬案：A 类房（room_ruins7A）的 gml-bg 路径建议游戏内复测
+> ⚠️ `gml-bg`: 域D §八.6/表2.19 悬案：A 类房（room_ruins7A）的 gml-bg 路径建议游戏内复测
 > ⚠️ `room-bg-info`: 分类结论经域D 游戏内实验裁决（A/B1/B2 归属）
 
 ### 🧍 NPC 交互 / 门 / 战斗 — --file data_win，注入已验证扁平触发形态
@@ -878,17 +878,18 @@ if (id == <实例ID>)
 **修复：分支处理必须把 `msg[0]` 换成不含 `\C` 的文本。**（`npc-choice` 自动生成此代码，
 `add-textentry` 遇到 `\C` 文本也会打印警告。）
 
-**可重复触发变体**（走开 >60px 再靠近可再触发）：把第 1 步的 `deterline_state = 2` 改为
-`deterline_state = 0`，并在 Step 末尾加：
+**🚨 以下"可重复触发变体"已废弃（v2.3.0 起，勿手写）**：这个 `deterline_state` 状态机
+变体在当前 UTMT 环境是游戏内死代码（2026-11 审计，见 AUDIT_2026-11-07/域F），仅作历史
+记录保留。现行的可重复触发 = `npc-dialogue`/`npc-choice --repeat` 生成的**无状态扁平块**
+（关闭对话后仍在 `--range` 内会再弹，走出范围即停）：
 
 ```gml
+// ❌ 废弃形态（游戏内死代码——deterline_state 门控）：
 if (deterline_state == 2 && distance_to_object(obj_mainchara) >= 60)
 {
     deterline_state = 0;
 }
 ```
-
-（`npc-choice --repeat` 自动生成此变体。）
 
 ---
 

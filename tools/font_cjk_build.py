@@ -29,8 +29,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 # 全角标点/符号补充（GB2312 区位迭代覆盖不到的常用书写符号在此兜底）
 EXTRA_CHARS = (
-    "，。！？：；、""''（）《》【】…—～·「」『』"
-    "〇一二三四五六七八九十百千万亿"
+    "，。！？：；、""''（）《》【】…—～·「」『』※〇"
+    "一二三四五六七八九十百千万亿"
 )
 
 
@@ -144,6 +144,7 @@ def compose_pages(existing_png: Path, existing_rect: tuple, out_png: Path,
     start_row = (origin[1] if origin else ey + eh) // cell
     col = origin[0] // cell if origin else 0
     row = start_row
+    src_cache = {}
     for g in glyphs:
         if g["w"] == 0:
             g["x"], g["y"] = 0, 0
@@ -153,10 +154,12 @@ def compose_pages(existing_png: Path, existing_rect: tuple, out_png: Path,
             row += 1
         if (row + 1) * cell > canvas:
             raise ValueError("画布放不下全部新字形——增大 --compose-canvas 或减小字符集")
-        gx, gy = col * cell + (g["x"] % cell), row * cell + (g["y"] // cell) * 0
-        # 新页内字形重新按单元格排布：直接用格坐标渲染更可靠——
-        # 这里不重画位图，而是把源页里该格的像素块搬过来
-        src = Image.open(glyphs_in.parent / f"cjk_page_{g['page']}.png").convert("RGBA")
+        # 新页内字形重新按单元格排布：把源页里该格的像素块搬到目标格
+        pkey = g["page"]
+        if pkey not in src_cache:
+            src_cache[pkey] = Image.open(
+                glyphs_in.parent / f"cjk_page_{pkey}.png").convert("RGBA")
+        src = src_cache[pkey]
         tile = src.crop((g["x"], g["y"], g["x"] + g["w"], g["y"] + g["h"]))
         gx, gy = col * cell, row * cell
         img.paste(tile, (gx, gy), tile)
@@ -209,7 +212,6 @@ def main() -> int:
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    rendered = [g for g in glyphs if g["w"] > 0 or g["advance"]]
     for i, page in enumerate(pages):
         page.save(out / f"cjk_page_{i}.png")
     (out / "glyphs.json").write_text(

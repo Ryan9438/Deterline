@@ -75,7 +75,9 @@ def parse_pass1(pass1_dir: Path) -> dict:
 
 def build_atlases(build_dir: Path, pass1_dir: Path, out_dir: Path) -> dict:
     fonts, pages = parse_pass1(pass1_dir)
-    cjk = json.loads((build_dir / "glyphs.json").read_text(encoding="utf-8"))
+    # 只取非 ASCII（code>0x7E）——ASCII 由第 1 步从源字体拷贝，重复会污染查找
+    cjk = [g for g in json.loads((build_dir / "glyphs.json").read_text(encoding="utf-8"))
+           if g["code"] > ASCII_MAX]
     cjk_pages = {i: Image.open(build_dir / f"cjk_page_{i}.png").convert("RGBA")
                  for i in {g["page"] for g in cjk}}
 
@@ -109,7 +111,7 @@ def build_atlases(build_dir: Path, pass1_dir: Path, out_dir: Path) -> dict:
         if (y0 + ((total + cols - 1) // cols) * cell_h) > PAGE_SIZE:
             raise ValueError(f"{new_name}: 区域越界 y0={y0}")
 
-        emb = Image.open(next(pass1_dir.glob("emb*.png"))).convert("RGBA")
+        emb = Image.open(pass1_dir / "emb_page.png").convert("RGBA")
         tpi_x, tpi_y = src["tpi"][0], src["tpi"][1]
         specs = []
         col = row = 0
@@ -134,7 +136,7 @@ def build_atlases(build_dir: Path, pass1_dir: Path, out_dir: Path) -> dict:
             page_imgs[page_idx].paste(tile, (gx, gy), tile)
             specs.append([g["char"], gx, gy - y0, g["sw"], g["sh"],
                           g["offset"], g["shift"], g["kern"]])
-        # 2) CJK（12px 位图，main 2x NEAREST）
+        # 2) CJK（12px 位图，main 2x NEAREST）；ASCII 已在上游过滤
         for g in cjk:
             if g["w"] == 0:
                 specs.append([g["code"], 0, 0, 0, 0, 0, shift_cjk, []])

@@ -126,7 +126,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 > ⚠️ `set-room-bg`: 必须覆盖所有启用层（高 slot 遮挡低 slot）
 > ⚠️ `set-room-bg`: A 类纯 Tile 房 8 层全禁用时无效，须先启用一层
 > ⚠️ `set-room-bg`: 2026-11 域D 实测裁决；room-bg-info 诊断房间归属
-> ⚠️ `gml-bg`: 域D B.6 悬案：A 类房（room_ruins7A）的 gml-bg 路径建议游戏内复测
+> ⚠️ `gml-bg`: 域D §八.6/表2.19 悬案：A 类房（room_ruins7A）的 gml-bg 路径建议游戏内复测
 > ⚠️ `room-bg-info`: 分类结论经域D 游戏内实验裁决（A/B1/B2 归属）
 
 ### 🧍 NPC 交互 / 门 / 战斗 — --file data_win，注入已验证扁平触发形态

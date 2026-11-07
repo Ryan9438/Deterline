@@ -10,7 +10,7 @@
 
 | 资产 | 说明 |
 |---|---|
-| `tools/font_cjk_build.py` | 字形页生成器：OFL 字体（Fusion Pixel 12px，缝合像素，OFL-1.1）→ 12px 字形页 + glyphs.json。字符集 = ASCII + 全角标点 + 假名(190) + GB2312 一级 3755（`--full` 加二级）。确定性构建。 |
+| `tools/font_cjk_build.py` | 字形页生成器：OFL 字体（Fusion Pixel 12px，缝合像素，OFL-1.1）→ 12px 字形页 + glyphs.json。字符集 = ASCII + 全角标点 + 假名(191) + GB2312 一级 3755（`--full` 加二级）。确定性构建。 |
 | `tools/font_cjk_atlas.py` | 图集构建器：源字体 ASCII 拷贝（保中英混排）+ CJK 排版 → 2×2048² 图集 + glyph 规格（TPI 相对坐标、按码点排序、advance=2×ASCII 中位）。 |
 | `scripts/modify_save.py cmd_cjk_font` | 四步管线命令：pass1 只读 dump → 图集构建 → pass2 注入 → verify-code scr_setfont。已注册 argparse/dispatch/commands.json。 |
 | `assets/fonts/vendor/` | Fusion Pixel 字体（gitignore，OFL.txt 随行） |
@@ -32,6 +32,15 @@
 | PV | PC + 无条件映射 + 混合消息 | ❌ 全空（含 ASCII） |
 | PW | PV + ja 原 glyph 列表 + 新 Texture + 无条件映射 | ❌ 全空 |
 | PD | 基线 + npc中文 + 就地改造 + **无条件**映射 + **无条件** prefetch | 💥 进房瞬间死循环挂起（无空格中文触发 writer 换行死循环）；消息加空格后不挂但仍全空 |
+
+> ⚠️ **RV-B 复核补注（2026-11-07）**：PC/PV/PW/PD 实验使用的 glyph 表为**修复前的图集产物**
+> （ASCII 码点重复 95 个/字体 + CJK 按拼音序未按码点排序 + 无假名）。该变量未受控——
+> 若引擎按有序表二分查找字形，"CJK 查不到"可能叠加在约束 4 之上。约束 4 的主因判定
+> （新页不加载，PV/PW 连 ASCII 全灭）不受影响（BY 用原 ja 有序 glyph + 新页同样全灭），
+> 但**页内重排动工前必须先用修复后工具（ASCII 过滤 + 排序）重建 glyph 表复测**。
+> 语言探针：bootv.csx 内嵌了 zcode_lang_probe.txt 写入（working_directory 路径拼接缺陷
+> 未落地回收），故"global.language≠zh"为联合推断而非直接测量——复测时用裸文件名探针。
+> A0/R1 无专属存档脚本：A0 复现 = 基线 + `npc-dialogue --text "* BASELINE TEST 123/%%" --range 99999 --commit`；R1 复现 = `cjk-font` 全管线（修复前工具）。
 
 ## 三、定论（证据充分）
 

@@ -3788,9 +3788,9 @@ def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: 
 
     1. Adds the dialogue to textdata_en
     2. Spawns the object instance
-    3. Injects a distance-trigger Step code — auto-picks between:
-       - flag-state machine (native readable objects, safe from myinteract conflict)
-       - classic myinteract trigger (plain objects)
+    3. Injects the verified flat distance-trigger block (AUDIT_2026-11-07/域F:
+       state-gated trigger shapes are in-game dead code in this UTMT env —
+       the generator emits only the flat verified form; no movement lock)
     4. If the object inherits a native interaction system, also guards Alarm_0
        with `if (id == N) exit;` to prevent the default dialogue from overlapping.
 
@@ -3867,8 +3867,9 @@ def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: in
          re-copies global.msg[] 2 frames after the choice).
       4. Guards Alarm_0 for native-readable objects (like npc-dialogue).
 
-    Single-trigger by default (0→1→2, never re-arms); repeat=True re-arms on
-    walk-away (≥60px) like the plain repeatable NPC.
+    Repeatable by default (dialogue re-opens while in range; walk out of
+    `--range` to stop); once=True self-destructs the NPC after triggering.
+    repeat=True keeps the NPC (flat block, no state machine — v2.3.0).
     """
     print("--- npc-choice ---")
     # ── validation ──────────────────────────────────────────────
@@ -6826,7 +6827,7 @@ def main():
   %(prog)s --action npc-dialogue --value "room_torielroom" --key "obj_cactus" --x 170 --y 180 --text-key "obj_cactus_deterline" --text "* Stay determined!/%%" --file data_win
   # Guard an existing NPC whose myinteract trigger overlaps native dialogue
   %(prog)s --action guard-npc-alarm --key "obj_cactus" --instance 113927 --text-key "obj_cactus_deterline" --file data_win
-  # Single-trigger NPC dialogue (locks player movement during talk, triggers once)
+  # Single-trigger NPC dialogue (NPC self-destructs after trigger; no movement lock)
   %(prog)s --action npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi!/%%" --once --file data_win
   # Choice NPC: YES/NO box + follow-up texts + teleport on YES (single-trigger by default)
   %(prog)s --action npc-choice --value "room_water_undynefinal" --key "obj_kitchentable" --x 160 --y 420 --text-key "obj_table_ask" --text "* Let's go?& &         Yes         No      \\C " --yes-text-key "obj_table_yes" --yes-text "* Okay!/%%" --no-text-key "obj_table_no" --no-text "* .../%%" --goto "雪镇 - 船夫(妇)" --item 48 --range 160 --file data_win

@@ -185,7 +185,7 @@
     { "action": "gml-bg", "group": "room", "verify": "in-game",
       "summary": "注入运行时背景 GML + 视差到 obj_mainchara_Step_0（B2 对象驱动房/兜底手段；B1 用 set-room-bg）",
       "example": "gml-bg --value room_x --bg \"bg_my\" --slot 0 --speedx 0.5",
-      "notes": ["域D B.6 悬案：A 类房（room_ruins7A）的 gml-bg 路径建议游戏内复测"] },
+      "notes": ["域D §八.6/表2.19 悬案：A 类房（room_ruins7A）的 gml-bg 路径建议游戏内复测"] },
     { "action": "set-room-solid-bg", "group": "room", "verify": "sandbox",
       "summary": "房间背景设为纯色（--color 6 位 hex；--layers 选层，--no-runtime 关闭运行时层）",
       "example": "set-room-solid-bg --value room_x --color 101010" },
