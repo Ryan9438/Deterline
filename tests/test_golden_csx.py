@@ -11,6 +11,7 @@ and mention the change in the commit message (双轨机制：区分"意外漂移
 """
 
 import os
+import shutil
 import sys
 import unittest
 from pathlib import Path
@@ -204,6 +205,349 @@ class TestGoldenCjkFont(unittest.TestCase):
     def test_cjk_pass2_csx(self):
         _check_golden(self, "cjk_pass2",
                       [ms._build_cjk_pass2_csx("/tmp/golden_cjk_work")])
+
+
+# ============================================================
+# D0 清偿日补齐（风险审计派 A3 + 全量实测盘点）：
+# 以下写命令此前完全无 golden 快照，搬运/改动 CSX 生成时无文本钉。
+# 盘点口径：函数体内直接调 _run_utmt(save=True) 的 cmd_ 入口 + 经委托
+# 产生 CSX 但委托接线未钉的写命令（code-find-replace / batch-textdata /
+# guided-add-dialogue / set-derived）。create-room 已废弃（调用即报错），
+# 只读命令（list/search/decompile/room-info 等）不在补齐范围。
+# ============================================================
+
+DEFAULT_UTMT_OUT = (
+    "VERIFY_NSID:bad=0 fixed=0\n"
+    "VERIFY_INSTANCES:bad=0 zero=0 dup=0 null=0 nonexist=0 fixed=0"
+)
+
+
+def _fake_gml_output(lines):
+    """把一组 GML 行包装成 _decompile_to_lines 能解析的 UTMT 输出。"""
+    out = [f"GML_LINE:{i}:{ln}" for i, ln in enumerate(lines)]
+    out.append(f"GML_COUNT:{len(lines)}")
+    return "\n".join(out)
+
+
+def _capture_stateful(fn, *args, replies=None, **kwargs):
+    """_capture 变体：fake_run 按 CSX 内嵌探针应答只读请求（IDX 查询 /
+    GML 反编译 / NPC_TARGET 查询 / 房间尺寸 / 资源存在性 / 启用层），
+    使复合写命令能走完完整流程；每次 _run_utmt 调用（含只读）都记入
+    captured —— 与既有 golden 语义一致（钉住全部生成 CSX）。"""
+    captured = []
+    table = list((replies or {}).items())
+
+    def fake_run(csx_code, game_file, save=True):
+        captured.append(csx_code)
+        for probe, response in table:
+            if probe in csx_code:
+                return response
+        return DEFAULT_UTMT_OUT
+
+    with mock.patch.object(ms, "_run_utmt", side_effect=fake_run):
+        result = fn(*args, **kwargs)
+    return captured, result
+
+
+def _ensure_golden_png(name: str) -> Path:
+    """在固定路径 /tmp/golden_test/ 下准备一张小 PNG（内容不影响 golden，
+    golden 只钉路径字符串；固定路径保证 expanduser().resolve() 后字节稳定）。"""
+    d = Path("/tmp/golden_test")
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / name
+    if not p.exists():
+        from PIL import Image
+        Image.new("RGBA", (4, 4), (255, 0, 0, 255)).save(p)
+    return p
+
+
+# 反编译桩：door 三胞胎共用形态（分支坐标与 golden 测试写入的不同，
+# 避免触发"已有门"分支）。PIT/BATTLE 同构，各用自身形态。
+DOOR_GML_STUB = [
+    '/// obj_deterline_door — Create event',
+    'var _rn = room_get_name(room);',
+    'if (_rn == "room_seed" && x == 100 && y == 100) {',
+    '    target_room = 70;',
+    '    spawn_x = 10;',
+    '    spawn_y = 20;',
+    '    exit;',
+    '}',
+    'target_room = -1;',
+    'spawn_x = 0;',
+    'spawn_y = 0;',
+]
+PIT_GML_STUB = [
+    '/// obj_deterline_pit — Create event',
+    'var _rn = room_get_name(room);',
+    'if (_rn == "room_seed" && x == 100 && y == 100) {',
+    '    target_room = 70;',
+    '    spawn_x = 10;',
+    '    spawn_y = 20;',
+    '    exit;',
+    '}',
+    'target_room = -1;',
+    'spawn_x = 0;',
+    'spawn_y = 0;',
+]
+# remove-door 专用：必须包含与测试参数匹配的 room_golden 分支，否则
+# removed_count=0 会在生成写 CSX 之前提前返回（两个房间分支 → --all 移除 2 处）。
+REMOVE_DOOR_GML_STUB = [
+    '/// obj_deterline_door — Create event',
+    'var _rn = room_get_name(room);',
+    'if (_rn == "room_golden" && x == 320 && y == 240) {',
+    '    target_room = 70;',
+    '    spawn_x = 100;',
+    '    spawn_y = 200;',
+    '    exit;',
+    '}',
+    'if (_rn == "room_golden" && x == 500 && y == 100) {',
+    '    target_room = 71;',
+    '    spawn_x = 100;',
+    '    spawn_y = 200;',
+    '    exit;',
+    '}',
+    'target_room = -1;',
+    'spawn_x = 0;',
+    'spawn_y = 0;',
+]
+BATTLE_GML_STUB = [
+    '/// obj_deterline_battle — Create event',
+    'var _rn = room_get_name(room);',
+    'if (_rn == "room_seed" && x == 100 && y == 100) {',
+    '    battlegroup_id = 3;',
+    '    border = 1;',
+    '    exit;',
+    '}',
+    'battlegroup_id = -1;',
+    'border = 0;',
+]
+STEP_GML_STUB = [
+    'if (visible) {',
+    '    myinteract = 1;',
+    '}',
+]
+HANDLER_GML_STUB = [
+    'if (global.choice != -1) {',
+    '    msg[0] = "resumed";',
+    '}',
+    'exit;',
+]
+FINDREPLACE_GML_STUB = [
+    'if (global.maxhp == 16 + (global.lv * 4)) {',
+    '    global.maxhp = 16 + (global.lv * 4);',
+    '}',
+]
+DERIVED_GML_STUB = [
+    'global.maxhp = 16 + (global.lv * 4);',
+    'if (global.lv > 18) {',
+    '    global.maxhp = 16 + (global.lv * 4);',
+    '}',
+]
+
+
+class TestGoldenStrgReplace(unittest.TestCase):
+    def test_strg_replace(self):
+        cap, _ = _capture(ms.cmd_strg_replace, Path("/tmp/golden_test/game.ios"),
+                          "* Old line/%%", "* New line/%%")
+        _check_golden(self, "strg_replace", cap)
+
+
+class TestGoldenRoomObj(unittest.TestCase):
+    """remove_obj 三分支（按实例 / 按名首个 / --all）与 spawn_obj。"""
+
+    def test_remove_obj_by_name(self):
+        cap, _ = _capture(ms.cmd_remove_obj, Path("/tmp/golden_test/game.ios"),
+                          "room_golden", "obj_golden_npc")
+        _check_golden(self, "remove_obj_by_name", cap)
+
+    def test_remove_obj_all(self):
+        cap, _ = _capture(ms.cmd_remove_obj, Path("/tmp/golden_test/game.ios"),
+                          "room_golden", "obj_golden_npc", remove_all=True)
+        _check_golden(self, "remove_obj_all", cap)
+
+    def test_remove_obj_instance(self):
+        cap, _ = _capture(ms.cmd_remove_obj, Path("/tmp/golden_test/game.ios"),
+                          "room_golden", "obj_golden_npc", instance_id=113928)
+        _check_golden(self, "remove_obj_instance", cap)
+
+    def test_spawn_obj(self):
+        cap, _ = _capture(ms.cmd_spawn_obj, Path("/tmp/golden_test/game.ios"),
+                          "room_golden", "obj_golden_npc", 320, 240)
+        _check_golden(self, "spawn_obj", cap)
+
+
+class TestGoldenNpcGuard(unittest.TestCase):
+    """guard-npc-alarm：NPC_TARGET 只读查询 + Alarm_0 守卫 +（可选）Step 状态机改写。"""
+
+    NPC_REPLY = ("NPC_TARGET:RESULT:obj_golden_npc:1:"
+                 "gml_Object_obj_golden_npc_Step_0:"
+                 "gml_Object_obj_golden_npc_Alarm_0")
+
+    def test_guard_npc_alarm_only(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_guard_npc_alarm, Path("/tmp/golden_test/game.ios"),
+            "obj_golden_npc", 113928,
+            replies={"NPC_TARGET:RESULT": self.NPC_REPLY})
+        _check_golden(self, "guard_npc_alarm", cap)
+
+    def test_guard_npc_alarm_step_machine(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_guard_npc_alarm, Path("/tmp/golden_test/game.ios"),
+            "obj_golden_npc", 113928, text_key="obj_golden_003",
+            replies={"NPC_TARGET:RESULT": self.NPC_REPLY,
+                     'ScriptMessage("GML_LINE:': _fake_gml_output(STEP_GML_STUB)})
+        _check_golden(self, "guard_npc_alarm_step", cap)
+
+
+class TestGoldenBgAsset(unittest.TestCase):
+    """create-bg-asset 与 set-room-solid-bg 组合（create + 层分配 + 运行时覆盖）。"""
+
+    def test_create_bg_asset(self):
+        png = _ensure_golden_png("bg_golden.png")
+        cap, _ = _capture(ms.cmd_create_bg_asset, Path("/tmp/golden_test/game.ios"),
+                          "bg_golden", str(png))
+        _check_golden(self, "create_bg_asset", cap)
+
+    def test_set_room_solid_bg(self):
+        """固定 mkstemp 路径保证 CSX 内嵌 PNG 路径字节稳定。"""
+        fixed_png = _ensure_golden_png("det_solid_fixed.png")
+        fd = os.open(fixed_png, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        # 注意: cmd_set_room_solid_bg 内部会 os.close(fd)——这里不再重复关闭。
+        with mock.patch("tempfile.mkstemp", return_value=(fd, str(fixed_png))):
+            cap, _ = _capture_stateful(
+                ms.cmd_set_room_solid_bg, Path("/tmp/golden_test/game.ios"),
+                "room_golden", "0000FF",
+                replies={
+                    'ScriptMessage("SIZE:': "SIZE:640:480",
+                    'ScriptMessage("EXISTS:': "EXISTS:false",
+                    'ScriptMessage("ENABLED:': "",
+                })
+        _check_golden(self, "set_room_solid_bg", cap)
+
+
+class TestGoldenDoorPitBattle(unittest.TestCase):
+    """door/pit/battle 三胞胎 + remove-door 两分支（按坐标 / --all）。"""
+
+    def test_create_door(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_create_door, Path("/tmp/golden_test/game.ios"),
+            "room_golden", "room_golden_b", 320, 240, 100, 200,
+            replies={'ScriptMessage("IDX:': "IDX:70",
+                     'ScriptMessage("GML_LINE:': _fake_gml_output(DOOR_GML_STUB)})
+        _check_golden(self, "create_door", cap)
+
+    def test_create_pit(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_create_pit, Path("/tmp/golden_test/game.ios"),
+            "room_golden", "room_golden_b", 320, 240, 100, 200,
+            replies={'ScriptMessage("IDX:': "IDX:70",
+                     'ScriptMessage("GML_LINE:': _fake_gml_output(PIT_GML_STUB)})
+        _check_golden(self, "create_pit", cap)
+
+    def test_create_battle(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_create_battle, Path("/tmp/golden_test/game.ios"),
+            "room_golden", battlegroup_id=3, border=1, x=320, y=240,
+            replies={'ScriptMessage("GML_LINE:': _fake_gml_output(BATTLE_GML_STUB)})
+        _check_golden(self, "create_battle", cap)
+
+    def test_remove_door_coords(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_remove_door, Path("/tmp/golden_test/game.ios"),
+            "room_golden", 320, 240,
+            replies={'ScriptMessage("GML_LINE:': _fake_gml_output(REMOVE_DOOR_GML_STUB)})
+        _check_golden(self, "remove_door_coords", cap)
+
+    def test_remove_door_all(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_remove_door, Path("/tmp/golden_test/game.ios"),
+            "room_golden", None, None, remove_all=True,
+            replies={'ScriptMessage("GML_LINE:': _fake_gml_output(REMOVE_DOOR_GML_STUB)})
+        _check_golden(self, "remove_door_all", cap)
+
+
+class TestGoldenSpriteEdit(unittest.TestCase):
+    """obj-set-sprite / sprite-replace（单帧 / --all-frames）/ sprite-duplicate。"""
+
+    def test_obj_set_sprite(self):
+        cap, _ = _capture(ms.cmd_obj_set_sprite, Path("/tmp/golden_test/game.ios"),
+                          "obj_golden_npc", "spr_golden")
+        _check_golden(self, "obj_set_sprite", cap)
+
+    def test_sprite_replace_frame(self):
+        cap, _ = _capture(ms.cmd_sprite_replace, Path("/tmp/golden_test/game.ios"),
+                          "spr_golden", "/tmp/golden_test/spr_golden.png", frame=0)
+        _check_golden(self, "sprite_replace_frame", cap)
+
+    def test_sprite_replace_all_frames(self):
+        cap, _ = _capture(ms.cmd_sprite_replace, Path("/tmp/golden_test/game.ios"),
+                          "spr_golden", "/tmp/golden_test/spr_golden.png",
+                          all_frames=True)
+        _check_golden(self, "sprite_replace_all", cap)
+
+    def test_sprite_duplicate(self):
+        cap, _ = _capture(ms.cmd_sprite_duplicate, Path("/tmp/golden_test/game.ios"),
+                          "spr_golden", "spr_golden_copy")
+        _check_golden(self, "sprite_duplicate", cap)
+
+
+class TestGoldenHandlerExtract(unittest.TestCase):
+    """handler-extract --apply：反编译读 + 提取写（--apply 才有写 CSX）。"""
+
+    def test_handler_extract_apply(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_handler_extract, Path("/tmp/golden_test/game.ios"), True,
+            replies={'ScriptMessage("GML_LINE:': _fake_gml_output(HANDLER_GML_STUB)})
+        _check_golden(self, "handler_extract_apply", cap)
+
+
+class TestGoldenDelegatingWrites(unittest.TestCase):
+    """委托型写命令：CSX 文本与被委托命令同形，但委托接线（参数映射）未钉。
+
+    - code-find-replace → replace-code（file 模式）：钉 old→new 的 Python 侧替换
+    - batch-textdata → N × add-textentry：钉 JSON→CSX 批量展开
+    - guided-add-dialogue → add-textentry：钉四步校验后的委托
+    - set-derived → file0-set + 两个目标脚本的 stat 赋值改写
+    """
+
+    def test_code_find_replace(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_code_find_replace, Path("/tmp/golden_test/game.ios"),
+            "gml_Script_golden", "16 + (global.lv * 4)", "50",
+            replies={'ScriptMessage("GML_LINE:': _fake_gml_output(FINDREPLACE_GML_STUB)})
+        _check_golden(self, "code_find_replace", cap)
+
+    def test_batch_textdata(self):
+        import json as _json
+        import tempfile
+        d = tempfile.mkdtemp(prefix="golden_batch_")
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        jp = Path(d) / "batch.json"
+        jp.write_text(_json.dumps([
+            {"key": "obj_golden_b1", "text": "* Batch one/%%"},
+            {"key": "obj_golden_b2", "text": "* Batch two/%%", "face": 3, "emotion": 1},
+        ], ensure_ascii=False), encoding="utf-8")
+        cap, _ = _capture(ms.cmd_batch_textdata, Path("/tmp/golden_test/game.ios"),
+                          str(jp))
+        _check_golden(self, "batch_textdata", cap)
+
+    def test_guided_add_dialogue(self):
+        cap, _ = _capture(ms.cmd_guided_add_dialogue, Path("/tmp/golden_test/game.ios"),
+                          "obj_golden_003", "* Guided hello/%%", face=3, emotion=1)
+        _check_golden(self, "guided_add_dialogue", cap)
+
+    def test_set_derived(self):
+        import tempfile
+        d = tempfile.mkdtemp(prefix="golden_derived_")
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        f0 = Path(d) / "file0"
+        f0.write_text("Golden\r\n" + "".join(f"{i} \r\n" for i in range(1, 31)),
+                      encoding="ascii")
+        cap, _ = _capture_stateful(
+            ms.cmd_set_derived, Path(d), Path("/tmp/golden_test/game.ios"),
+            "HP", "50",
+            replies={'ScriptMessage("GML_LINE:': _fake_gml_output(DERIVED_GML_STUB)})
+        _check_golden(self, "set_derived", cap)
 
 
 if __name__ == "__main__":
