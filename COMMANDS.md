@@ -48,7 +48,7 @@ python run.py --action find --value 42 --file file0
 python run.py --action set --key Love --value 20
 python run.py --action set --key Kills --value 100
 python run.py --action set --key Room --value 43
-python run.py --action set --key Room --value "托丽尔的家"
+python run.py --action set --key Room --value "雪镇 - 船夫(妇)"   # 示例用唯一名；模糊名多匹配会报错并列出候选
 
 # 修改属性（file0 —— 核心属性都在这里，推荐直接改 file0）
 python run.py --action set --key Love --value 20 --file file0
@@ -157,28 +157,38 @@ python run.py --action search-vars --value "global.flag" --file data_win
 python run.py --action room-objects --value "torielroom" --file data_win
 ```
 
+### 🧭 检索引导（先定位再动手）
+
+| 用户说的 | 该查什么 | 不该查什么 |
+|---|---|---|
+| 对话框 / 文本框（含边框） | `obj_dialoguer`（边框 = `obj_dialoguer_Draw_0` 的 `draw_set_color`+`draw_rectangle`） | ❌ `spr_border` |
+| 战斗盒 / 弹幕盒边框 | `spr_border` / `spr_emptyborder` 纹理、`obj_lborder`/`obj_rborder`/`obj_uborder`/`obj_dborder` | ❌ `obj_dialoguer` |
+| 对话文本内容 | `search-textdata` + 场景事件反编译确认顺序 | ❌ 凭搜索行序判断台词先后 |
+
+> ⚠️ `spr_border` 与对话框**无关**；对话框边框是程序化绘制，不能靠换纹理修改。
+
 ---
 
 ## 🏗️ 房间布局编辑（`--file data_win`）
 
 ```bash
 # 在房间中添加对象实例
-python run.py --action spawn-obj --value "room_torielroom" --key "obj_sans" --x 320 --y 240 --file data_win
+python run.py --action spawn-obj --value "room_torielroom" --key "obj_sans_actor" --x 320 --y 240   # obj_sans 不存在 --file data_win
 
 # 从房间移除对象实例（按类型，仅移除第一个匹配）
-python run.py --action remove-obj --value "room_torielroom" --key "obj_sans" --file data_win
+python run.py --action remove-obj --value "room_torielroom" --key "obj_sans_actor" --file data_win
 
 # 移除所有匹配的实例
-python run.py --action remove-obj --value "room_torielroom" --key "obj_sans" --all --file data_win
+python run.py --action remove-obj --value "room_torielroom" --key "obj_sans_actor" --all --file data_win
 
 # 按实例 ID 移除
 python run.py --action remove-obj --value "room_torielroom" --instance 100085 --file data_win
 
-# 一键安全 NPC 对话（deterline_state 状态机 + Alarm_0 守卫 + Create 事件初始化 deterline_state）
-# 默认：对话期间锁移动，按 Z 关闭后需走开(>60px) 才能再次触发
+# 一键安全 NPC 对话（已验证扁平距离触发块 + Alarm_0 守卫；Create 事件初始化 deterline_state 仅为 NSID 兼容）
+# 默认：可重复触发（关对话后仍在范围内会再弹，走出范围停止）；v2.3.0 不锁移动
 python run.py --action npc-dialogue --value "room_torielroom" --key "obj_cactus" --x 170 --y 180 --text-key "obj_cactus_hi" --text "* Hi/%%" --file data_win
 
-# 单次触发 NPC 对话（对话期间锁移动，结束后不再触发，永久只看一次）
+# 单次触发 NPC 对话（触发后 NPC 自毁消失，永久只看一次）
 python run.py --action npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi/%%" --once --file data_win
 
 # 自定义触发距离（默认 50px）
@@ -230,6 +240,17 @@ python run.py --action undo --value file0 --backup 20240714_193500
 # data_win 的 undo/list-backups 支持 --dir 指定游戏数据文件
 python run.py --action list-backups --value data_win --dir "path/to/game.ios"
 ```
+
+### 改动自检（防止"零操作虚假成功"）
+
+```bash
+# 打印 game.ios 的 MD5（报告里原样贴出即可一行校验"是否真的改过"）
+python run.py --action md5
+```
+
+- **搜索类命令零匹配时以退出码 3 结束**（`search-sprite` / `search-strings` /
+  `search-textdata` / `search-vars` / `search-sctext`）：未找到即为失败，**禁止编造名称或结果**。
+- **UTMT 脚本报 `ERROR:` 时以退出码 1 结束**，且**不会写回 game.ios**（避免"报错被吞后虚报成功"）。
 
 ---
 

@@ -45,7 +45,7 @@
    3. 传送（跳到指定房间）
    4. 重置（屠杀线 / 全量重置）
 
-→ [选属性] 输入数值：___
+→ [选属性] 输入数值：___（⚠️ HP/EXP/GOLD 等属 file0，须 --file file0；ini 模式写它们只会有警告不生效）
 → [选装备] 选择装备：___（列出可选列表）
 → [选传送] 选择目标房间：___（中文名模糊搜索）
 → [确认] 执行
@@ -64,16 +64,16 @@
 | 改击杀数 | `set --key Kills --value N --file file0` | P0 ✅（游戏读 file0[10]） |
 | 改金钱 | `set --key GOLD --value N --file file0` | P0 ✅ |
 | 换武器 | `set --key WEAPON --value N --file file0` | P0 ✅（自动 AT 同步） |
-| 传送 | `set --key Room --value "房间名"` | P0 ✅（支持中文名，自动同步 file0） |
+| 传送 | `set --key Room --value "房间名"` | P0 ✅（支持中文名，自动同步 file0；须用唯一名，多匹配报错列出候选） |
 | 重置屠杀线 | `reset-flags` | P0 ✅ |
 | 全量重置 | `reset-all` | 实验 5/7 ✅ |
 | 查看当前 | `list` / `list --file file0` | P0 ✅ |
 
 ### 数据来源
 
-- 装备列表：`ITEMS` 字典（modify_save.py:672）
-- 武器攻击加成：`WEAPON_AT` 字典（modify_save.py:695）
-- 护甲防御加成：`ARMOR_DF` 字典（modify_save.py:706）
+- 装备列表：`ITEMS` 字典（modify_save.py，行号随版本漂移，以 grep 为准）
+- 武器攻击加成：`WEAPON_AT` 字典
+- 护甲防御加成：`ARMOR_DF` 字典
 - 房间名：`rooms.json`（244 个中文名）
 
 ---
@@ -99,16 +99,15 @@
    0=普通 1=轻笑 2=眨眼 3=慢眨眼 4=无眼
 
 → 触发方式（NPC 靠近说话）：
-   1. 可重复（默认）：对话期间锁移动，走开(>60px)再靠近可再次触发
-   2. 单次：只触发一次，对话期间锁移动（--once）
+   1. 可重复（默认）：靠近自动说话，关对话后仍在范围内会再弹，走出范围停止
+   2. 单次：只触发一次，触发后 NPC 自毁消失（--once）
 
 → 也添加到 textdata_en 映射表？(Y/n)
 
 → [确认] 执行
 ```
 
-> ⚠️ 两种触发方式都会**锁移动**（`global.interact=1`），头像/文字不会与文本框错位。
-> 默认按 Z 关闭对话后需走开才能再触发，不会立即重触发。
+> ⚠️ v2.3.0：两种模式都**不锁移动**（状态机在当前 UTMT 环境下产生游戏内死代码，2026-11 审计；恢复锁移动需先解决该字节级问题）。
 
 ⚠️ **Agent 推荐使用 `guided-add-dialogue` 命令**替代手拼参数：
 ```bash
@@ -125,8 +124,8 @@ python run.py --action guided-add-dialogue \
 | 添加文本到 STRG | `add-string --value "..." --file data_win` | 实验 1 ✅ |
 | 注册到 textdata_en | `add-textentry --key "K" --value "V" --face N --emotion N --file data_win` | 实验 8 ✅ |
 | **引导式添加** | `guided-add-dialogue --key "K" --value "V" --face N --emotion N --file data_win` | 2026-07-28 ✅ |
-| **NPC 靠近说话（可重复）** | `npc-dialogue --value "room_xxx" --key "obj_xxx" --x N --y N --text-key "K" --text "* .../%%" --face N --emotion N --file data_win` | 锁移动 + 走开重置 ✅ |
-| **NPC 靠近说话（单次）** | `npc-dialogue ... --once --file data_win` | 锁移动 + 永久一次 ✅ |
+| **NPC 靠近说话（可重复）** | `npc-dialogue --value "room_xxx" --key "obj_xxx" --x N --y N --text-key "K" --text "* .../%%" --face N --emotion N --file data_win` | 游戏内实测触发 ✅（2026-11，v2.3.0 扁平形态） |
+| **NPC 靠近说话（单次）** | `npc-dialogue ... --once --file data_win` | 触发后 NPC 自毁，游戏内实测 ✅（2026-11） |
 | **NPC 靠近说话（自定义距离）** | `npc-dialogue ... --range 160 --file data_win` | 触发距离可调（默认 50px）✅ |
 | **NPC 带 YES/NO 选择** | `npc-choice --value "room_xxx" --key "obj_xxx" --x N --y N --text-key "K" --text "* ...\C " --yes-text-key "KY" --yes-text "..." --no-text-key "KN" --no-text "..." [--goto 房间] [--item ID] [--range N] [--repeat] --file data_win` | 选择框不循环重弹（msg[0] 自动替换）+ 单次触发默认 ✅ |
 | 批量导入 | `batch-add-textentry --value ./dialogues.json --file data_win` | P3 ✅ |
@@ -297,12 +296,15 @@ python run.py --action guided-add-dialogue \
 → 放置房间：___
 → X 坐标：___ Y 坐标：___
 → 敌群（battlegroup ID）：___
-   常用：
+   常用（2026-11 审计修正，反编译 scr_battlegroup 核对）：
     1 = 3xFroggit（遗迹）
-    3 = Whimsun（遗迹）
-    40 = Whimsun（通用）
-    43 = Moldsmal（通用）
-    45 = Dummy（练习战）
+    2 = Dummy（练习战）
+    3 = fakefroggit（遗迹）
+    5 = Whimsun（遗迹）
+    7/8/10/11 = Moldsmal（通用）
+    40 = Aaron
+    43 = Woshua
+    45 = Mad Dummy
     47 = Undyne 战
 → 战斗边框样式（默认 0）：___
 
@@ -434,8 +436,8 @@ Step 6/6 — 确认总览 → 执行
 | 阶段 | 功能 | 实现方式 |
 |------|------|---------|
 | 对话 | `add-textentry` 注册多段对话 | `scr_gettext("key")` 读取 |
-| NPC | `npc-dialogue` 一键生成（推荐）| 加对话 + spawn + flag 状态机触发 + 自动守卫 Alarm_0 |
-| NPC（手动） | `spawn-obj` + `append-code` 注入距离触发 | Step 事件 `point_distance`（原生 readable 对象须用 `deterline_state` 状态机 + `Alarm_0` 守卫，勿用 `myinteract`） |
+| NPC | `npc-dialogue` 一键生成（推荐）| 加对话 + spawn + 已验证扁平距离触发块 + 自动守卫 Alarm_0 |
+| NPC（手动） | `spawn-obj` + `append-code` 注入距离触发 | Step 事件 `point_distance`（⚠️ 手写状态机形态在当前 UTMT 环境游戏内死代码——用 `npc-dialogue` 生成的扁平形态；原生 readable 对象须 `Alarm_0` 守卫） |
 | 传送 | `create-door` 双向门 | `room_goto` + `global.deterline_pending_*` 出生点 |
 | 战斗 | `create-battle` | `global.battlegroup` + `obj_battleblcon` |
 | 条件 | `global.flag[510/511]` 状态机 | `quest-init/status` |
@@ -483,7 +485,7 @@ set --key Love --value 20 --file file0
 set --key Kills --value 100 --file file0
 set --key WEAPON --value 52 --file file0
 room-list --value "瀑布"
-set --key Room --value "托丽尔的家"     # 自动同步 file0
+set --key Room --value "雪镇 - 船夫(妇)"     # 自动同步 file0（须唯一名）
 reset-flags
 
 # 对话

@@ -6,10 +6,11 @@
   - 实验会永久修改 game.ios，后续实验继承所有前置修改
 """
 
-__version__ = "2.1.0"
+__version__ = "2.3.0"
 
 import argparse
 import configparser
+import hashlib
 import json
 import os
 import random
@@ -258,6 +259,24 @@ def _csx_verbatim_escape(value: str) -> str:
     return value.replace("\"", "\"\"")
 
 
+def _effective_game_file(game_file: Path) -> Path:
+    """Return the sandbox copy when --sandbox is active, else the original.
+
+    沙箱对**所有**命令生效（含只读）——否则导出/反编译等读取操作会看到原文件、
+    看不到沙箱里刚写入的内容（曾导致 colorize-sprite --sandbox 必然失败）。
+    """
+    global SANDBOX_ORIGINAL
+    if SANDBOX_ACTIVE:
+        if SANDBOX_ORIGINAL is None:
+            SANDBOX_ORIGINAL = game_file
+        sandbox_path = game_file.with_suffix(game_file.suffix + ".sandbox")
+        if not sandbox_path.exists():
+            shutil.copy2(str(game_file), str(sandbox_path))
+            print(f"🔒 沙箱模式: 已创建 {sandbox_path.name}", file=sys.stderr)
+        return sandbox_path
+    return game_file
+
+
 def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
     """Run a C# script via UndertaleModCli and return stdout.
 
@@ -275,14 +294,9 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
         print(f"📸 自动快照: {snap_path.name}", file=sys.stderr)
 
     target = game_file
-    if save and SANDBOX_ACTIVE:
-        if SANDBOX_ORIGINAL is None:
-            SANDBOX_ORIGINAL = game_file
-        sandbox_path = game_file.with_suffix(game_file.suffix + ".sandbox")
-        if not sandbox_path.exists():
-            shutil.copy2(str(game_file), str(sandbox_path))
-            print(f"🔒 沙箱模式: 已创建 {sandbox_path.name}", file=sys.stderr)
-        target = sandbox_path
+    if SANDBOX_ACTIVE:
+        # 沙箱对所有命令生效（读/写都落在副本上）
+        target = _effective_game_file(game_file)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csx", delete=False, encoding="utf-8") as f:
         f.write(csx_code)
@@ -309,6 +323,23 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
             raise RuntimeError(
                 f"UTMT CLI 执行失败 (返回码 {result.returncode}):\n{result.stderr}"
             )
+
+        # A CSX script can print ScriptMessage("ERROR: ...") and `return` without
+        # setting a non-zero exit code. Treat that as a hard failure and DO NOT write
+        # the (unchanged/partial) output back — prevents no-op rewrites and
+        # "zero-operation fabricated success" reports.
+        csx_errs = [l for l in _parse_msg(result.stdout) if l.startswith("ERROR:")]
+        if csx_errs:
+            if temp_output and os.path.exists(temp_output):
+                os.unlink(temp_output)
+            msg = "UTMT 脚本报告错误: " + "; ".join(csx_errs)
+            # HINT（相似名称推荐等）与 ERROR 同批输出时随异常带上，
+            # 否则会被异常传播吞掉、永远到不了用户。
+            hints = [l for l in _parse_msg(result.stdout)
+                     if l.startswith("HINT:") or l.startswith("WARN:")]
+            if hints:
+                msg += "\n" + "\n".join(hints)
+            raise RuntimeError(msg)
 
         # Copy temp output to target (bypass .app bundle File.Move issue)
         if save and temp_output and os.path.exists(temp_output):
@@ -363,6 +394,23 @@ def _parse_msg(output: str) -> list[str]:
     return lines
 
 
+# Exit code used when a search returns zero matches (distinct from generic error 1).
+NO_MATCH_EXIT_CODE = 3
+
+
+def _fail_if_no_match(lines: list[str], kind: str, query: str) -> None:
+    """Exit non-zero with a loud warning when a search returns zero matches.
+
+    Guards against "zero-operation fabricated success": a search that finds
+    nothing must not be silently treated as a successful step. The agent must
+    report the failure instead of inventing names/results.
+    """
+    if any(l.startswith("(no") for l in lines):
+        print(f"警告: {kind} 无匹配: '{query}'", file=sys.stderr)
+        print("      未找到目标——禁止编造名称或结果；请如实报告失败。", file=sys.stderr)
+        sys.exit(NO_MATCH_EXIT_CODE)
+
+
 # ============================================================
 # INI Value Helpers
 # ============================================================
@@ -411,14 +459,28 @@ def _load_rooms() -> None:
     p = Path(__file__).resolve().parent / "rooms.json"
     try:
         with open(str(p), "r", encoding="utf-8") as f:
-            ROOMS = json.load(f)
+            loaded = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
+        loaded = {}
+    if isinstance(loaded, dict):
+        # rooms.json 的合法形态是 {数字房间ID: 中文名}。历史版本曾把内部名
+        # 当 key 写入（污染出非数字键，导致 room-list 的 int() 排序崩溃）——
+        # 这里过滤并报告，而不是让下游崩溃。
+        bad = [k for k in loaded if not str(k).lstrip("-").isdigit()]
+        if bad:
+            print(f"警告: rooms.json 含 {len(bad)} 个非数字键，已忽略: {bad[:5]}"
+                  f"{'...' if len(bad) > 5 else ''}", file=sys.stderr)
+        ROOMS = {str(k): v for k, v in loaded.items() if str(k).lstrip("-").isdigit()}
+    else:
         ROOMS = {}
     _ROOMS_LOADED = True
 
 
 def _update_rooms_json(room_id: str, name: str) -> None:
-    """Add or update a room entry in rooms.json."""
+    """Add or update a room entry in rooms.json (numeric room ID keys only)."""
+    if not str(room_id).lstrip("-").isdigit():
+        print(f"警告: 拒绝写入 rooms.json——房间 ID 必须是数字，收到 '{room_id}'", file=sys.stderr)
+        return
     _load_rooms()
     p = Path(__file__).resolve().parent / "rooms.json"
     if room_id in ROOMS:
@@ -564,11 +626,26 @@ INI_TO_FILE0_SYNC = {
     "Room": "LOCATION",
 }
 
+# 只存在于 file0 的键（ini 模式写它们不生效）——用于 cmd_ini_set 的 footgun 警告
+FILE0_ONLY_KEYS = {
+    "HP", "MAXHP", "MAXEN", "AT", "DF", "WEAPON", "ARMOR", "EXP", "GOLD",
+    "SP", "FACE", "RUINS_KILLS", "SNOWKILLS", "WATERKILLS", "FIREKILLS",
+    "DEFEATED_ASRIEL", "PLOT",
+}
+
 
 def cmd_ini_set(save_dir: Path, section: str, key: str, value: str) -> None:
     path = save_dir / "undertale.ini"
     cp = _read_ini(path)
     key = normalize_key(key)
+
+    # ⚠️ footgun 防护（2026-11 审计）：HP/EXP/GOLD/装备/Boss 等核心属性只存在于
+    # file0，写进 ini 不会同步也不会生效——提醒用户改用 --file file0。
+    if key.upper() in FILE0_ONLY_KEYS and not (
+            section.lower() == "general" and key in INI_TO_FILE0_SYNC):
+        print(f"警告: '{key}' 是 file0 专属属性（游戏运行时读 file0，scr_load 已核实），"
+              f"写入 ini 不会生效也不会同步。请改用: set --key {key} --value {value} --file file0",
+              file=sys.stderr)
 
     if not cp.has_section(section):
         cp.add_section(section)
@@ -1367,14 +1444,19 @@ ScriptMessage("FOUND:" + found);
 '''
     out = _run_utmt(csx, game_file, save=False)
     printed = 0
+    found_total = None
     for line in _parse_msg(out):
         if line.startswith("FOUND:"):
-            total = int(line.split(":", 1)[1])
-            label = f" (仅显示前 {limit} 个)" if total > limit else ""
-            print(f"找到 {total} 个匹配 '{query}'{label}")
+            found_total = int(line.split(":", 1)[1])
+            label = f" (仅显示前 {limit} 个)" if found_total > limit else ""
+            print(f"找到 {found_total} 个匹配 '{query}'{label}")
         else:
             print(line)
             printed += 1
+    if found_total == 0:
+        print(f"警告: search-strings 无匹配: '{query}'", file=sys.stderr)
+        print("      未找到目标——禁止编造名称或结果；请如实报告失败。", file=sys.stderr)
+        sys.exit(NO_MATCH_EXIT_CODE)
 
 
 # ============================================================
@@ -1450,8 +1532,11 @@ try {{
             parts = line.split(":")
             total = parts[1]
             shown = parts[2] if len(parts) > 2 else total
-            label = f" (仅显示前 {shown} 行)" if int(shown) < int(total) else ""
+            truncated = int(shown) < int(total)
+            label = f" (仅显示前 {shown} 行)" if truncated else ""
             print(f"--- 共 {total} 行{label} ---")
+            if truncated:
+                print(f"提示: 用 --limit 0 查看全部 {total} 行；用 --search \"文本\" 只看匹配行。")
         else:
             print(line)
 
@@ -1512,7 +1597,7 @@ def _print_diff(name: str, old: str, new: str) -> None:
         print(line)
 
 
-def cmd_code_replace(game_file: Path, code_name: str, value: str, value_is_file: bool = False, show_diff: bool = False) -> None:
+def cmd_code_replace(game_file: Path, code_name: str, value: str, value_is_file: bool = False, show_diff: bool = False, dry_run: bool = False) -> None:
     """Replace an entire code entry with new GML content.
 
     value can be:
@@ -1528,10 +1613,14 @@ def cmd_code_replace(game_file: Path, code_name: str, value: str, value_is_file:
             raise NotFoundError(f"文件不存在: {value}")
         gml = p.read_text(encoding="utf-8")
 
-    if show_diff:
+    if show_diff or dry_run:
         old_code = _get_decompiled_code(game_file, code_name)
         if old_code is not None:
             _print_diff(code_name, old_code, gml)
+
+    if dry_run:
+        print("(dry-run: 未写入任何修改)")
+        return
 
     if value_is_file:
         esc_gml = _csx_verbatim_escape(gml)
@@ -1592,7 +1681,8 @@ try {{
             print(line)
 
 
-def cmd_code_find_replace(game_file: Path, code_name: str, old: str, new_val: str) -> None:
+def cmd_code_find_replace(game_file: Path, code_name: str, old: str, new_val: str,
+                          show_diff: bool = False, dry_run: bool = False) -> None:
     """Find and replace text within a decompiled code entry, then recompile.
 
     Uses Python-side string replacement (not QueueFindReplace) to avoid
@@ -1627,7 +1717,14 @@ def cmd_code_find_replace(game_file: Path, code_name: str, old: str, new_val: st
         raise NotFoundError(f"未找到匹配: '{old}'")
     
     new_gml = gml.replace(old, new_val)
-    
+
+    if show_diff or dry_run:
+        _print_diff(code_name, gml, new_gml)
+
+    if dry_run:
+        print(f"(dry-run: 匹配 {replaced_count} 处，未写入任何修改)")
+        return
+
     # Write to temp file and use replace-code
     with tempfile.NamedTemporaryFile(mode='w', suffix='.gml', delete=False, encoding='utf-8') as f:
         f.write(new_gml)
@@ -1974,7 +2071,8 @@ try {{
 }}
 '''
     out = _run_utmt(csx, game_file, save=False)
-    for line in _parse_msg(out):
+    lines = _parse_msg(out)
+    for line in lines:
         if line.startswith("ERROR:"):
             print(line, file=sys.stderr)
         else:
@@ -1982,6 +2080,7 @@ try {{
     print("⚠️  注意: 本列表按文件行序输出，key 编号 ≠ 台词顺序。", file=sys.stderr)
     print("    列表里第一行 ≠ '第一句对话'。确定台词顺序请反编译引用这些 key 的", file=sys.stderr)
     print("    对象事件代码，看 global.msg[N] = scr_gettext(\"key\") 的先后（见 SKILL.md）。", file=sys.stderr)
+    _fail_if_no_match(lines, "search-textdata", query)
 
 
 def _validate_facechoice(face: int) -> None:
@@ -2227,14 +2326,14 @@ if (found == 0) {{
 }}
 '''
     out = _run_utmt(csx, game_file, save=False)
-    for line in _parse_msg(out):
+    lines = _parse_msg(out)
+    for line in lines:
         if line.startswith("SCANNING:"):
             total = line.split(":", 1)[1]
             print(f"Scanning {total} code entries...")
-        elif line.startswith("(no"):
-            print(line)
         else:
             print(line)
+    _fail_if_no_match(lines, "search-vars", query)
 
 
 # ============================================================
@@ -2424,8 +2523,8 @@ else if (objSelName == "obj_knife_pickup") objSelFlag = "global.flag[102]";
 else if (objSelName == "obj_ribbon_pickup") objSelFlag = "global.flag[100]";
 if (objSelFlag.Length > 0)
 {{
-    ScriptMessage("WARN: " + objSelName + " 是自毁拾取物 → " + objSelFlag + "==1 时每帧 instance_destroy()，spawn 后可能立刻消失");
-    ScriptMessage("     若只是摆放展示，改用无自毁逻辑的对象（如 obj_bigpie / obj_pie_onshelf）。");
+    ScriptMessage("WARN: " + objSelName + " 是自毁拾取物 → " + objSelFlag + "!=1（物品未拿走）时每帧 instance_destroy()，spawn 后会立刻消失");
+    ScriptMessage("     若只是摆放展示，改用无自毁逻辑的对象（如 obj_bigpie）。");
 }}
 // Check for nearby objects (overlap warning)
 int nearCount = 0;
@@ -2682,57 +2781,38 @@ def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: i
                           native: bool, once: bool = False, range_: int = 50) -> str:
     """Build distance-trigger GML for a spawned NPC instance.
 
-    Both modes use the per-instance variable `deterline_state` (initialized in
-    Create_0 by _ensure_var_initialized), so multiple NPCs never share/clash on a
-    global flag — and BOTH lock the player during the dialogue
-    (global.interact=1 → 0) so the face/portrait and text can't drift from the
-    dialogue box.
+    ⚠️⚠️ 形态约束（2026-11-07 游戏内实测 13 次启动实验矩阵，见 AUDIT_2026-11-07/域F）：
+    本环境（UndertaleModCli 0.9.1.2 + Undertale Mac Runner）对附加/替换代码块存在
+    未定位的字节级问题——触发 create 一旦被"状态条件"门控就静默失效，无论：
+      - 状态存哪（新实例变量 deterline_state / global.flag[510] / 内建变量 friction）
+      - 条件在哪一层（外层链 / 嵌套内层）
+      - 写入在 create 之前还是之后
+    而"纯扁平块"（id 守卫 + !instance_exists 三件套 + 嵌套距离判断，块内无任何
+    状态读写）经多次启动稳定工作。因此本生成器只生成已验证形态：
 
-    once=True   → single-trigger state machine (0→1→2): never re-arms, shows once.
-    once=False  → repeatable state machine (0→1→2→(walk away ≥60px)→0): after the
-                  dialogue the player must walk away to be able to trigger again.
-                  This replaces the old myinteract trigger which (a) did NOT lock
-                  movement and (b) re-triggered instantly in a loop while the player
-                  stayed within range.
+      if (id == N && !exists×3) { if (dist < range) { <建对话框> } }
 
-    range_ = trigger distance in pixels (default 50).
+    once=True  → 触发后在同一块内 instance_destroy() 自毁（对话框是独立实例不受影响），
+                 实现"只说一次"；NPC 说完即从房间消失（工具会打印此行为说明）。
+    once=False → 可重复触发：关闭对话后若仍在范围内会再次弹出（走出范围即停止）；
+                 ⚠️ 不设置 global.interact=1——无状态机时无处复位，会把玩家软锁。
 
-    `native` only affects the Alarm_0 guard (handled by the caller), not this block.
+    `native` 只影响 Alarm_0 守卫（调用方处理），与本块无关。
     """
-    state = "deterline_state"
-    trigger = f'''else if ({state} == 0 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+    once_line = "\n            instance_destroy();" if once else ""
+    return f'''if (id == {instance_id} && !instance_exists(obj_dialoguer) && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
 {{
-    var dist = distance_to_object(obj_mainchara);
-    if (dist < {range_})
+    if (distance_to_object(obj_mainchara) < {range_})
     {{
-        {state} = 1;
-        global.interact = 1;
         global.msc = 0;
         global.typer = 5;
         global.facechoice = {face};
         global.faceemotion = {emotion};
         global.msg[0] = scr_gettext("{text_key}");
         global.msg[1] = "%%%";
-        instance_create(0, 0, obj_dialoguer);
+        instance_create(0, 0, obj_dialoguer);{once_line}
     }}
 }}
-'''
-    rearm = ""
-    if not once:
-        rearm = f'''
-    if ({state} == 2 && distance_to_object(obj_mainchara) >= 60)
-    {{
-        {state} = 0;
-    }}
-'''
-    return f'''if (id == {instance_id})
-{{
-    if ({state} == 1 && !instance_exists(obj_dialoguer))
-    {{
-        {state} = 2;
-        global.interact = 0;
-    }}
-{trigger}{rearm}}}
 '''
 
 
@@ -2742,83 +2822,69 @@ def _build_npc_choice_block(instance_id: int, choice_key: str, yes_key: str | No
                             repeat: bool = False) -> str:
     """Build a distance-trigger GML block for a YES/NO choice NPC.
 
-    Verified template (arena-table experiment, v2.1.1):
-    - trigger: player within range_ px of the NPC → show the `\\C` choice text
-      (deterline_state 0→1, global.interact=1 locks movement during the dialogue)
-    - YES (global.choice == 0): if a yes_key is given, replace msg[0] with it (no \\C);
-      optionally give an item (scr_itemget) and/or teleport (room_goto)
-    - NO (global.choice == 1): replace msg[0] with no_key (no \\C)
+    ⚠️⚠️ 形态约束同 _build_npc_step_block（2026-11-07 游戏内实测 13 次启动）：只生成
+    已验证的扁平形态，块内禁止任何状态读写；分支体保持单层平铺语句。
+
+    - trigger: player within range_ px → show the `\\C` choice text
+    - YES (global.choice == 0): replace msg[0] with yes text (no \\C); optionally
+      give an item (scr_itemget) and/or teleport (room_goto)
+    - NO (global.choice == 1): replace msg[0] with no text (no \\C)
     - CRITICAL: branch texts MUST replace global.msg[0] with a non-\\C text —
       otherwise obj_choicer's alarm (2 frames later) re-copies the `\\C` text via
       scr_msgup and the choice box pops up again in a loop.
-    - single-trigger by default (0→1→2, never re-arms); repeat=True re-arms on
-      walk-away (≥60px), same as _build_npc_step_block.
+    - 单次语义（默认）通过"答完后 instance_destroy() 自毁"实现（触发块不再被状态门控）；
+      repeat=True 时 NPC 存活，走开再靠近可再次提问。
+    - ⚠️ 已知限制（2026-11 复核）：选择处理分支按 global.choice 响应、无法区分同房间的
+      多个选择 NPC——同一房间放多个 obj 选择 NPC 时，回答会串（窄场景；不同对象/不同
+      房间不受影响）。
     """
-    state = "deterline_state"
     yes_lines = ""
     if yes_key:
-        yes_lines += f'''            global.typer = 5;
-            global.facechoice = {face};
-            global.faceemotion = {emotion};
-            global.msg[0] = scr_gettext("{yes_key}");
-            global.msg[1] = "%%%";
+        yes_lines += f'''        global.typer = 5;
+        global.facechoice = {face};
+        global.faceemotion = {emotion};
+        global.msg[0] = scr_gettext("{yes_key}");
+        global.msg[1] = "%%%";
 '''
     if item_id is not None:
-        yes_lines += f"            script_execute(scr_itemget, {item_id});\n"
+        yes_lines += f"        script_execute(scr_itemget, {item_id});\n"
     if goto_room:
-        yes_lines += f"            room_goto({goto_room});\n"
+        yes_lines += f"        room_goto({goto_room});\n"
+    if not repeat:
+        yes_lines += "        instance_destroy();\n"
 
-    rearm = ""
-    if repeat:
-        rearm = f'''
-    if ({state} == 2 && distance_to_object(obj_mainchara) >= 60)
-    {{
-        {state} = 0;
-    }}
-'''
-    return f'''if (id == {instance_id})
+    no_destroy = "        instance_destroy();\n" if not repeat else ""
+    return f'''if (id == {instance_id} && !instance_exists(obj_dialoguer) && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
 {{
-    if ({state} == 1 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+    if (distance_to_object(obj_mainchara) < {range_})
     {{
-        {state} = 2;
-        global.interact = 0;
+        global.msc = 0;
+        global.typer = 5;
+        global.facechoice = {face};
+        global.faceemotion = {emotion};
+        global.msg[0] = scr_gettext("{choice_key}");
+        global.msg[1] = "%%%";
+        instance_create(0, 0, obj_dialoguer);
     }}
-    if (global.choice != -1 && {state} == 1)
+}}
+if (id == {instance_id} && global.choice != -1)
+{{
+    if (global.choice == 0)
     {{
-        if (global.choice == 0)
-        {{
-            global.choice = -1;
-            global.msc = -1;
-            global.interact = 0;
-{yes_lines}        }}
-        else
-        {{
-            global.choice = -1;
-            global.msc = -1;
-            global.typer = 5;
-            global.facechoice = {face};
-            global.faceemotion = {emotion};
-            global.msg[0] = scr_gettext("{no_key}");
-            global.msg[1] = "%%%";
-        }}
-    }}
-    if ({state} == 0 && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+        global.choice = -1;
+        global.msc = -1;
+{yes_lines}    }}
+    else
     {{
-        var dist = distance_to_object(obj_mainchara);
-        if (dist < {range_})
-        {{
-            {state} = 1;
-            global.interact = 1;
-            global.msc = 0;
-            global.typer = 5;
-            global.facechoice = {face};
-            global.faceemotion = {emotion};
-            global.msg[0] = scr_gettext("{choice_key}");
-            global.msg[1] = "%%%";
-            instance_create(0, 0, obj_dialoguer);
-        }}
-    }}
-{rearm}}}
+        global.choice = -1;
+        global.msc = -1;
+        global.typer = 5;
+        global.facechoice = {face};
+        global.faceemotion = {emotion};
+        global.msg[0] = scr_gettext("{no_key}");
+        global.msg[1] = "%%%";
+{no_destroy}    }}
+}}
 '''
 
 
@@ -3295,11 +3361,13 @@ def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: 
         raise NotFoundError(f"对象未找到: {obj_name}")
     native = info["native"]
     if once:
-        print(f"  🔒 单次触发模式 → 用 deterline_state 状态机 + 对话期间锁移动，只触发一次")
+        print("  🔒 单次触发模式 → 已验证扁平触发块 + 触发后 NPC 自毁（说完即从房间消失）")
     elif native:
-        print(f"  ⚠️  {info['obj']} 继承原生交互系统 → 用 deterline_state 状态机 + Alarm_0 守卫（锁移动 + 走开重置）")
+        print(f"  ⚠️  {info['obj']} 继承原生交互系统 → 已验证扁平触发块 + Alarm_0 守卫")
     else:
-        print(f"  ✅  {info['obj']} 为普通对象 → 用 deterline_state 状态机（锁移动 + 走开重置）")
+        print(f"  ✅  {info['obj']} 为普通对象 → 已验证扁平触发块")
+    print("  ℹ️  v2.3.0 行为说明：触发后不再锁移动（状态机在当前 UTMT 环境下产生游戏内"
+          "死代码，见 AUDIT_2026-11-07/域F）；可重复模式下关闭对话后若仍在范围内会再次弹出，走出范围即停止")
 
     print("Step 3/4: 生成对象实例...")
     new_id = _spawn_obj_internal(game_file, room_name, obj_name, x, y, quiet=True)
@@ -3322,9 +3390,9 @@ def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: 
     if native and info["alarm_code"]:
         _guard_alarm_for_instance(game_file, info["alarm_code"], new_id)
     if once:
-        print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<{range_}px) 说一次 '{text_key}'（对话期间锁移动）")
+        print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<{range_}px) 说一次 '{text_key}'（触发后 NPC 自毁消失）")
     else:
-        print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<{range_}px) 说 '{text_key}'（对话期间锁移动，走开>60px 可再触发）")
+        print(f"  ✅ 完成: {info['obj']} [{new_id}] 靠近 (<{range_}px) 说 '{text_key}'（可重复；关对话后仍在范围内会再触发，走出范围停止）")
 
 
 def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: int,
@@ -3336,7 +3404,7 @@ def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: in
                    repeat: bool = False) -> None:
     """One-shot safe NPC dialogue with a YES/NO choice (`\\C` box).
 
-    Builds on the verified arena-table state machine (v2.1.1):
+    Uses the in-game-verified flat trigger shape (v2.3.0, 2026-11-07 audit):
       1. Adds up to 3 textdata entries (choice / YES follow-up / NO follow-up)
       2. Spawns the object instance
       3. Injects the choice state machine into the object's Step event:
@@ -3365,7 +3433,11 @@ def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: in
     if no_key is None or no_text is None:
         raise ValidationError("--no-text-key 和 --no-text 是必需的（NO 分支的回应文本）")
     if yes_key is None:
-        yes_text = None  # YES 分支允许无文本（纯传送/给物品）
+        # ⚠️ YES 分支必须替换 msg[0]（否则 scr_msgup 2 帧后重拷 \C 文本 → 选择框无限
+        # 重弹；带 --item 时还会无限刷物品）。未提供 yes 文本时自动生成一条确认语。
+        yes_key = f"{choice_key}_yes"
+        yes_text = "* Okay./%%"
+        print(f"  ℹ️  未提供 --yes-text，自动生成 YES 分支确认文本 '{yes_key}'")
     _validate_ascii_text(choice_text, f"选择文本 '{choice_key}'")
     for key, val, label in [(yes_key, yes_text, "YES 分支文本"),
                             (no_key, no_text, "NO 分支文本")]:
@@ -3407,8 +3479,8 @@ def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: in
         raise RuntimeError("生成对象失败（未获取到实例 ID）")
     print(f"  ✅ 已生成实例 [{new_id}]")
 
-    print("Step 4/5: 注入选择状态机...")
-    _ensure_var_initialized(game_file, info["obj"], "deterline_state")
+    print("Step 4/5: 注入选择触发块（已验证扁平形态）...")
+    _ensure_var_initialized(game_file, info["obj"], "deterline_state")  # 保留兼容，非触发依赖
     block = _build_npc_choice_block(
         new_id, choice_key, yes_key, no_key, face, emotion,
         range_=range_, goto_room=goto_gml, item_id=item_id, repeat=repeat,
@@ -3853,9 +3925,11 @@ def cmd_set_room_prop(game_file: Path, room_name: str,
 
     assigns = ""
     if width is not None:
-        assigns += f"room.Width = {width}; room.Views[0].ViewWidth = {width}; room.Views[0].PortWidth = {width};\n"
+        # ⚠️ 只改房间尺寸，不动 Views[0]——视角必须保持 320×240/port 640×480
+        #（Undertale 标准，改动会破坏 2x 缩放与视角跟随）。改视角用 set-room-view。
+        assigns += f"room.Width = {width};\n"
     if height is not None:
-        assigns += f"room.Height = {height}; room.Views[0].ViewHeight = {height}; room.Views[0].PortHeight = {height};\n"
+        assigns += f"room.Height = {height};\n"
     if speed is not None:
         assigns += f"room.Speed = {speed};\n"
     if caption is not None:
@@ -4262,11 +4336,13 @@ try {{
 }}
 '''
     out = _run_utmt(csx, game_file, save=False)
-    for line in _parse_msg(out):
+    lines = _parse_msg(out)
+    for line in lines:
         if line.startswith("ERROR:"):
             print(line, file=sys.stderr)
         else:
             print(line)
+    _fail_if_no_match(lines, "search-sctext", query)
 
 
 # ============================================================
@@ -5189,8 +5265,10 @@ if (found == 0) {{
 }}
 '''
     out = _run_utmt(csx, game_file, save=False)
-    for line in _parse_msg(out):
+    lines = _parse_msg(out)
+    for line in lines:
         print(line)
+    _fail_if_no_match(lines, "search-sprite", query)
 
 
 def cmd_obj_get(game_file: Path, obj_name: str) -> None:
@@ -5785,7 +5863,7 @@ def cmd_texture_export(game_file: Path, texture_name: str | None, output_dir: st
     out_path.mkdir(parents=True, exist_ok=True)
     if texture_name is None:
         # Export all textures via UTMT CLI dump -t
-        cmd = ["dotnet", _find_utmt_cli(), "dump", str(game_file), "-t", "-o", str(out_path)]
+        cmd = ["dotnet", _find_utmt_cli(), "dump", str(_effective_game_file(game_file)), "-t", "-o", str(out_path)]
         subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=True)
         print(f"✓ 所有纹理已导出到: {out_path}")
     else:
@@ -5835,12 +5913,7 @@ def cmd_texture_replace(game_file: Path, texture_name: str, png_path: str) -> No
         raise NotFoundError(f"文件不存在: {png_path}")
     cli = _find_utmt_cli()
     target = game_file
-    if SANDBOX_ACTIVE:
-        sandbox_path = game_file.with_suffix(game_file.suffix + ".sandbox")
-        if not sandbox_path.exists():
-            shutil.copy2(str(game_file), str(sandbox_path))
-            print(f"🔒 沙箱模式: 已创建 {sandbox_path.name}", file=sys.stderr)
-        target = sandbox_path
+    target = _effective_game_file(game_file)
     if not SANDBOX_ACTIVE:
         backup_file(target)
     cmd = ["dotnet", cli, "replace", str(target), "-t", f"{texture_name}={png_path}", "-o", str(target)]
@@ -5853,7 +5926,7 @@ def cmd_sprite_dump_all(game_file: Path, output_dir: str) -> None:
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     cli = _find_utmt_cli()
-    cmd = ["dotnet", cli, "dump", str(game_file), "--sprites", "-o", str(out_path)]
+    cmd = ["dotnet", cli, "dump", str(_effective_game_file(game_file)), "--sprites", "-o", str(out_path)]
     subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=True)
     print(f"✓ 所有精灵已导出到: {out_path}")
 
@@ -6094,7 +6167,7 @@ def main():
                                   "delete-textentry",
                                    "batch-add-textentry",
                                    "guided-add-dialogue",
-                                 "search-vars", "create-script",
+                                 "search-vars", "search-code", "create-script",
                                    "room-objects", "search-sctext",
                                     "spawn-obj", "remove-obj",
                                     "npc-dialogue", "npc-choice", "guard-npc-alarm",
@@ -6120,10 +6193,14 @@ def main():
                                      "remove-door",
                                      "create-pit",
                                      "create-battle",
-                                     "verify-nsid", "verify-instances", "set-derived"])
+                                     "verify-nsid", "verify-instances", "set-derived",
+                                     "md5"])
     parser.add_argument("--key", help="键名或数字索引 (file0 用数字)")
     parser.add_argument("--value", help="要设置/搜索的值 (set/find 操作必需)")
-    parser.add_argument("--old", help="replace-string 的旧文本")
+    parser.add_argument("--old", help="replace-string 的旧文本 (decompile-code 兼容别名，等同 --search)")
+    parser.add_argument("--search", help="decompile-code: 仅显示匹配该文本的行 (等同行过滤)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="预览替换结果/匹配数，不写入文件 (replace-code/find-replace-code 用)")
     parser.add_argument("--section", default="General",
                         help="INI 节名 (默认: General)")
     parser.add_argument("--file", choices=["ini", "file0", "data_win"], default="ini",
@@ -6180,7 +6257,8 @@ def main():
     parser.add_argument("--repeat", action="store_true",
                         help="可重复触发（走开 >60px 再靠近可再触发；npc-choice 用，默认单次）")
     parser.add_argument("--frame", type=int, default=None,
-                        help="帧索引 (export-sprite/replace-sprite 用, 默认全部/0)")
+                        help="帧索引 (export-sprite/replace-sprite 用, 默认: replace 全部帧的 0 / export 全部帧到目录; "
+                             "export 时 --value 以 .png 结尾则默认单帧导出到该文件)")
     parser.add_argument("--show-diff", action="store_true",
                         help="替换代码时显示新旧 diff (replace-code 用)")
     parser.add_argument("--json", action="store_true",
@@ -6298,6 +6376,19 @@ def main():
             sys.exit(1)
         return
 
+    # Handle md5 before file-type checks (read-only; prints game data file hash).
+    # Lets a report include the raw hash so "did the file actually change?" is
+    # verifiable in one line.
+    if args.action == "md5":
+        try:
+            game_file = find_game_data_file(args.dir)
+        except FileNotFoundError as e:
+            print(f"错误: {e}", file=sys.stderr)
+            sys.exit(1)
+        digest = hashlib.md5(game_file.read_bytes()).hexdigest()
+        print(f"{digest}  {game_file}")
+        return
+
     # Handle set-derived before file-type checks (touches both file0 and data_win)
     if args.action == "set-derived":
         if args.key is None or args.value is None:
@@ -6359,15 +6450,17 @@ def main():
             elif args.action == "decompile-code":
                 if args.key is None:
                     parser.error("--key 是必需的 (代码名称)")
-                cmd_code_decompile(game_file, args.key, args.limit, search=args.old or "")
+                cmd_code_decompile(game_file, args.key, args.limit, search=args.search or args.old or "")
             elif args.action == "replace-code":
                 if args.key is None or args.value is None:
                     parser.error("--key 和 --value 是必需的 (代码名称 + GML 源码或文件路径)")
-                cmd_code_replace(game_file, args.key, args.value, value_is_file=args.file_path, show_diff=args.show_diff)
+                cmd_code_replace(game_file, args.key, args.value, value_is_file=args.file_path,
+                                 show_diff=args.show_diff, dry_run=args.dry_run)
             elif args.action == "find-replace-code":
                 if args.key is None or args.old is None or args.value is None:
                     parser.error("--key, --old 和 --value 是必需的")
-                cmd_code_find_replace(game_file, args.key, args.old, args.value)
+                cmd_code_find_replace(game_file, args.key, args.old, args.value,
+                                      show_diff=args.show_diff, dry_run=args.dry_run)
             elif args.action == "search-textdata":
                 if args.value is None:
                     parser.error("--value 是必需的 (搜索关键词)")
@@ -6391,9 +6484,9 @@ def main():
                     parser.error("--key 和 --value 是必需的 (已存在的 textdata key + 新文本)")
                 cmd_textdata_update(game_file, args.key, args.value,
                                     face=args.face, emotion=args.emotion)
-            elif args.action == "search-vars":
+            elif args.action in ("search-vars", "search-code"):
                 if args.value is None:
-                    parser.error("--value 是必需的 (变量名)")
+                    parser.error("--value 是必需的 (变量名/精灵名/任意代码片段)")
                 cmd_search_vars(game_file, args.value, args.limit)
             elif args.action == "room-objects":
                 if args.value is None:
@@ -6596,7 +6689,14 @@ def main():
                 else:
                     if args.value is None:
                         parser.error("--value 是必需的 (路径)")
-                    cmd_sprite_export(game_file, args.key, args.value, frame=args.frame if args.frame is not None else -1)
+                    # --value 以 .png 结尾且未显式指定 --frame 时，按"单帧导出到文件"处理
+                    if args.frame is not None:
+                        frame = args.frame
+                    elif args.value.lower().endswith(".png"):
+                        frame = 0
+                    else:
+                        frame = -1
+                    cmd_sprite_export(game_file, args.key, args.value, frame=frame)
             elif args.action == "replace-sprite":
                 if args.key is None or args.value is None:
                     parser.error("--key (精灵名) 和 --value (PNG 路径) 是必需的")

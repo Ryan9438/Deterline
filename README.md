@@ -37,7 +37,7 @@
 - 查看房间属性（`room-info`）、改造已有房间（清空→设尺寸→配 View→铺 Tile→注入背景）
 - 修改房间尺寸/标题/背景色（`set-room-prop`）
 - 配置摄像机视角（**View 必须 320×240，port 640×480**，`set-room-view`）
-- 运行时背景 + 视差注入（`gml-bg`，替代 `set-room-bg`）
+- 运行时背景 + 视差注入（`gml-bg`；B1 数据驱动房用 `set-room-bg`，`room-bg-info` 诊断）
 - 在任意房间生成/移除对象实例（`spawn-obj` / `remove-obj`）
 - 清除房间 Tile（`remove-tile`）
 - 查看房间内全部对象及其事件（`room-objects`）
@@ -84,7 +84,7 @@
 # 存档编辑（零依赖，立即可用）
 python run.py --action get --key Love
 python run.py --action set --key HP --value 50 --file file0
-python run.py --action set --key Room --value "托丽尔的家"
+python run.py --action set --key Room --value "雪镇 - 船夫(妇)"   # 示例用唯一名；"托丽尔的家"会匹配多个房间
 
 # 对话编辑（需 UTMT CLI）
 python run.py --action add-textentry --key "obj_quest" --value "* Hello!/%%" --face 3 --file data_win
@@ -187,7 +187,7 @@ Skill 通过符号链接安装，工作区修改自动同步。
 ```
 deterline/
 ├── run.py              ← 快捷入口
-├── SKILL.md            ← Agent Skill 完整文档（2.1.0）
+├── SKILL.md            ← Agent Skill 完整文档（2.3.0）
 ├── COMMANDS.md         ← 常用指令速查
 ├── QUESTIONNAIRE_WORKFLOW.md ← 问卷工作流（Agent 必读）
 ├── README.md
@@ -211,7 +211,7 @@ deterline/
 - **`--sandbox` 模式**：在 `game.ios.sandbox` 副本上操作，原文件不受影响。确认后用 `sandbox-restore` 恢复
 - **安装 UTMT CLI 后**才能使用 `--file data_win` 相关命令
 - **房间 View 必须为 320×240（port 640×480）**——设成 640×480 会导致视角跟随失效（`view_xview` 被钳位到 0）
-- **运行时背景请用 `gml-bg` 而不是 `set-room-bg`**——Undertale 运行时忽略 ROOM 数据的 Backgrounds 设置，`gml-bg` 通过 GML 注入生效
+- **背景修改按房间分类选命令**（`room-bg-info` 诊断）：数据驱动（B1）房 `set-room-bg` 有效（须覆盖所有启用层）；对象驱动（B2）房用 `gml-bg` 注入；纯 Tile（A 类）房须先启用一层。2026-11 审计修正：旧"set-room-bg 一律被运行时忽略"结论有误
 
 ## License
 

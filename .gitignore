@@ -15,3 +15,12 @@ __pycache__/
 # Runtime artifacts (created by the tool)
 *.snap.*
 *.sandbox
+
+# Game data / saves / runtime artifacts (never commit)
+game.ios
+file0
+undertale.ini
+*.sandbox
+*.bak*
+*.snap*
+__pycache__/

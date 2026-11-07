@@ -92,27 +92,49 @@ class TestResolveRoom(unittest.TestCase):
 
 
 class TestBuildNpcStepBlock(unittest.TestCase):
+    """⚠️ 形态不变量（2026-11-07 游戏内 13 次启动实测确立，见 AUDIT_2026-11-07/域F）：
+    只允许"纯扁平触发块"——任何状态条件门控 create 都会在游戏内静默失效。"""
+
     def test_default_range(self):
         block = ms._build_npc_step_block(100, "obj_hi", 3, 1, False, once=True)
-        self.assertIn("if (dist < 50)", block)
-        self.assertIn("if (id == 100)", block)
+        self.assertIn("distance_to_object(obj_mainchara) < 50", block)
+        self.assertIn("if (id == 100 && !instance_exists(obj_dialoguer)"
+                      " && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))", block)
 
     def test_custom_range(self):
         block = ms._build_npc_step_block(100, "obj_hi", 3, 1, False, once=True, range_=160)
-        self.assertIn("if (dist < 160)", block)
+        self.assertIn("distance_to_object(obj_mainchara) < 160", block)
 
-    def test_once_has_no_rearm(self):
+    def test_pure_flat_no_state(self):
+        """回归测试：块内出现任何状态读写都曾导致游戏内静默死代码。"""
+        for once in (True, False):
+            block = ms._build_npc_step_block(100, "obj_hi", 0, 0, False, once=once)
+            self.assertNotIn("deterline_state", block)
+            self.assertNotIn("global.flag[", block)
+            self.assertNotIn("friction", block)
+            self.assertNotIn("global.interact", block)  # 无状态机时无处复位，禁用锁移动
+            self.assertIn("if (id == 100 && !instance_exists(obj_dialoguer)"
+                          " && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))", block)
+
+    def test_once_self_destructs(self):
         block = ms._build_npc_step_block(100, "obj_hi", 0, 0, False, once=True)
-        self.assertNotIn(">= 60", block)
+        self.assertIn("instance_destroy()", block)
 
-    def test_repeatable_has_rearm(self):
+    def test_repeat_does_not_destroy(self):
         block = ms._build_npc_step_block(100, "obj_hi", 0, 0, False, once=False)
-        self.assertIn("deterline_state == 2 && distance_to_object(obj_mainchara) >= 60", block)
+        self.assertNotIn("instance_destroy()", block)
 
     def test_contains_dialoguer(self):
         block = ms._build_npc_step_block(100, "obj_hi", 0, 0, False, once=True)
         self.assertIn("instance_create(0, 0, obj_dialoguer)", block)
         self.assertIn('global.msg[0] = scr_gettext("obj_hi")', block)
+
+    def test_no_bare_python_bool(self):
+        """GML 里不允许出现 Python 布尔字面量 True/False（大小写敏感）。"""
+        for once in (True, False):
+            block = ms._build_npc_step_block(100, "obj_hi", 0, 0, False, once=once)
+            self.assertNotIn("True", block)
+            self.assertNotIn("False", block)
 
 
 class TestBuildNpcChoiceBlock(unittest.TestCase):
@@ -136,14 +158,22 @@ class TestBuildNpcChoiceBlock(unittest.TestCase):
         self.assertNotIn("room_goto", block)
         self.assertNotIn("scr_itemget", block)
 
-    def test_single_trigger_default(self):
+    def test_no_state_anywhere(self):
         block = ms._build_npc_choice_block(200, "obj_ask", "obj_yes", "obj_no", 0, 0)
-        self.assertNotIn(">= 60", block)
+        self.assertIn("if (id == 200 && !instance_exists(obj_dialoguer)"
+                      " && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))", block)
+        self.assertNotIn("deterline_state", block)
+        self.assertNotIn("global.flag[", block)
+        self.assertNotIn("global.interact", block)
 
-    def test_repeat(self):
+    def test_single_shot_self_destructs_by_default(self):
+        block = ms._build_npc_choice_block(200, "obj_ask", "obj_yes", "obj_no", 0, 0)
+        self.assertIn("instance_destroy()", block)
+
+    def test_repeat_keeps_npc_alive(self):
         block = ms._build_npc_choice_block(200, "obj_ask", "obj_yes", "obj_no", 0, 0,
                                            repeat=True)
-        self.assertIn("deterline_state == 2 && distance_to_object(obj_mainchara) >= 60", block)
+        self.assertNotIn("instance_destroy()", block)
 
     def test_choice_uses_msc_negative(self):
         block = ms._build_npc_choice_block(200, "obj_ask", "obj_yes", "obj_no", 0, 0)

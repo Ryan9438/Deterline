@@ -1,6 +1,4 @@
 # Deterline — Python dependencies
 # Core functionality requires no external packages (stdlib only).
-# YAML support for quest compiler (future):
-# pyyaml>=6.0
-# Required for bg_generator.py (pixel background patterns):
-# Pillow>=10.0
+pyyaml>=6.0          # quest compiler (future)
+Pillow>=10.0         # bg_generator.py + create-bg-asset (像素背景生成/注入必需)

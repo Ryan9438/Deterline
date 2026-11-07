@@ -37,7 +37,7 @@ dump-sprites, preview-sprite, colorize-sprite, 导出, 替换, 换色, 复制,
 GML, script, code, decompile, decompile-code, 脚本, 代码,
 append-code, prepend-code, replace-code, create-script,
 find-replace-code, search-vars, search-sctext, search-strings,
-npc, quest, battlegroup, battle, create-battle, quest-init, quest-status,
+npc, quest, battlegroup, battle, create-battle, quest-init, quest-status, (create-room 已废弃禁用),
 支线, 任务, 战斗, NPC,
 door, portal, create-door, list-doors, remove-door, 传送门, 门,
 experiment, snapshot, sandbox, backup, undo, 快照, 备份, 恢复, 回滚,
@@ -52,7 +52,7 @@ ASCII, ascii, 英文, 中文限制, 字体
 
 ## 技能版本
 
-2.2.0
+2.3.0
 
 ## 适用平台
 
@@ -143,7 +143,7 @@ deterline/
 | `set --key Love --value 20` | 修改 LOVE（**自动同步 file0，游戏以 file0 为准**） |
 | `set --key Love --value 20 --file file0` | 直接改 file0 LOVE（推荐，无需动 INI） |
 | `set --key Kills --value 100` | 修改击杀数（**自动同步 file0**） |
-| `set --key Room --value "托丽尔的家"` | 支持中文房间名（自动同步 file0） |
+| `set --key Room --value "雪镇 - 船夫(妇)"` | 支持中文房间名（自动同步 file0）。⚠️ 须用**唯一名**——"托丽尔的家"匹配 6 个房间会报错并列出候选 |
 | `list` | 列出 INI 全部配置 |
 | `find --value 4 --file file0` | 在 file0 中搜索数值 |
 | `set --key HP --value 50 --file file0` | 修改 file0 的 maxhp（**进战斗会被按 LV 重算**，见下方警告） |
@@ -234,7 +234,7 @@ deterline/
 > 2. 用户要求**纯地板场景** → 选 **C 类**（纯 Tile 地板）
 > 3. 提供候选时列出房间号 + 尺寸 + 中文名，供用户挑选，不得擅自决定
 > 4. 用户要求**加背景时**，必须询问：是否要背景视差？视差速度（speedx）多少？（默认 0.3）
-> 5. 唯一自带原生视差的房间：`room_lastruins_corridor`（230，A 类），可作参考
+> 5. 多层视差参考房：`room_lastruins_corridor`（230，B2 类，7 层多深度视差）。其余 obj_backgrounder_* 房间（tundra/dock/core/castle 等）也有单层视差公式
 >
 > 常用房间编辑命令见下表；分类详见 ROOMS_GUIDE.md。
 
@@ -248,11 +248,11 @@ deterline/
 | `remove-obj --value "room_asrielroom" --instance 113930` | 按实例 ID 移除 |
 | `remove-obj --value "room_asrielroom" --key "obj_dummy1"` | 按对象类型移除第一个 |
 | `remove-obj --value "room_asrielroom" --key "obj_dummy1" --all` | 移除该类型全部实例 |
-| `npc-dialogue --value "room_torielroom" --key "obj_cactus" --x 170 --y 180 --text-key "obj_cactus_hi" --text "* Hi/%%"` | **一键安全 NPC 对话**：加对话 + 生成实例 + 注入 `deterline_state` 距离触发 + 自动守卫 Alarm_0。默认 = **对话期间锁移动 + 走开后可再次触发** |
-| `npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi/%%" --once` | **单次触发**：对话期间锁移动（`global.interact=1`），结束后解锁且**不再触发**（永久只一次） |
+| `npc-dialogue --value "room_torielroom" --key "obj_cactus" --x 170 --y 180 --text-key "obj_cactus_hi" --text "* Hi/%%"` | **一键安全 NPC 对话**：加对话 + 生成实例 + 注入已验证扁平距离触发块 + 自动守卫 Alarm_0。默认 = 可重复（关对话后仍在范围内会再弹，走出范围停止） |
+| `npc-dialogue --value "room_asrielroom" --key "obj_dummy1" --x 170 --y 180 --text-key "obj_dummy_hi" --text "* Hi/%%" --once` | **单次触发**：触发后 NPC 自毁消失（永久只一次）。⚠️ v2.3.0 起不再锁移动——状态机形态在当前 UTMT 环境下产生游戏内死代码（2026-11 审计，见 AUDIT_2026-11-07/域F） |
 | `npc-dialogue ... --range 160` | 自定义触发距离（默认 50px） |
 | `npc-choice --value "room_water_undynefinal" --key "obj_kitchentable" --x 160 --y 420 --text-key "obj_table_ask" --text "* Let's go?& &         Yes         No      \C " --yes-text-key "obj_table_yes" --yes-text "* Okay!/%%" --no-text-key "obj_table_no" --no-text "* .../%%" --goto "雪镇 - 船夫(妇)" --item 48 --range 160` | **一键安全 YES/NO 选择 NPC**：加 2-3 条对话 + 生成实例 + 注入选择状态机（触发 → `\C` 选择框 → YES 分支[文本/给物品/传送] / NO 分支[文本]）。**默认单次触发**，分支文本自动替换 msg[0]，从根源杜绝选择框循环重弹 |
-| `npc-choice ... --repeat` | 可重复触发（走开 >60px 再靠近可再触发） |
+| `npc-choice ... --repeat` | 可重复触发（默认单次 = 答完后 NPC 自毁消失；--repeat 保留 NPC，走开再靠近可再问） |
 | `guard-npc-alarm --key "obj_cactus" --instance 113927` | 给已有冲突 NPC 补 `Alarm_0` 守卫（幂等） |
 | `verify-nsid` | 检查损坏变量 NameStringID（读取会崩溃的陷阱）；`--fix` 自动修复 |
 | `verify-instances` | 检查全房间实例 ID 异常（ID=0 / 重复 / 空对象 / Nonexistent）；`--fix` 为 ID=0/重复实例自动分配唯一 ID |
@@ -264,8 +264,8 @@ deterline/
 - 用 `room-objects` 查看实例 ID 后再 `remove-obj --instance`
 - 生成的实例保留完整的对象行为（碰撞、事件、交互、AI）
 - **新增实例必须唯一非 0 的 InstanceID**：多个实例 ID=0 会共享 per-instance 变量表 → Create 事件写入（`phase`、`image_xscale` 等）不生效 → 读 `other.<变量>` 崩溃 + 布局异常（漏口）。ad-hoc CSX 直接 `new UndertaleRoom.GameObject()` 必须设 `InstanceID = Data.GeneralInfo.LastObj++`；工具命令（spawn-obj/npc-dialogue/create-door 等）已自动处理。操作后用 `verify-instances` 检查
-- `npc-dialogue` / `npc-choice` 一律用 `deterline_state` 状态机（普通对象与原生 readable 对象都安全），原生 readable 对象额外加 `Alarm_0` 守卫（自动在 Create 事件初始化 `deterline_state = 0;`，防止 NSID 损坏崩溃）
-- **默认触发行为**：靠近(<50px，可用 `--range` 调)触发，对话期间**锁移动**（`global.interact=1`，头像/文字不会与文本框错位），按 Z 关闭后**不会立即重触发**，需**走开(>60px) 再靠近**才能再次触发。需要"只看一次"用 `--once`（npc-choice 默认即单次）
+- `npc-dialogue` / `npc-choice`（v2.3.0）生成**已验证扁平触发块**（游戏内实测；状态机形态在当前 UTMT 环境下游戏内死代码，禁止手写）；原生 readable 对象额外加 `Alarm_0` 守卫；Create 事件自动初始化 `deterline_state = 0;` 仅为 NSID 兼容保留（触发块不读写）
+- **默认触发行为（v2.3.0）**：靠近(<50px，可用 `--range` 调)触发；不锁移动（状态机在当前 UTMT 环境产生死代码，2026-11 审计）；可重复模式下关闭对话后仍在范围内会再次弹出，走出范围即停止；`--once`（npc-choice 默认）触发/答完后 NPC 自毁消失
 - `npc-choice` 的 `--text` 必须是含 `\C ` 的 3 行以内选择文本（`"* 提问& &         Yes         No      \C "`）；YES/NO 分支文本**不得含 `\C`**（命令行会自动校验，`npc-dialogue` 遇到 `\C` 文本会报错并引导改用 npc-choice）
 - 可用 `--sandbox` 做安全测试，确认无误后 `sandbox-restore` 恢复
 
@@ -300,7 +300,7 @@ deterline/
 | `spawn-obj --value "room_xxx" --key "obj_dummy1" --x 160 --y 120` | 在房间生成对象 |
 | `remove-obj --value "room_xxx" --key "obj_solidtall" --all` | 移除指定类型的全部对象 |
 | `remove-tile --value room_xxx` | 清除房间全部 Tile |
-| `gml-bg --value room_xxx --bg "bg_asset" --slot 0 --speedx 0.5` | **注入运行时背景 GML + 视差**（替代 set-room-bg） |
+| `gml-bg --value room_xxx --bg "bg_asset" --slot 0 --speedx 0.5` | **注入运行时背景 GML + 视差**（B2 对象驱动房/兜底手段；B1 数据驱动房用 set-room-bg，`room-bg-info` 诊断） |
 | `bg_generator.py` | PIL 像素背景生成（独立脚本，5 种图案） |
 | `create-bg-asset --value "bg_my" --image "bg.png"` | 将 PNG 注入为游戏背景资产 |
 | `list-game-bgs` | 列出所有可用背景资产 |
@@ -319,7 +319,7 @@ deterline/
 ```
 
 **注意事项**：
-- `set-room-bg` 修改 ROOM 数据但 Undertale 运行时忽略背景设置，请用 `gml-bg`
+- `set-room-bg`（2026-11 审计修正）：对**数据驱动（B1）房间有效**——引擎加载时用 ROOM 数据初始化运行时背景数组；但必须覆盖**所有启用层**（高 slot 遮挡低 slot）。**对象驱动（B2）房间**（含 `obj_backgrounder_*` 的房）其 Create 会覆盖房间数据，须用 `gml-bg`。**纯 Tile（A 类）房** 8 层全禁用时二者均无效，须先 `set-room-bg --enable true` 启用一层。用 `room-bg-info` 查房间归属
 - View 的 width/height 必须是 320×240（经过 S2 大量实验验证）
 - `remove-tile` 不传 `--instance` 时清除所有 Tile
 - `gml-bg` 将代码注入 `obj_mainchara_Step_0`，代码每帧执行设置背景和视差
@@ -350,7 +350,7 @@ sandbox-restore  (不满意就恢复)
 
 **技术细节**：
 - 2583 个精灵共享 26 张纹理图谱（Texture 0~25）
-- 每张纹理图谱 1024x1024 ~ 2048x2048 像素
+- 纹理图谱尺寸 512x512 ~ 2048x2048 像素（512/1024/2048 混合，2026-11 审计实测）
 - `replace-sprite` 只替换精灵在纹理图谱上对应 SourceX/Y/Width/Height 的区域，不影响同图谱其他精灵
 - 编辑 PNG 会自动 Resize 匹配原尺寸
 - 替换后通过 `GMImage` 自动处理格式转换（QOI/BZ2 等）
@@ -437,31 +437,44 @@ instance_create(0, 0, obj_dialoguer)  →  OBJ_WRITER 渲染
 
 引用代码：`gml_Object_obj_darksans1_Step_0`（`msg[0]=scr_gettext("obj_darksans1_345")` 为第一句）。
 
+### ⚠️ 对话框边框 ≠ spr_border（目标歧义陷阱）
+
+"对话框边框"和"战斗弹幕盒边框"名字高度相似，但**实现链路完全无关**。改错目标会得到"边框没变化"的假成功。
+
+| 用户说的 | 实际实现 | 修改入口 |
+|---|---|---|
+| 对话框/文本框边框 | `gml_Object_obj_dialoguer_Draw_0` 内 `draw_set_color(c_white)` + `draw_rectangle` **程序化绘制**（上/下两种位置各一处） | `find-replace-code --key "gml_Object_obj_dialoguer_Draw_0" --old ... --value ...` |
+| 战斗弹幕盒边框 | `spr_border`(5×5) / `spr_emptyborder`(165×165) 纹理 + `obj_lborder`/`obj_rborder`/`obj_uborder`/`obj_dborder` 四对象 | `replace-sprite --key "spr_border" --value ...` |
+
+- `obj_lborder` 等四对象均引用 `spr_border`，被 `obj_battlecontroller`、战斗实体（`obj_dummymonster`/`obj_fakefroggit`）、约会场景（`obj_papdate`/`obj_adate`）引用（2026-11 审计：obj_fakeheart 实测 0 处引用，已从名单移除）——**与对话框无关**。
+- 检索引导：**"对话框/文本框" → 查 `obj_dialoguer`；"战斗盒/弹幕盒" → 查 `spr_border`**。
+- ⚠️ 改 `spr_border` **不会**影响对话框边框；改 `obj_dialoguer_Draw_0` 也不会影响战斗盒边框。
+
 ### 完整文本控制符表
 
 | 控制符 | 作用 | 示例 |
 |--------|------|------|
-| `* ` | 对话前缀（**必需**，否则不渲染） | `"* 文字/"` |
+| `* ` | 对话前缀（**强惯例**——引擎实际渲染任意文本，但全游戏对话均带此前缀；缺失会导致样式不一致） | `"* 文字/"` |
 | `/` | 翻页标记（中间页以此结尾） | `"* 第一页/* 第二页/%%"` |
 | `/%%` | 末页标记 | `"* 最后一页/%%"` |
 | `%%%` | msg 数组结束符（代码中用，非对话文本内容） | `global.msg[N] = "%%%"` |
 | `&` | 换行 | `"* 第一行&* 第二行/"` |
-| `^N` | 暂停 N 帧（N 是数字，`^120` = 暂停 2 秒） | `"* 停一下^120 再继续/"` |
-| `\C ` | 在行尾创建 YES/NO 选择框（**后面必须带空格**） | `"* 确认？&  Yes No\C "` |
+| `^N` | 暂停 N×10 帧（N 仅**单个数字** 1-9，`^1`=10 帧≈0.17 秒，`^9`=90 帧=1.5 秒；两位数如 `^120` 会变成 10 帧暂停 + 字面渲染 "20"） | `"* 停一下^9 再继续/"` |
+| `\C ` | 在行尾创建 YES/NO 选择框（带尾随空格是全游戏惯例，引擎不检查空格；**真雷**：`\C` 后跟 `/` 会把选择等待 halt=5 覆盖成翻页 halt=1，破坏选择框） | `"* 确认？&  Yes No\C "` |
 | `\R` | 红色文字 | |
 | `\W` | 白色文字（默认） | |
-| `\X` | 左侧白色文字（用于角色名） | `"\XI am\BTORIEL\X,.../"` |
+| `\X` | 黑色文字（mycolor=0=c_black；白气泡上的默认黑字；全游戏 0 处用于"左侧白字"——旧描述有误） | `"\XI am\BTORIEL\X,.../"` |
 | `\G` | 绿色文字 | |
 | `\Y` | 黄色文字 | |
 | `\B` | 蓝色文字 | |
 | `\O` | 橙色文字 | |
 | `\L` | 浅蓝色文字 | |
-| `\P` | 粉色文字 | |
+| `\P` | 粉色文字（另有大写表缺漏的小写 `\p` = 粉色变体） | |
 | `\F` + 数字 | **切换头像角色**（1-9） | `"\F3"` = Sans 脸 |
 | `\E` + 数字 | **切换表情**（角色相关） | `"\E1"` = Sans 轻笑 |
-| `\T` + 字符 | 切换打字速度 | `"\T0"`=标准, `"\Ts"`=慢, `"\TF"`=快 |
+| `\T` + 字符 | 按角色首字母切换**打字机样式**（非速度）：`"\T0"`=标准, `"\Ts"`=Sans 字体标准速度, `"\TF"`=Flowey 邪恶样式（更慢+抖动） | `"\Ts* hey./"` |
 | `\M` + 数字 | 设置 `global.flag[20]` | `"\M1"` = flag[20]=1 |
-| `\*` | 绘制按键图标（键盘提示） | |
+| `\*` | 绘制按键图标——PC/macOS 上被 `scr_replace_buttons_pc` 预替换为字面 "[Z]" 文本，精灵图标仅主机路径 | |
 
 ### 头像/肖像系统
 
@@ -525,7 +538,7 @@ global.flag[202] >= 20  →  遗迹清理完成 (mrd=1)
 - 房间 ≤ View → 引擎钳位 `view_xview` 到 0，视角看似"不跟随"
 - 房间 > View → 画面缩放比异常（2x 变成 1x），人物变小
 
-视角跟随由 GMS1 引擎自动处理，只需确保 `Views[0].ObjectId = obj_mainchara`（`create-room` / `set-room-view` 默认设置）。不需要手写 GML 代码控制视角。
+视角跟随由 GMS1 引擎自动处理，只需确保 `Views[0].ObjectId = obj_mainchara`（`set-room-view` 需**显式** `--follow obj_mainchara`，无默认值）。不需要手写 GML 代码控制视角。
 
 ### NPC 动画系统（实验 13/14 发现）
 
@@ -572,7 +585,7 @@ Create 尾部 append:  初始化自定义变量         ← 不干扰原 Create 
 
 **三层结构**：
 ```
-EmbeddedTexture (TXTR)   — 26 张，实际的图像数据（PNG/QOI）
+EmbeddedTexture (TXTR)   — 26 张，实际的图像数据（PNG/QOI），512×512 ~ 2048×2048
   ↓
 TexturePageItem (TPAG)   — 6550 个，定义精灵在纹理图谱上的裁剪区域
   ↓
@@ -630,6 +643,12 @@ Sprite (SPRT)            — 2583 个，逻辑精灵，每帧指向一个 Textur
 > `npc-dialogue` / `guard-npc-alarm` 会自动在对象 Create 事件写入 `deterline_state = 0;`。
 > 手工注入时必须自己做这步（或在 Create_0 末尾 `append-code` 加 `deterline_state = 0;`）。
 > 可用 `verify-nsid` 检查 / `--fix` 修复损坏变量。
+
+> 🚨 **v2.3.0 警示（2026-11 游戏内 13 次启动实测）**：下方手写状态机模板在当前
+> UndertaleModCli 0.9.1.2 环境下**游戏内静默死代码**（触发分支从未执行）——凡"状态条件
+> 门控 create"的写法（deterline_state/flag[510]/内建变量，外层或嵌套）全部失效；唯一
+> 游戏内实证可用的形态是 `npc-dialogue` v2.3.0 生成的**纯扁平触发块**（无状态读写）。
+> 此模板保留仅作历史参考，**禁止照抄**；修复前请用 `npc-dialogue` 命令。
 
 ```gml
 // ===== 改写到 NPC 的 Step_0 事件 =====
@@ -745,7 +764,7 @@ if (id == <实例ID>)
 }
 ```
 
-`guard-npc-alarm` 命令可自动完成这两步（守卫 + 改写 Step 为 flag 状态机）。
+`guard-npc-alarm` 命令可自动完成守卫步骤；⚠️ v2.3.0：不再提供"改写 Step 为状态机"（状态机形态游戏内死代码，2026-11 审计）——触发代码请用 `npc-dialogue` 生成的扁平块。
 
 #### \C 选择机制的 2 帧窗口
 
@@ -774,6 +793,9 @@ if (id == <实例ID>)
    - `obj_no`  = `"* .../%%"`（**不含 `\C`**）
 2. 对象 Create 事件含 `deterline_state = 0;`
 3. 原生 readable 对象在 `Alarm_0` 头部加 `if (id == N) exit;` 守卫
+
+> 🚨 **v2.3.0 警示**：同上——此"已验证模板"（v2.1.1 竞技场实验）在 2026-11 复测中
+> 属于游戏内死代码形态（状态机门控）；单次语义请改用 `npc-choice`（答完自毁）。
 
 ```gml
 // ===== 改写到 NPC 的 Step 事件（或 Step_1）=====
@@ -890,6 +912,7 @@ if (deterline_state == 2 && distance_to_object(obj_mainchara) >= 60)
 - `export-sprite` → PIL 全像素改色 → `replace-sprite`（帧 0 和帧 1）
 - 跨纹理图谱（Texture 2）操作成功
 - 结果：对话文本继续指示从红色心变为青色心
+- ⚠️ **边界**：本实验改的是对话文本里的"心形图标 Sprite"，**不是对话框边框**。对话框边框由 `obj_dialoguer_Draw_0` 程序化绘制，改 `spr_border` 不会影响它（见「对话框边框 ≠ spr_border」）。
 
 ### 实验 C：纹理图谱无损循环验证
 - `export-texture` → `replace-texture`（同一文件）→ `export-texture`
@@ -930,7 +953,7 @@ if (deterline_state == 2 && distance_to_object(obj_mainchara) >= 60)
 ```
 distance_to_object(obj_mainchara) < 50
 ```
-任意对象的 Step 事件中检测玩家距离。不依赖 Z 键，对话结束后自动重置。
+任意对象的 Step 事件中检测玩家距离。不依赖 Z 键。（⚠️ v2.3.0："对话结束后自动重置"需状态机实现，而状态机形态在当前 UTMT 环境游戏内死代码——纯扁平块会在关对话后、仍在范围内时立即重弹，走出范围停止）
 已验证：`obj_dummy1` 在 `room_asrielroom` 中正常工作。
 
 > ⚠️ **用每实例变量 `deterline_state`（或 `global.flag[510]`）做状态，不要用 `myinteract`。**
@@ -975,6 +998,8 @@ game_restart();            // 重启游戏
 
 **请勿在自定义事件中使用其他 flag 索引。**
 
+> ⚠️ 2026-11 审计注：flag[510] 并非绝对无冲突——原版 `obj_asriel_overworldanim_Step_0`（真和平线结尾）会写 `flag[510] = 1`。正常流程影响极小，但做持久状态机时请在设计中容忍该场景（flag[511] 未见原版写入，更安全）。
+
 ---
 
 ## 安全机制
@@ -992,11 +1017,14 @@ game_restart();            // 重启游戏
 | **沙箱模式** `--sandbox` | 在 `game.ios.sandbox` 副本上操作，原文件不受影响。用 `sandbox-restore` 恢复 |
 | **`verify-nsid` 变量体检** | 检查损坏的变量 NameStringID（读取会崩溃的陷阱），`--fix` 自动修复 |
 | **变量自动初始化** | `npc-dialogue`/`guard-npc-alarm` 自动在 Create 事件写 `deterline_state = 0;`，防止新变量 NSID 损坏崩溃 |
-| **精灵搜索推荐** `search-sprite` | 找不到精灵时自动推荐相似名称 |
+| **精灵搜索** `search-sprite` | 零匹配以退出码 3 结束（推荐逻辑仅 get-obj/spawn-obj 有） |
 | **对象搜索推荐** `get-obj` | 找不到对象时自动推荐相似名称 |
 | **多匹配提示** | 名称模糊匹配时打印 `(found N matches, using: ...)` |
 | **`replace-sprite` 自动 Resize** | 编辑 PNG 自动缩放匹配源精灵尺寸 |
 | **`filename` 起名建议** | 文件名不合预期时自动修正 |
+| **`md5` 自检** | `--action md5` 打印 game.ios 的 MD5，可在报告中一行校验"是否真的改过" |
+| **搜索零匹配非零退出** | 搜索类命令无匹配时以退出码 3 结束并告警——禁止把"没找到"当作成功 |
+| **UTMT `ERROR:` 传播退出码** | CSX 脚本报错时以退出码 1 结束，且**不写回 game.ios**（防止"报错被吞后虚报成功"） |
 
 ## 注意事项
 
@@ -1004,7 +1032,7 @@ game_restart();            // 重启游戏
 2. `replace-code` 会覆盖整个脚本——先用 `list-backups` 确认有备份
 3. `global.flag[]` 索引范围 0-511，**不要使用 512+**，游戏会崩溃
 4. 自定义事件仅使用保留 flag **510** 和 **511**，避免与主线剧情冲突
-5. 对话文本必须包含 `* ` 前缀，否则引擎不渲染
+5. 对话文本请包含 `* ` 前缀（全游戏惯例；引擎技术上渲染任意文本，但缺前缀样式不一致）
 6. 中间页以 `/` 结尾，末页以 `/%%` 结尾
 7. **英文版 Undertale 不支持中文字符**。添加的对话文本必须使用英文（ASCII），中文字符不渲染（显示为空白 `*`）
 8. `spawn-obj` 修改的是 `game.ios`/`data.win` 的房间布局数据，**不是存档**。新实例在重新进入房间时加载
@@ -1013,8 +1041,8 @@ game_restart();            // 重启游戏
 11. `global.msc = 0`：`SCR_TEXT(0)` 是空操作，不会覆盖 `global.msg[]`
 12. `global.msc = -1`：`scr_msgup` 自增到 0，2 帧窗口截获 `\C` 选择
 13. 使用头像时 `facechoice` 设为内置角色（1-9），**不要自定义 face 对象**
-14. **房间 View 必须 320×240（port 640×480）**。设成 640×480 会导致视角跟随失效，2x 缩放异常。`create-room` 自动使用此设置
-15. `set-room-bg` 修改 ROOM chunk 数据，但 Undertale 运行时会忽略背景设置（改完进游戏看不到变化）。请用 `gml-bg` 注入运行时背景
+14. **房间 View 必须 320×240（port 640×480）**。设成 640×480 会导致视角跟随失效，2x 缩放异常（10 个战斗/约会/结尾房为 640×480 例外）。`set-room-view` 按此设置
+15. `set-room-bg` 对数据驱动（B1）房间有效，但须覆盖所有启用层；对象驱动（B2）房用 `gml-bg`；纯 Tile（A 类）房需先启用一层。用 `room-bg-info` 诊断（2026-11 审计修正，旧"一律被忽略"结论有误）
 16. `gml-bg` 将代码注入 `obj_mainchara_Step_0`，每帧执行设置背景和视差。一次注入永久生效，直到代码被清除
 17. 跨平台：macOS/Windows 路径自动识别
 18. Skill 通过符号链接安装，工作区修改自动同步到 OpenCode
@@ -1024,7 +1052,7 @@ game_restart();            // 重启游戏
 22. 纹理编辑后 PNG 会自动 Resize 匹配原精灵尺寸，但建议保持原尺寸编辑以保真
 23. 英文版 Undertale 的字体精灵不包含中文字形，替换文字纹理无法解决中文显示问题
 24. **新实例变量必须先初始化**：注入用到新变量（如 `deterline_state`）的代码前，务必在对象 Create 事件写 `变量 = 0;`。否则变量未被正确注册（NameStringID=0）时读取会崩溃。用 `npc-dialogue`/`npc-choice`/`guard-npc-alarm` 会自动处理；`verify-nsid --fix` 可修复已损坏变量
-25. `npc-dialogue` 默认与 `--once` **都锁移动**：对话期间 `global.interact=1`，头像/文字不会与文本框错位；按 Z 关闭后默认需**走开(>60px) 才可再次触发**，`--once` 则**永久只触发一次**。不要用 `myinteract` 手写距离触发（会在对话结束瞬间立即重触发 + 不锁移动导致错位）
+25. `npc-dialogue`（v2.3.0）：已验证扁平触发块，不锁移动；默认可重复（关对话后仍在范围内会再弹），`--once` 触发后 NPC 自毁。⚠️ 状态机形态（deterline_state/flag[510]/内建变量门控 create）在当前 UTMT 环境全部游戏内死代码——修复前禁止恢复状态机生成（见 AUDIT_2026-11-07/域F 实验矩阵）
 26. `npc-choice` 的触发文本必须含 `\C `（且 ≤3 行含选项行），YES/NO 分支文本不得含 `\C`（否则选择框循环重弹）；`--goto` 支持中文房间名/ID，`--item` 用 `ITEMS` 字典 ID（0-65）。默认**单次触发**，`--repeat` 切可重复
 27. `append-code`/`prepend-code` 支持 `--file-path` 从文件加载 GML（与 `replace-code`/`create-script` 一致）
 
