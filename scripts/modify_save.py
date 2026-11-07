@@ -247,18 +247,34 @@ def validate_flag_index(idx: int) -> None:
         print(f"警告: global.flag[{idx}] 超出有效范围 (0-511)，游戏可能崩溃", file=sys.stderr)
 
 
+ALLOW_CJK = False   # C3a: --allow-cjk 时为 True（放行 CJK，配合中文字体注入 C3b）
+
+
 def _validate_ascii_text(text: str, label: str = "文本") -> None:
-    """Reject non-ASCII characters (Chinese etc.) — Undertale US font can't render them."""
-    for i, ch in enumerate(text):
-        if ord(ch) > 127:
-            ctx_start = max(0, i - 10)
-            ctx_end = min(len(text), i + 10)
-            ctx = text[ctx_start:ctx_end]
-            raise ValidationError(
-                f"{label} 含有非 ASCII 字符（位置 {i}）: ...{ctx}...\n"
-                f"Undertale 英文版字体不支持中文/日文等非 ASCII 字符，将显示为空白。\n"
-                f"请全部使用英文 (ASCII) 字符。"
-            )
+    """校验对话文本字符集。默认拒绝非 ASCII（英文版位图字体无 CJK glyph，显示空白）。
+
+    --allow-cjk（C3a）放行非 ASCII 并打印行动指南：需先完成中文字体注入（C3b，
+    使用 OFL 开源像素字体自生成 glyph）否则对应字符显示为空白。
+    """
+    non_ascii = [(i, ch) for i, ch in enumerate(text) if ord(ch) > 127]
+    if not non_ascii:
+        return
+    ctx_start = max(0, non_ascii[0][0] - 10)
+    ctx_end = min(len(text), non_ascii[0][0] + 10)
+    ctx = text[ctx_start:ctx_end]
+    chars = " ".join(f"{ch}(U+{ord(ch):04X})" for _, ch in non_ascii[:8])
+    if ALLOW_CJK:
+        print(f"⚠️ {label} 含 {len(non_ascii)} 个非 ASCII 字符: {chars}", file=sys.stderr)
+        print("   当前游戏未注入中文字体（C3b 未实施）——这些字符在游戏内将显示为空白。", file=sys.stderr)
+        print("   前瞻: C3b 字体注入完成后此警告消失。", file=sys.stderr)
+        return
+    raise ValidationError(
+        f"{label} 含有非 ASCII 字符（位置 {non_ascii[0][0]}）: ...{ctx}...\n"
+        f"Undertale 英文版位图字体没有中文字形，这些字符（{chars}）将显示为空白。\n"
+        f"行动指南:\n"
+        f"  1. 改用英文 (ASCII) 文本；或\n"
+        f"  2. 加 --allow-cjk 强行写入（需先完成中文字体注入 C3b，否则显示空白）。"
+    )
 
 
 def _csx_verbatim_escape(value: str) -> str:
@@ -288,6 +304,17 @@ def _effective_game_file(game_file: Path) -> Path:
     return game_file
 
 
+def _resolve_write_target(game_file: Path) -> Path:
+    """V2 写入策略统一入口：写操作（无论走 _run_utmt 还是子进程）默认落沙箱
+    副本，--commit 才写真实文件。返回实际应写入的路径。"""
+    global SANDBOX_ACTIVE
+    if not SANDBOX_ACTIVE and not COMMIT_ACTIVE:
+        SANDBOX_ACTIVE = True
+        print("\U0001F7E1 默认沙箱 (v2 写入安全): 本次写入仅落在 *.sandbox 副本，真实文件未动。", file=sys.stderr)
+        print("   确认无误后: 加 --commit 直写真实文件(+Steam 同步)，或 sandbox-restore 应用沙箱。", file=sys.stderr)
+    return _effective_game_file(game_file)
+
+
 def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
     """Run a C# script via UndertaleModCli and return stdout.
 
@@ -298,22 +325,17 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
     global SANDBOX_ACTIVE, SANDBOX_ORIGINAL, AUTO_SNAPSHOT, COMMIT_ACTIVE, NO_STEAM_SYNC
     cli = _find_utmt_cli()
 
-    # ── V2 写入默认安全：data_win 写操作默认落沙箱副本，--commit 才写真实文件 ──
-    if save and not SANDBOX_ACTIVE and not COMMIT_ACTIVE:
-        SANDBOX_ACTIVE = True
-        print("\U0001F7E1 默认沙箱 (v2 写入安全): 本次写入仅落在 *.sandbox 副本，真实文件未动。", file=sys.stderr)
-        print("   确认无误后: 加 --commit 直写真实文件(+Steam 同步)，或 sandbox-restore 应用沙箱。", file=sys.stderr)
-
     if save and AUTO_SNAPSHOT and not SANDBOX_ACTIVE:
         ts = time.strftime("%Y%m%d_%H%M%S")
         snap_path = game_file.with_name(f"game.ios.snap.auto_{ts}")
         shutil.copy2(str(game_file), str(snap_path))
         print(f"📸 自动快照: {snap_path.name}", file=sys.stderr)
 
-    target = game_file
-    if SANDBOX_ACTIVE:
-        # 沙箱对所有命令生效（读/写都落在副本上）
-        target = _effective_game_file(game_file)
+    # ── V2 写入默认安全：写操作走统一策略入口（默认沙箱，--commit 直写）──
+    if save:
+        target = _resolve_write_target(game_file)
+    else:
+        target = _effective_game_file(game_file) if SANDBOX_ACTIVE else game_file
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csx", delete=False, encoding="utf-8") as f:
         f.write(csx_code)
@@ -1384,7 +1406,7 @@ def cmd_create_system_info(save_dir: Path, value: str) -> None:
 
 def cmd_strg_list(game_file: Path, limit: int, offset: int, hex_mode: bool) -> None:
     if offset == 0:
-        csx = 'ScriptMessage("COUNT:" + Data.Strings.Count);'
+        csx = '''ScriptMessage("COUNT:" + Data.Strings.Count);'''
         out = _run_utmt(csx, game_file, save=False)
         for line in _parse_msg(out):
             if line.startswith("COUNT:"):
@@ -1405,7 +1427,7 @@ for (int i = {offset}; i < Math.Min(Data.Strings.Count, {offset + limit}); i++) 
 
 
 def cmd_strg_get(game_file: Path, key: int) -> None:
-    csx = f'ScriptMessage("[" + {key} + "] " + Data.Strings[{key}].Content);'
+    csx = f'''ScriptMessage("[" + {key} + "] " + Data.Strings[{key}].Content);'''
     out = _run_utmt(csx, game_file, save=False)
     for line in _parse_msg(out):
         print(line)
@@ -2823,7 +2845,7 @@ def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: i
                           native: bool, once: bool = False, range_: int = 50) -> str:
     """Build distance-trigger GML for a spawned NPC instance.
 
-    ⚠️⚠️ 形态约束（2026-11-07 游戏内实测 13 次启动实验矩阵，见 AUDIT_2026-11-07/域F）：
+    ⚠️⚠️ 形态约束（2026-11-07 游戏内实测 15 次启动实验矩阵，见 AUDIT_2026-11-07/域F）：
     本环境（UndertaleModCli 0.9.1.2 + Undertale Mac Runner）对附加/替换代码块存在
     未定位的字节级问题——触发 create 一旦被"状态条件"门控就静默失效，无论：
       - 状态存哪（新实例变量 deterline_state / global.flag[510] / 内建变量 friction）
@@ -2864,7 +2886,7 @@ def _build_npc_choice_block(instance_id: int, choice_key: str, yes_key: str | No
                             repeat: bool = False) -> str:
     """Build a distance-trigger GML block for a YES/NO choice NPC.
 
-    ⚠️⚠️ 形态约束同 _build_npc_step_block（2026-11-07 游戏内实测 13 次启动）：只生成
+    ⚠️⚠️ 形态约束同 _build_npc_step_block（2026-11-07 游戏内实测 15 次启动）：只生成
     已验证的扁平形态，块内禁止任何状态读写；分支体保持单层平铺语句。
 
     - trigger: player within range_ px → show the `\\C` choice text
@@ -3245,9 +3267,15 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
 
     标记由游戏内 file_text_open_write 写出（探针已证实函数存在且写往存档目录）。
     PASS = 触发块在游戏内真实执行过。这是第五层验证（游戏内）的自动化。
+    FAIL 时退出码 1；成功自动清理备份，失败保留供取证。
+
+    ⚠️ 环境敏感性：external 按键模式下，若游戏停在开场/菜单等 Z 或窗口失焦，
+    无人值守可能假阴性 FAIL（12:13 PASS / 12:56 FAIL 实例）——无人值守推荐
+    `--keys osascript`（需辅助功能权限），或人工按键配合 `--timeout` 放宽。
     """
     import time as _time
     import subprocess as _sp
+    global COMMIT_ACTIVE
 
     ts = _time.strftime("%Y%m%d_%H%M%S")
     marker_name = "zcode_smoke_marker.txt"
@@ -3256,6 +3284,8 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
                                        capture_output=True).returncode == 0
     if game_exe_running():
         raise ValidationError("检测到 Undertale 正在运行——smoke-test 需要游戏处于关闭状态（请先退出游戏）")
+    # 记录运行前已存在的 .bak.*（运行后新增的属于本次、成功后清理，防 ≈250MB/次 堆盘）
+    pre_baks = set(p.name for p in game_file.parent.glob("game.ios.bak.*"))
 
     text_key = f"smoke_test_{ts}"
     print(f"--- smoke-test (W3) ts={ts} ---")
@@ -3278,7 +3308,6 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
     # ── 2. 注入（本命令是内建 commit 流：直写真实文件；任何失败都走 finally 恢复）──
     passed = False
     marker_content = ""
-    global COMMIT_ACTIVE
     try:
         COMMIT_ACTIVE = True
         cmd_textdata_add(game_file, text_key, f"* SMOKE OK {ts}/%%")
@@ -3340,24 +3369,46 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
                 except OSError:
                     marker_content = "(读取失败)"
                 break
+        if not passed:
+            # 多候选探测：file_text_open_write 的落点可能是存档目录或游戏目录
+            for cand in (game_file.parent / marker_name,
+                         Path.cwd() / marker_name,
+                         Path.home() / marker_name):
+                if cand.exists():
+                    passed = True
+                    marker = cand
+                    try:
+                        marker_content = cand.read_text(encoding="utf-8", errors="replace")
+                    except OSError:
+                        marker_content = "(读取失败)"
+                    print(f"  ℹ️  标记出现在备选位置: {cand}")
+                    break
     finally:
         # ── 5. 全量恢复（任何路径：PASS/FAIL/异常 都恢复）──
+        COMMIT_ACTIVE = False
         _sp.run(["pkill", "-x", "Mac_Runner"], capture_output=True)
         _time.sleep(2)
         shutil.copy2(str(b_game), str(game_file))
+        f0_ok = ini_ok = True
         if b_f0.exists():
             shutil.copy2(str(b_f0), str(f0))
+            f0_ok = (_md5_file(f0) == _md5_file(b_f0))
         if b_ini.exists():
             shutil.copy2(str(b_ini), str(ini))
+            ini_ok = (_md5_file(ini) == _md5_file(b_ini))
         marker.unlink(missing_ok=True)
         md5_after = _md5_file(game_file)
-        restored = (md5_after == md5_before)
-        print(f"  恢复: game.ios {'✅ MD5 一致' if restored else '❌ MD5 不一致！'}")
+        restored = (md5_after == md5_before and f0_ok and ini_ok)
+        print(f"  恢复: game.ios {'✅ MD5 一致' if md5_after == md5_before else '❌ 不一致'}"
+              f" | file0 {'✅' if f0_ok else '❌'} | ini {'✅' if ini_ok else '❌'}")
         if restored:
-            # 恢复成功 → 清理本轮快照；失败则保留供取证
+            # 恢复成功 → 清理本轮快照与 .bak 时间戳备份；失败则保留供取证
             b_game.unlink(missing_ok=True)
             b_f0.unlink(missing_ok=True)
             b_ini.unlink(missing_ok=True)
+            for p_ in game_file.parent.glob("game.ios.bak.*"):
+                if p_.name not in pre_baks:
+                    p_.unlink(missing_ok=True)
 
     elapsed = _time.time() - start if 'start' in dir() else -1
     if passed:
@@ -3366,10 +3417,107 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
         print("   触发块在游戏内真实执行（标记文件由游戏写出）")
     else:
         print(f"\n❌ smoke-test FAIL（{elapsed:.0f}s 内未出现标记）")
-        print("   排查: 1) 玩家出生点与 NPC 距离 >50px?  2) Z 键是否需要人工推进开场?")
+        print("   排查: 1) 游戏是否停在开场/菜单等 Z（external 模式无人按键——无人值守建议 --keys osascript）")
+        print("         2) 游戏窗口是否失焦（失焦时 Undertale 会暂停）")
+        print("         3) 玩家出生点与 NPC 距离 >50px?")
         print("   （环境已恢复原状，可重跑）")
     return passed
-def cmd_verify_code(game_file: Path, code_name: str) -> None:
+_DIFF_SNAPSHOT_CSX = """
+// O7: 结构签名 dump（只读）——房间摘要 + 代码条目长度 + 计数
+ScriptMessage("LASTOBJ:" + Data.GeneralInfo.LastObj);
+ScriptMessage("STRGCOUNT:" + Data.Strings.Count);
+ScriptMessage("CODECOUNT:" + Data.Code.Count);
+ScriptMessage("SPRCOUNT:" + Data.Sprites.Count);
+ScriptMessage("TEXCOUNT:" + Data.EmbeddedTextures.Count);
+ScriptMessage("VARS:" + Data.Variables.Count);
+foreach (var v in Data.Variables)
+    if (v.Name != null && (v.Name.Content.IndexOf("deterline", StringComparison.OrdinalIgnoreCase) >= 0))
+        ScriptMessage("VARDETERLINE:" + v.Name.Content + ":" + v.NameStringID + ":" + v.Occurrences);
+foreach (var room in Data.Rooms) {{
+    string bgs = "";
+    for (int i = 0; i < room.Backgrounds.Count; i++)
+        if (room.Backgrounds[i].Enabled && room.Backgrounds[i].BackgroundDefinition != null)
+            bgs += room.Backgrounds[i].BackgroundDefinition.Name.Content + ",";
+    ScriptMessage("ROOM|" + room.Name.Content + "|" + room.Width + "x" + room.Height
+        + "|inst=" + room.GameObjects.Count + "|tiles=" + room.Tiles.Count
+        + "|bg=" + bgs);
+}}
+foreach (var c in Data.Code)
+    ScriptMessage("CODE|" + c.Name.Content + "|" + c.Instructions.Count);
+"""
+
+
+def _dump_structure_signature(game_file: Path) -> dict:
+    """单次只读 UTMT 遍历，输出结构签名（供快照 diff）。"""
+    out = _run_utmt(_DIFF_SNAPSHOT_CSX, game_file, save=False)
+    sig = {"rooms": {}, "code": {}, "counts": {}, "vardeterline": []}
+    for line in _parse_msg(out):
+        if line.startswith("ROOM|"):
+            _, name, size, inst, tiles, bg = line.split("|", 5)
+            sig["rooms"][name] = (size, inst, tiles, bg)
+        elif line.startswith("CODE|"):
+            _, name, n = line.split("|", 2)
+            sig["code"][name] = int(n)
+        elif line.startswith(("LASTOBJ:", "STRGCOUNT:", "CODECOUNT:", "SPRCOUNT:", "TEXCOUNT:", "VARS:")):
+            k, v = line.split(":", 1)
+            sig["counts"][k] = int(v)
+        elif line.startswith("VARDETERLINE:"):
+            sig["vardeterline"].append(line[len("VARDETERLINE:"):])
+    return sig
+
+
+def cmd_diff_snapshots(file_a: Path, file_b: Path) -> None:
+    """O7 snapshot-diff：两份 game.ios 的结构化差异报告（实验隔离/泄漏取证）。
+
+    对比维度：LastObj、各房间（尺寸/实例数/Tile 数/启用背景层）、代码条目
+    （增删/指令数变化）、字符串/精灵/纹理/变量计数、deterline* 变量。
+    只读，两次 UTMT 遍历。
+    """
+    for f in (file_a, file_b):
+        if not f.exists():
+            raise NotFoundError(f"文件不存在: {f}")
+    print(f"--- diff-snapshots ---\n  A={file_a}\n  B={file_b}")
+    a = _dump_structure_signature(file_a)
+    b = _dump_structure_signature(file_b)
+    diffs = 0
+
+    for k in sorted(set(a["counts"]) | set(b["counts"])):
+        va, vb = a["counts"].get(k), b["counts"].get(k)
+        if va != vb:
+            print(f"  COUNT {k}: {va} → {vb}")
+            diffs += 1
+    if a["vardeterline"] != b["vardeterline"]:
+        print(f"  VARDETERLINE: {a['vardeterline']} → {b['vardeterline']}")
+        diffs += 1
+
+    rooms_a, rooms_b = a["rooms"], b["rooms"]
+    for name in sorted(set(rooms_a) - set(rooms_b)):
+        print(f"  ROOM 移除: {name}"); diffs += 1
+    for name in sorted(set(rooms_b) - set(rooms_a)):
+        print(f"  ROOM 新增: {name}"); diffs += 1
+    for name in sorted(set(rooms_a) & set(rooms_b)):
+        if rooms_a[name] != rooms_b[name]:
+            print(f"  ROOM 变化: {name}: {rooms_a[name]} → {rooms_b[name]}")
+            diffs += 1
+
+    code_a, code_b = a["code"], b["code"]
+    for name in sorted(set(code_a) - set(code_b)):
+        print(f"  CODE 移除: {name}"); diffs += 1
+    for name in sorted(set(code_b) - set(code_a)):
+        print(f"  CODE 新增: {name} (instr={code_b[name]})"); diffs += 1
+    for name in sorted(set(code_a) & set(code_b)):
+        if code_a[name] != code_b[name]:
+            print(f"  CODE 变化: {name}: instr {code_a[name]} → {code_b[name]}")
+            diffs += 1
+
+    if diffs == 0:
+        print("✅ 结构完全一致（0 差异）")
+    else:
+        print(f"\n⚠️ 共 {diffs} 处结构差异")
+    return diffs
+
+
+def cmd_verify_code(game_file: Path, code_name: str, show_asm: bool = False) -> bool:
     """V1（收窄版）：对指定代码条目做字节级体检并输出结构化指纹。
 
     产出（Agent 可读）：
@@ -3380,8 +3528,9 @@ def cmd_verify_code(game_file: Path, code_name: str) -> None:
       OK: roundtrip stable / WARN: 往返不稳定...
 
     语义：roundtrip 不一致说明"反编译→重编译"在该条目上不稳定（域F 死代码
-    事故的怀疑层）；VARREF 写分布是活/死语料比对的原料（W3 提供标签）。
-    全程只读（内存内 Import，不落盘）。
+    事故的怀疑层），此时返回 False（CLI 退出码 1）；VARREF 写分布是活/死语料
+    比对的原料（W3 提供标签）。完整反汇编文本用 --asm 查看。全程只读
+    （内存内 Import，不落盘）。
     """
     esc = _csx_escape(code_name)
     csx = f"""
@@ -3443,28 +3592,41 @@ if (!identical) {{
 """
     out = _run_utmt(csx, game_file, save=False)
     # Python 侧解析：FINGERPRINT/ROUNDTRIP 直通；ASM 行聚合为变量读写普查
+    stable = None
     import collections
     writes = collections.Counter()
     reads = collections.Counter()
     for line in _parse_msg(out):
         if line.startswith("ASM| "):
             t = line[5:].strip()
+            if show_asm:
+                print(line)
             parts = t.split()
             if t.startswith("pop.") and len(parts) >= 2:
                 var = parts[-1].split(".", 1)[-1]  # 去掉 self./global. 前缀
                 writes[var] += 1
             elif t.startswith("push") and len(parts) >= 2 and "." in parts[-1]:
                 var = parts[-1].split(".", 1)[-1]
-                if not var.lstrip("-").replace(".", "").isdigit():
+                # 过滤噪声：数字字面量与字符串常量尾巴（如 ogg"@2615）
+                if ('"' not in var and "@" not in var
+                        and var.lstrip("-").replace(".", "").isdigit() is False):
                     reads[var] += 1
-        elif line.startswith(("FINGERPRINT:", "ROUNDTRIP:", "ASM_DIFF:", "WARN:", "OK:", "ERROR:")):
+        elif line.startswith(("FINGERPRINT:", "VARREF:", "ASM_DIFF:", "ERROR:")):
+            print(line)
+        elif line.startswith("ROUNDTRIP:"):
+            print(line)
+            stable = "text_identical=true" in line
+        elif line.startswith("WARN:"):
+            print(line)
+        elif line.startswith("OK:"):
             print(line)
     for var, n in sorted(writes.items()):
         print(f"VARREF: WRITE {var} x{n}")
     for var, n in sorted(reads.items()):
         print(f"VARREF: READ {var} x{n}")
-    if writes:
+    if writes or reads:
         print(f"VERIFY_CODE_SUMMARY: writes={sum(writes.values())} reads={sum(reads.values())}")
+    return stable is not False
 
 
 def cmd_verify_instances(game_file: Path, fix: bool = False) -> None:
@@ -4189,7 +4351,7 @@ if (room == null) {{
         return
 
     parts.append(stmts)
-    parts.append(f'ScriptMessage("OK: Updated BG[{index}] for " + room.Name.Content);')
+    parts.append(f'''ScriptMessage("OK: Updated BG[{index}] for " + room.Name.Content);''')
     csx = ''.join(parts)
 
     out = _run_utmt(csx, game_file, save=True)
@@ -6203,12 +6365,20 @@ def cmd_texture_replace(game_file: Path, texture_name: str, png_path: str) -> No
     if not p.exists():
         raise NotFoundError(f"文件不存在: {png_path}")
     cli = _find_utmt_cli()
-    target = game_file
-    target = _effective_game_file(game_file)
+    target = _resolve_write_target(game_file)
+    _before = _md5_file(target)
     if not SANDBOX_ACTIVE:
         backup_file(target)
     cmd = ["dotnet", cli, "replace", str(target), "-t", f"{texture_name}={png_path}", "-o", str(target)]
     subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=True)
+    _after = _md5_file(target)
+    _scope = "仅沙箱副本" if SANDBOX_ACTIVE else "真实文件（目标即 Steam 路径，无需同步）"
+    print(f"📝 写入回执: {target}")
+    print(f"   MD5: {_before[:12]}… → {_after[:12]}… | 范围: {_scope}")
+    if SANDBOX_ACTIVE:
+        print("   应用: --commit 直写 或 sandbox-restore；放弃: 直接删除 *.sandbox")
+    else:
+        print("   退路: undo --value data_win / list-backups")
     print(f"✓ {texture_name} 已替换: {png_path}")
 
 
@@ -6484,7 +6654,7 @@ def main():
                                      "remove-door",
                                      "create-pit",
                                      "create-battle",
-                                     "verify-nsid", "verify-instances", "verify-code", "smoke-test", "set-derived",
+                                     "verify-nsid", "verify-instances", "verify-code", "smoke-test", "diff-snapshots", "set-derived",
                                      "md5"])
     parser.add_argument("--key", help="键名或数字索引 (file0 用数字)")
     parser.add_argument("--value", help="要设置/搜索的值 (set/find 操作必需)")
@@ -6564,6 +6734,10 @@ def main():
                         help="v2 写入安全: 直写真实文件（默认写操作只落沙箱副本）；含 Steam 同步")
     parser.add_argument("--no-steam-sync", action="store_true",
                         help="v2 写入安全: 即使 --commit 也不同步 Steam 路径")
+    parser.add_argument("--allow-cjk", action="store_true",
+                        help="C3a: 放行 CJK 对话文本（需中文字体注入支持，否则显示空白）")
+    parser.add_argument("--asm", action="store_true",
+                        help="verify-code: 输出完整反汇编文本（ASM| 行）")
     parser.add_argument("--auto-snapshot", action="store_true",
                         help="每次写入操作前自动创建实验快照")
     parser.add_argument("--apply", action="store_true",
@@ -6664,6 +6838,9 @@ def main():
     if getattr(args, "no_steam_sync", False):
         global NO_STEAM_SYNC
         NO_STEAM_SYNC = True
+    if getattr(args, "allow_cjk", False):
+        global ALLOW_CJK
+        ALLOW_CJK = True
     if args.auto_snapshot:
         global AUTO_SNAPSHOT
         AUTO_SNAPSHOT = True
@@ -6844,16 +7021,24 @@ def main():
             elif args.action == "verify-code":
                 if args.key is None:
                     parser.error("--key (代码条目名) 是必需的")
-                cmd_verify_code(game_file, args.key)
+                _stable = cmd_verify_code(game_file, args.key, show_asm=args.asm)
+                if _stable is False:
+                    sys.exit(1)  # 往返不稳定（WARN）必须非零退出
+            elif args.action == "diff-snapshots":
+                if args.key is None or args.value is None:
+                    parser.error("--key (基线文件) 和 --value (对比文件) 是必需的")
+                cmd_diff_snapshots(Path(args.key).expanduser(), Path(args.value).expanduser())
             elif args.action == "smoke-test":
                 # 注意: --dir 在 data_win 语境下是游戏数据文件；存档目录固定走默认定位
-                cmd_smoke_test(game_file, find_save_dir(None),
+                _ok = cmd_smoke_test(game_file, find_save_dir(None),
                                room_name=args.value or "room_torielroom",
                                obj_name=args.key or "obj_cactus",
                                x=args.x if args.x is not None else 160,
                                y=args.y if args.y is not None else 150,
                                timeout=args.timeout or 120,
                                send_keys=args.keys or "external")
+                if not _ok:
+                    sys.exit(1)  # FAIL 必须非零退出，否则自动化无法感知
             elif args.action == "create-door":
                 if args.value is None or args.key is None:
                     parser.error("--value (当前房间名) 和 --key (目标房间名) 是必需的")

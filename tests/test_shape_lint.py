@@ -27,6 +27,8 @@ VERIFIED_OUTER = re.compile(
     r"if \(id == [^&()]+ && !instance_exists\(obj_dialoguer\) && "
     r"!instance_exists\(OBJ_WRITER\) && !instance_exists\(obj_choicer\)\)")
 # 禁止与对话触发共存的状态通道（任一出现即死代码形态）
+# 注：global.interact 在域F #4 实测并不致死（无辜），此处是保守超集——
+# v2.3.0 生成器不设置它（无状态机时无处复位会软锁），一并禁用以防回归。
 FORBIDDEN_STATE = [
     "deterline_state",
     "global.flag[",
@@ -93,6 +95,24 @@ class TestDialogueTriggerShape(unittest.TestCase):
                     self.fail(
                         f"modify_save.py:{i + 1}: 对话创建 ±5 行窗口内出现 {forbidden!r}"
                         f"（代码，非注释）——疑似状态门控回归。")
+
+    def test_no_single_quote_csx_fragments(self):
+        """R2 盲区封堵：CSX 片段必须使用三引号块（单引号一行式会逃过本 lint 的提取）。
+
+        2026-11-07 复核实证：set-room-bg 曾用单引号 f-string 拼 CSX，植入死代码
+        形态时 lint 漏检。现全文件仅允许三引号 CSX 块；出现单引号 ScriptMessage
+        片段即失败（转成三引号即可通过）。"""
+        stripped = re.sub(r"(f?)'''(.*?)'''", "", self.source, flags=re.DOTALL)
+        stripped = re.sub(r'(f?)"""(.*?)"""', "", stripped, flags=re.DOTALL)
+        offenders = []
+        for i, line in enumerate(stripped.split("\n"), 1):
+            if "ScriptMessage(" in line and "'" in line:
+                offenders.append((i, line.strip()[:80]))
+        if offenders:
+            details = "\n".join(f"  :{i} {l}" for i, l in offenders)
+            self.fail(
+                "发现三引号之外的 CSX 片段（会逃过形态 lint 的提取），"
+                f"请改为三引号块：\n{details}")
 
     def test_no_python_bool_literals_in_csx(self):
         """CSX 块内不得出现 Python 布尔字面量 True/False（GML 是 true/false）。"""
