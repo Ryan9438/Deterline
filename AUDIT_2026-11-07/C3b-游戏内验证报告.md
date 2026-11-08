@@ -1,7 +1,7 @@
 # C3b 中文字体注入 —— 实施与游戏内验证报告
 
 - 日期：2026-11-07
-- 状态：**管线全部建成（sandbox 验证通过）；游戏内渲染被 Mac runner 深层机制阻塞**——经 15+ 次受控启动实验定位出 3 条硬约束（其中约束②后降级为排版卫生项，见 §三.2 与 §八）与 2 条待验证假设，按域F 教训在烧尽资源前停点。
+- 状态：【2026-11-08 更新】**中文已在游戏内实机渲染成功（B4，见 §九）**——页内重排全栈打通（表替换/像素换/码点/typer31 排版分项实证）。前史：11-07 曾判"被 Mac runner 深层机制阻塞"，经 B3/B4 分解证明阻塞根因是臂位越界（房间仅 320×480）与守卫恒真，约束③④已按一手证据修正。
 - 用户游戏已回滚基线：game.ios `fc049850` / file0 `2c9c68d0` / undertale.ini `0e4027d0` ✓
 
 ---
@@ -113,7 +113,7 @@ python3 run.py --action cjk-font --value build/font_cjk --file data_win
 **关框协议：X（瞬补完）→ Z（翻页/销毁）**；半径内关框即重触发（同帧多臂时低 instance id 先赢）→"走中带关"。writer 卡死框（halt 态 Z 无效）偶发，房间切换强制清场。
 
 ### 三项历史更正（B1/B2 结论重写）
-1. **B1/B2 的 scr_setfont "无条件映射"从未注入**：守卫串 `newfont = fnt_ja_main;` 在基线 scr_setfont 的 ja 分支里本就存在（守卫恒真）→ b1_assert 的 A_SETFONT 检查恒真、形同虚设。**B2 C-ARM 实际走的是原版 fnt_maintext**。判重必须用"基线不存在的单行插入形态/注释标记 + 计数"。
+1. **B1/B2 的 scr_setfont "无条件映射"从未注入**：守卫串 `newfont = fnt_ja_main;` 在基线 scr_setfont 的 ja 分支里本就存在（守卫恒真）→ b1_assert 的 A_SETFONT 检查恒真、形同虚设。**B2 C-ARM 实际走的是原版 fnt_maintext**。判重必须用"基线不存在的单行插入形态 + 计数"（⚠️ 注释标记经反编译即失，只宜作代码可读性标注，不作守卫）。
 2. **room_ruins1 实际 320×480**（UT 坐标系 = 屏幕一半，view 320×240 ×2 缩放）：B2/B3 初版臂位 (320,·)/(480,·) 在墙外/房外，**物理上不可触发**。B2 的"N-ARM 结果未记录"、B3 初 boot 三臂沉默、B2 C-ARM"空框"（实为别的臂残影）均此根因。**一切臂位必须在离线 assert 里核对 x<320。**
 3. B2 "T-CTRL 渲染✓但叠字" = typer3 设计（见上）；"C-ARM 空" = 臂位越界从未触发。B2 的观察记录全部被 B3/B4 重解释。
 
@@ -123,14 +123,17 @@ python3 run.py --action cjk-font --value build/font_cjk --file data_win
 | D-CTRL | 3 | 全原版对照 | teal 叠字（5 次 boot 稳定复现）| harness 活 ✓ |
 | A-SWP | 5 | emb19 maintext 区品红重染 | **品红干净 ASCII**（Flowey 对话/六柱房 Toriel 对话同证）| **V3 页内像素换触达字体渲染 ✓** |
 | E-KANA | 31 | 同上重染 + 假名消息 | **品红假名 あいうえお 完整、无叠字** | **V4 码点路径 ✓（>0x3041 码点直达字体查找）+ typer31 排版 ✓** |
-| B-TBL | 30 | fnt_ja_main@原TPI+共享表(4064) | 稀疏白碎片（查得到字形、采到原页错位像素）| **V1 glyph 表替换+查找链路 ✓** |
-| C-NPG | 68 | fnt_ja_plain@**新 256² 页**+maintext 原表 | **空框（X 补完仍空）** | **约束④ 成立：新纹理页不被字体渲染器加载（face3 健康条件、B2 污染清除后重测）→ 新页/4096 页路线 NO-GO** |
+| B-TBL | 30 | fnt_ja_main@原TPI+共享表(4064+canary=4065) | 稀疏白碎片（查得到字形、采到原页错位像素）| **V1 glyph 表替换+查找链路 ✓** |
+| C-NPG | 68 | fnt_ja_plain@**新 256² 页**+maintext 原表 | **空框（X 补完仍空）** | **约束④ 单次复测成立**（与 R1-R4 方向一致；4096² 按同机制推定 NO-GO）——B2 Arm-N 因臂位越界从未触发，不构成重复观测 |
 
 附：Pillow RGBA `getbbox()` 由 alpha 通道驱动，RGB 变化 alpha 不变时漏检——font_emb20_compose.py verify() 已改 numpy 全通道差；B2 的 emb20_page_new.png 经全通道复核真实无越界（102 万像素全在象限+金丝雀内）。
 
 ### B4 完整中文栈 = **成功**
 栈：emb20 象限换页（页身份不变）→ fnt_ja_maintext.Texture 重指向 TPI#6543(1024²象限) + 共享表 4064 字形 → scr_setfont 单行映射 `if (newfont == fnt_maintext) { newfont = fnt_ja_maintext; }`（B4_MAP 标记守卫）→ preload 无条件 prefetch → 触发臂 typer31 @(220,330) face3 msc0 无空格消息。
-**实机结果：`* B4中文测试ABC` 清晰渲染**——中文四字 Fusion Pixel 12px、间距均匀无叠字、与 ASCII 混排正常、sans 头像正常。fonts=20 硬约束未破（改的是既有 ja 字体的表/纹理/映射，无新增资产）。
+**实机结果：`* B4中文测试ABC` 清晰渲染（N=1，单 boot 观察）**——中文四字 Fusion Pixel 12px、间距均匀无叠字、与 ASCII 混排正常、sans 头像正常。fonts=20 硬约束未破（b4_inject 自身不新增字体资产；实际 boot 文件另含 B3 残留的 1 页 1 TPI，见上节谱系披露）。
+
+### B4 boot 谱系披露
+B4 的实际 boot 文件 = b3c.ios（含 B3 五臂与新增页残留）+ b4_inject + `/tmp/b4_fix.csx`（把 B3 旧 E-KANA 113928 挪至不可达点 (320,400) 以隔离 B4-MAIN；该步骤脚本未随 b4_inject 入库）。故 b4f.ios 同时含 B3_MAP/B4_MAP、新页 Texture26、canary 表（4065）等 B3 残留；复核席逐项排除后确认 B4-MAIN 的渲染路径不受残留影响，结论稳健。纯净化复现：以 game.ios 基线直接跑 b4_inject（其守卫与臂位自成一体）。
 
 ### 语言探针（一手证据，约束③修正）
 D-CTRL 触发块双路径写 `zcode_lang_probe.txt` 成功回收：`lang=[en] locale=[zh_CN] oslang=[zh] osregion=[CN]`。

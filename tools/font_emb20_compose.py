@@ -37,8 +37,8 @@ def compose(emb20_path: Path, atlas_path: Path, out_path: Path) -> dict:
     return {"before": before, "after": base}
 
 
-def verify(before: Image.Image, after: Image.Image) -> list:
-    """返回越界变化区域列表（空 = 仅象限+金丝雀变化）。
+def verify(before: Image.Image, after: Image.Image) -> tuple:
+    """返回 (越界 16px 块列表, 全通道 diff bbox)。空列表 = 仅象限+金丝雀变化。
 
     ⚠️ 必须用全通道差（Pillow 的 RGBA getbbox() 由 alpha 通道驱动，
     RGB 变化而 alpha 相同的像素会被漏检——2026-11-08 B3 复核发现）。

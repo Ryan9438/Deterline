@@ -80,11 +80,11 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 | `batch-add-textentry --value entries.json` | 从 JSON 文件批量导入（[{"key":"k","text":"t"}]，支持 --face/--emotion） | sandbox |
 | `guided-add-dialogue --key "obj_x" --value "* 文本/%%"` | 引导式对话创建（分步打印进度） | static |
 | `search-sctext --value "* 你好"` | 在 SCR_TEXT 用例表中搜索文本 | static |
-| `cjk-font --value build/font_cjk` | 注入中文字体管线（sandbox 已验证；⚠️ 游戏内渲染被 Mac runner 机制阻塞，见 AUDIT_2026-11-07/C3b-游戏内验证报告） | sandbox |
+| `cjk-font --value build/font_cjk` | 注入中文字体管线（sandbox 已验证；【2026-11-08】中文已在游戏内实机渲染成功（B4 页内重排全栈），见 AUDIT_2026-11-07/C3b-游戏内验证报告 §九；S6 集成待做） | sandbox |
 
 > ⚠️ `replace-string`: 全局替换，先 search-strings 确认影响面
 > ⚠️ `cjk-font`: --value 须为 font_cjk_build.py 输出目录（OFL 字体自生成）
-> ⚠️ `cjk-font`: 已证实：不能新增字体资产（追加即全局字体失效）；global.language≠zh（联合推断）。【2026-11-08 降级】中文预折行为排版建议（防水平溢出），非防挂起——原「writer 死循环」判为误读
+> ⚠️ `cjk-font`: 已证实：不能新增字体资产（追加即全局字体失效）；【2026-11-08 探针】os_get_language() 返回 zh，游戏回退 global.language="en"（一手测量，非联合推断）——ja 分支不触发。中文预折行为排版建议（防水平溢出），非防挂起
 > ⚠️ `cjk-font`: 完成后自动 verify-code gml_Script_scr_setfont（域F 协议）
 
 ### 📜 脚本编辑 — --file data_win，反编译/重编译 GML（6272 个脚本）
