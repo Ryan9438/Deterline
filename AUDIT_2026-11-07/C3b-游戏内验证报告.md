@@ -96,3 +96,48 @@ python3 run.py --action cjk-font --value build/font_cjk --file data_win
 2. 用 face3 修正版重测 Arm-N（新页）→ 关闭约束④。
 3. GO 后按价值派 S6 集成（折行 util + --typer + 文档）。
 4. 开放项：B2 各臂消息沿用空格化 CJK（"中 文 测 试"，C3b-实验CSX/b2_inject.csx）——该设计原以防挂起为动机（已降级），现仅余排版理由；无空格 CJK 在 face3 健康条件下的实际渲染/折行行为至今未观察，属开放项。
+
+## 九、B3/B4（2026-11-08）：变量分解 + 完整中文栈——**中文实机渲染成功**
+
+离线精读 writer 全事件 + control_* 脚本后，B3 五臂单变量分解、B4 整合，两轮 boot（加 b3c/b3b 修正重跑）全部落定。
+
+### 布局数学定论（obj_base_writer 全事件 + SCR_TEXTTYPE/TEXTSETUP 精读）
+1. **writer 逐字推进 = `spacing`（SCR_TEXTSETUP argument8，per-typer 固定常数）**。glyph 的 Shift/Offset 只影响单字绘制定位，**不影响步进**（Draw_0 只画单字符后 `letterx += spacing`）。图集的 Shift=12 约定与此无关。
+2. 各 typer 的 spacing：typer3(fnt_curs)=10、typer5(fnt_maintext)=8、typer2(fnt_plain)=9、typer1(fnt_main)=16、**typer31(fnt_maintext)=12 且 writingxend=9999（不自动折行）——12px CJK 的最佳 typer**。
+3. ja 语言分支的逐字修正（全宽/半宽/ASCII 间隙）与 SCR_TEXTTYPE 的字体转换块都只在 `global.language=="ja"` 时生效。
+4. **writer 文字是视口锚定的**：obj_dialoguer.Create 里 `xx=view_xview[view_current]`，writer 生成于 `(xx+68, yy-5)`，facechange 在 Create 即置 1。带着框走位 → 头像/文字"漂浮" = 引擎原配行为（正常对话镜头不动所以看不见）。"空框=文字离屏"假说否决。
+5. typer3 的设计性怪相：writingy=writer.y（框上缘外）+ spacing10 对 MNC 宽字形 → **B2 T-CTRL 的"叠字+画出框外"是 typer 设计，非 bug**。
+
+### 输入系统（control_update 反编译，框管理协议的依据）
+`control_*` = `global.control_state/pressed[0..2]`：**槽0 = Z/Enter**（writer Step_0 轮询 → halt 翻页/`/%%` 销毁）、**槽1 = X/Shift**（dialoguer 补完 stringpos/跳过）、**槽2 = C/Ctrl**。gamepad/joystick 并入同槽。
+**关框协议：X（瞬补完）→ Z（翻页/销毁）**；半径内关框即重触发（同帧多臂时低 instance id 先赢）→"走中带关"。writer 卡死框（halt 态 Z 无效）偶发，房间切换强制清场。
+
+### 三项历史更正（B1/B2 结论重写）
+1. **B1/B2 的 scr_setfont "无条件映射"从未注入**：守卫串 `newfont = fnt_ja_main;` 在基线 scr_setfont 的 ja 分支里本就存在（守卫恒真）→ b1_assert 的 A_SETFONT 检查恒真、形同虚设。**B2 C-ARM 实际走的是原版 fnt_maintext**。判重必须用"基线不存在的单行插入形态/注释标记 + 计数"。
+2. **room_ruins1 实际 320×480**（UT 坐标系 = 屏幕一半，view 320×240 ×2 缩放）：B2/B3 初版臂位 (320,·)/(480,·) 在墙外/房外，**物理上不可触发**。B2 的"N-ARM 结果未记录"、B3 初 boot 三臂沉默、B2 C-ARM"空框"（实为别的臂残影）均此根因。**一切臂位必须在离线 assert 里核对 x<320。**
+3. B2 "T-CTRL 渲染✓但叠字" = typer3 设计（见上）；"C-ARM 空" = 臂位越界从未触发。B2 的观察记录全部被 B3/B4 重解释。
+
+### B3 五臂矩阵（单变量分解；b3c 修正位 boot + 前序 boot 数据）
+| 臂 | typer | 变量 | 结果 | 判定 |
+|---|---|---|---|---|
+| D-CTRL | 3 | 全原版对照 | teal 叠字（5 次 boot 稳定复现）| harness 活 ✓ |
+| A-SWP | 5 | emb19 maintext 区品红重染 | **品红干净 ASCII**（Flowey 对话/六柱房 Toriel 对话同证）| **V3 页内像素换触达字体渲染 ✓** |
+| E-KANA | 31 | 同上重染 + 假名消息 | **品红假名 あいうえお 完整、无叠字** | **V4 码点路径 ✓（>0x3041 码点直达字体查找）+ typer31 排版 ✓** |
+| B-TBL | 30 | fnt_ja_main@原TPI+共享表(4064) | 稀疏白碎片（查得到字形、采到原页错位像素）| **V1 glyph 表替换+查找链路 ✓** |
+| C-NPG | 68 | fnt_ja_plain@**新 256² 页**+maintext 原表 | **空框（X 补完仍空）** | **约束④ 成立：新纹理页不被字体渲染器加载（face3 健康条件、B2 污染清除后重测）→ 新页/4096 页路线 NO-GO** |
+
+附：Pillow RGBA `getbbox()` 由 alpha 通道驱动，RGB 变化 alpha 不变时漏检——font_emb20_compose.py verify() 已改 numpy 全通道差；B2 的 emb20_page_new.png 经全通道复核真实无越界（102 万像素全在象限+金丝雀内）。
+
+### B4 完整中文栈 = **成功**
+栈：emb20 象限换页（页身份不变）→ fnt_ja_maintext.Texture 重指向 TPI#6543(1024²象限) + 共享表 4064 字形 → scr_setfont 单行映射 `if (newfont == fnt_maintext) { newfont = fnt_ja_maintext; }`（B4_MAP 标记守卫）→ preload 无条件 prefetch → 触发臂 typer31 @(220,330) face3 msc0 无空格消息。
+**实机结果：`* B4中文测试ABC` 清晰渲染**——中文四字 Fusion Pixel 12px、间距均匀无叠字、与 ASCII 混排正常、sans 头像正常。fonts=20 硬约束未破（改的是既有 ja 字体的表/纹理/映射，无新增资产）。
+
+### 语言探针（一手证据，约束③修正）
+D-CTRL 触发块双路径写 `zcode_lang_probe.txt` 成功回收：`lang=[en] locale=[zh_CN] oslang=[zh] osregion=[CN]`。
+- **os_get_language() 在本机返回 "zh"（旧结论"Mac 移植不返回 zh"错误）**；`global.language="en"` 是游戏自身对非 en/ja 语言的回退。
+- 实践结论不变：ja 分支永不触发。**备选路线（未验证）**：mod 主动设 `global.language="ja"` 可激活游戏原生 ja 管线（字体转换+spacing×13/8 等）。
+
+### 遗留/下一步
+1. **S6 集成（READY）**：cmd_cjk_font 管线收尾——typer 选择器（默认 31）、折行 util（排版卫生项，writingxend 语义已知）、文档（commands.json SSOT + gen_docs）、把手写触发块形态生成器化。
+2. 开放项：CJK↔ASCII 混排的 ja 式间隙（language="ja" 才有）；canary UV 钳位未判定（无品红出现，未深究）；writer 卡死框根因（偶发，房间切换可清）。
+3. 实验资产：build/cjk_verify/{b3_inject,b3b_move,b4_inject}.csx + dump_writer_events/control_update 等 dump；本 boot 全程 CUA 截图存于会话记录。

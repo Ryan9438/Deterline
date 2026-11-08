@@ -14,7 +14,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageChops
+import numpy as np
+from PIL import Image
 
 QUADRANT = (0, 1024, 1024, 2048)          # ja_main TPI 区域（左上角在页 (0,1024)）
 CANARY_RECT = (1536, 1408, 1552, 1424)    # 表外码位 glyph 的采样落点（16px 对齐便于块校验）
@@ -37,17 +38,26 @@ def compose(emb20_path: Path, atlas_path: Path, out_path: Path) -> dict:
 
 
 def verify(before: Image.Image, after: Image.Image) -> list:
-    """返回越界变化区域列表（空 = 仅象限+金丝雀变化）。"""
-    diff = ImageChops.difference(before, after)
-    bbox_all = diff.getbbox()
+    """返回越界变化区域列表（空 = 仅象限+金丝雀变化）。
+
+    ⚠️ 必须用全通道差（Pillow 的 RGBA getbbox() 由 alpha 通道驱动，
+    RGB 变化而 alpha 相同的像素会被漏检——2026-11-08 B3 复核发现）。
+    """
+    a = np.asarray(before.convert("RGBA"), dtype=np.int16)
+    b = np.asarray(after.convert("RGBA"), dtype=np.int16)
+    d = np.abs(a - b).sum(axis=2)
+    ys, xs = np.nonzero(d)
+    bbox_all = None
+    if len(xs):
+        bbox_all = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
     allowed = [QUADRANT, CANARY_RECT]
     problems = []
     # 逐 16px 块扫描：任何含变化的块必须完全落在允许区内
     bs = 16
     for by in range(0, after.height, bs):
         for bx in range(0, after.width, bs):
-            block = diff.crop((bx, by, bx + bs, by + bs))
-            if block.getbbox() is None:
+            block = d[by:by + bs, bx:bx + bs]
+            if not block.any():
                 continue
             ok = any(bx >= r[0] and by >= r[1] and bx + bs <= r[2] and by + bs <= r[3]
                      for r in allowed)
