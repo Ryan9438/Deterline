@@ -1,6 +1,7 @@
 // B2：真正的四臂实验（face3 修正版）——页内图集 + 无条件映射 + 预加载 + 四臂
 // 臂C=typer5(fnt_ja_maintext@共享图集,主判据) 臂M=typer0(fnt_ja_main@图集 Scale2)
-// 臂N=typer2(fnt_ja_plain@新页原表,约束④证伪) 臂T=typer3(fnt_curs 原版对照)
+// 臂N=typer2(fnt_ja_plain@共享图集——⚠️B2 未测新页，约束④待 B3) 臂T=typer3(fnt_curs 原版对照)
+// ⚠️ 幂等守卫检查的 B2_UNCOND 是注释标记（编译剥除），复跑会重复插入 prefetch——复现时先 experiment-restore
 using System;
 using System.IO;
 using System.Linq;

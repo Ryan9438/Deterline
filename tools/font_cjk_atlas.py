@@ -283,6 +283,8 @@ def build_inpage_atlas(build_dir: Path, pass1_dir: Path, out_dir: Path,
         "cell": [cell_w, cell_h], "cols": cols, "rows_used": row + 1,
         "capacity": capacity, "glyph_count": len(specs),
         "fill": f"{len(specs)}/{capacity}",
+        "capacity_warning": ("余量不足 5%：扩字符集前先评估 cell 回退/裁字"
+                             if len(specs) / capacity > 0.95 else "OK"),
         "ascii_source": "fnt_maintext 原版像素（emb19 dump）",
         "nonascii_source": "Fusion Pixel 12px（build_dir）",
         "canary": canary_code,

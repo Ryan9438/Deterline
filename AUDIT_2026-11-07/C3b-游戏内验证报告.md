@@ -1,7 +1,7 @@
 # C3b 中文字体注入 —— 实施与游戏内验证报告
 
 - 日期：2026-11-07
-- 状态：**管线全部建成（sandbox 验证通过）；游戏内渲染被 Mac runner 深层机制阻塞**——经 15+ 次受控启动实验定位出 3 条硬约束与 2 条待验证假设，按域F 教训在烧尽资源前停点。
+- 状态：**管线全部建成（sandbox 验证通过）；游戏内渲染被 Mac runner 深层机制阻塞**——经 15+ 次受控启动实验定位出 3 条硬约束（其中约束②后降级为排版卫生项，见 §三.2 与 §八）与 2 条待验证假设，按域F 教训在烧尽资源前停点。
 - 用户游戏已回滚基线：game.ios `fc049850` / file0 `2c9c68d0` / undertale.ini `0e4027d0` ✓
 
 ---
@@ -47,7 +47,7 @@
 1. **【硬约束】不能新增字体资产**：Data.Fonts 追加即全局字体查址失效（R1-R4 vs A0/BX；疑 Mac 移植 runner 固定 20 字体表）。新增 EmbeddedTexture/TPI/Sprite 本身无害（BX/BY）。
 2. **【2026-11-08 降级：原判"死循环挂起"为误判】** 无空格 CJK 的真实风险是**水平溢出对话框**（writer 按空格断词；SCR_NEWLINE 回扫死循环假说从未实证）。折行建议**保留但降级为排版卫生项**，不再声称"防挂起"。
 3. **【硬约束】global.language ≠ "zh"**（PC 的 ✱ 来自 fnt_main 回退反推；Mac 移植 os_get_language 不返回 zh——未直接测量，但 PC/PV 对比已足够定性）。
-4. **【未解】字体渲染器不加载新页**：即使无条件 sprite_prefetch（PD/PW/PV），draw_set_font 指向新页的字体渲染全空——sprite 路径的 prefetch 未惠及字体路径（ja 页机制可能依赖 runner 内部表）。这与域F"反编译正确 ≠ 运行时正确"同类，属 runner 黑盒。
+4. **【未解】字体渲染器不加载新页**：即使无条件 sprite_prefetch（PD/PW/PV），draw_set_font 指向新页的字体渲染全空——sprite 路径的 prefetch 未惠及字体路径（ja 页机制可能依赖 runner 内部表）。这与域F"反编译正确 ≠ 运行时正确"同类，属 runner 黑盒。⚠️【2026-11-08】本条的证据（PD/PW/PV）已被 §八 认定为 face0 污染——约束④待用 face3 修正版重测（B3）。
 5. **【未解】glyph 列表替换未被验证可渲染**：PW（原 glyph+新 Texture）与 PV（新 glyph+新 Texture）均因页未加载而无法区分"glyph 替换是否可行"。
 
 ## 四、后续路径（按性价比排序）
@@ -95,3 +95,4 @@ python3 run.py --action cjk-font --value build/font_cjk --file data_win
 1. 精读 obj_base_writer_Draw_0 的 myx 推进/换行/Offset-Shift 语义 → 修正图集度量 → sandbox → 1 boot 复测四臂。
 2. 用 face3 修正版重测 Arm-N（新页）→ 关闭约束④。
 3. GO 后按价值派 S6 集成（折行 util + --typer + 文档）。
+4. 开放项：B2 各臂消息沿用空格化 CJK（"中 文 测 试"，C3b-实验CSX/b2_inject.csx）——该设计原以防挂起为动机（已降级），现仅余排版理由；无空格 CJK 在 face3 健康条件下的实际渲染/折行行为至今未观察，属开放项。
