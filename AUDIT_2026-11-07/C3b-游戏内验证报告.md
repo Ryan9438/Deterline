@@ -31,7 +31,7 @@
 | PC | 基线 + npc中文 + **就地改造** ja 字体（新 Texture+新 Glyphs）+ zh 分支 + preload zh | ⚠️ 仅 "✱"（ASCII）渲染，CJK 不出 |
 | PV | PC + 无条件映射 + 混合消息 | ❌ 全空（含 ASCII） |
 | PW | PV + ja 原 glyph 列表 + 新 Texture + 无条件映射 | ❌ 全空 |
-| PD | 基线 + npc中文 + 就地改造 + **无条件**映射 + **无条件** prefetch | 💥 进房瞬间死循环挂起（无空格中文触发 writer 换行死循环）；消息加空格后不挂但仍全空 |
+| PD | 基线 + npc中文 + 就地改造 + **无条件**映射 + **无条件** prefetch | ⚠️【2026-11-08 更正：当时误判为死循环挂起】真实症状 = face0+无msc 复合幽灵框（writer 读 msg[1]="%%%" 每帧自毁），**游戏正常运行**（用户实测人物可走动）；CUA"窗口停止渲染"为采集假象。消息加空格后仍全空 = face0 文字不可见 |
 
 > ⚠️ **RV-B 复核补注（2026-11-07）**：PC/PV/PW/PD 实验使用的 glyph 表为**修复前的图集产物**
 > （ASCII 码点重复 95 个/字体 + CJK 按拼音序未按码点排序 + 无假名）。该变量未受控——
@@ -45,7 +45,7 @@
 ## 三、定论（证据充分）
 
 1. **【硬约束】不能新增字体资产**：Data.Fonts 追加即全局字体查址失效（R1-R4 vs A0/BX；疑 Mac 移植 runner 固定 20 字体表）。新增 EmbeddedTexture/TPI/Sprite 本身无害（BX/BY）。
-2. **【硬约束】中文字符串必须预折行（空格分隔）**：无空格 CJK 长句让 obj_base_writer 换行逻辑死循环（PD 挂起；侦察预警 #4 升级为 crash 级）。
+2. **【2026-11-08 降级：原判"死循环挂起"为误判】** 无空格 CJK 的真实风险是**水平溢出对话框**（writer 按空格断词；SCR_NEWLINE 回扫死循环假说从未实证）。折行建议**保留但降级为排版卫生项**，不再声称"防挂起"。
 3. **【硬约束】global.language ≠ "zh"**（PC 的 ✱ 来自 fnt_main 回退反推；Mac 移植 os_get_language 不返回 zh——未直接测量，但 PC/PV 对比已足够定性）。
 4. **【未解】字体渲染器不加载新页**：即使无条件 sprite_prefetch（PD/PW/PV），draw_set_font 指向新页的字体渲染全空——sprite 路径的 prefetch 未惠及字体路径（ja 页机制可能依赖 runner 内部表）。这与域F"反编译正确 ≠ 运行时正确"同类，属 runner 黑盒。
 5. **【未解】glyph 列表替换未被验证可渲染**：PW（原 glyph+新 Texture）与 PV（新 glyph+新 Texture）均因页未加载而无法区分"glyph 替换是否可行"。

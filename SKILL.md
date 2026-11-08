@@ -185,7 +185,7 @@ deterline/
 
 > ⚠️ `replace-string`: 全局替换，先 search-strings 确认影响面
 > ⚠️ `cjk-font`: --value 须为 font_cjk_build.py 输出目录（OFL 字体自生成）
-> ⚠️ `cjk-font`: 已证实 3 条硬约束：不能新增字体资产 / 中文须空格预折行 / global.language≠zh
+> ⚠️ `cjk-font`: 已证实：不能新增字体资产（追加即全局字体失效）；global.language≠zh（联合推断）。【2026-11-08 降级】中文预折行为排版建议（防水平溢出），非防挂起——原「writer 死循环」判为误读
 > ⚠️ `cjk-font`: 完成后自动 verify-code gml_Script_scr_setfont（域F 协议）
 
 ### 📜 脚本编辑 — --file data_win，反编译/重编译 GML（6272 个脚本）
