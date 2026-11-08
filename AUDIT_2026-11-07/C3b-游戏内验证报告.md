@@ -141,6 +141,6 @@ D-CTRL 触发块双路径写 `zcode_lang_probe.txt` 成功回收：`lang=[en] lo
 - 实践结论不变：ja 分支永不触发。**备选路线（未验证）**：mod 主动设 `global.language="ja"` 可激活游戏原生 ja 管线（字体转换+spacing×13/8 等）。
 
 ### 遗留/下一步
-1. **S6 集成（READY）**：cmd_cjk_font 管线收尾——typer 选择器（默认 31）、折行 util（排版卫生项，writingxend 语义已知）、文档（commands.json SSOT + gen_docs）、把手写触发块形态生成器化。
+1. **S6 集成 ✅ 完成**：`cjk-font` 重写为 B4 实证页内栈（pass1+in-page 图集+emb20 合成+pass2 注入+verify-code 五步）；新增 `cjk-trigger`（触发块生成器：B4 全形态 + CJK_TYPER_TABLE 几何校验 + x<320 硬校验 + 依赖守卫 + 均匀步距预折行 util `cjk_wrap_text`）；--allow-cjk 指引同步；golden 重录 + 15 个新单测（合计 176）。
 2. 开放项：CJK↔ASCII 混排的 ja 式间隙（language="ja" 才有）；canary UV 钳位未判定（无品红出现，未深究）；writer 卡死框根因（偶发，房间切换可清）。
 3. 实验资产：build/cjk_verify/{b3_inject,b3b_move,b4_inject}.csx + dump_writer_events/control_update 等 dump；本 boot 全程 CUA 截图存于会话记录。

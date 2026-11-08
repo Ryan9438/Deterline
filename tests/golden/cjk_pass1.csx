@@ -6,8 +6,10 @@ using System.Collections.Generic;
 string dumpDir = @"/tmp/golden_cjk_work";
 string[] srcNames = { "fnt_main", "fnt_maintext", "fnt_plain" };
 try {
-    if (Data.Fonts.Any(f => f.Name != null && f.Name.Content == "fnt_cjk_main")) {
-        ScriptMessage("ERROR: fnt_cjk_main 已存在（重复注入）——先 experiment-restore/undo 回滚");
+    // 幂等守卫（S6 页内栈）：ja_maintext 被共享表替换过（glyph 数 >1000）即已注入
+    var jaTextChk = Data.Fonts.FirstOrDefault(f => f.Name != null && f.Name.Content == "fnt_ja_maintext");
+    if (jaTextChk != null && jaTextChk.Glyphs.Count > 1000) {
+        ScriptMessage("ERROR: CJK 页内栈已注入（fnt_ja_maintext glyph=" + jaTextChk.Glyphs.Count + "）——先 experiment-restore/undo 回滚");
         return;
     }
     var sb = new System.Text.StringBuilder();
@@ -38,7 +40,14 @@ try {
     using (var fs = File.Create(Path.Combine(dumpDir, "emb_page.png"))) {
         page.TextureData.Image.SavePng(fs);
     }
-    ScriptMessage("CJK_PASS1_OK fonts=" + srcNames.Length + " page=" + page.TextureData.Width + "x" + page.TextureData.Height);
+    // S6：另 dump emb20（ja 字体共享页）——页内重排换页（font_emb20_compose）的底图
+    var tex20 = Data.EmbeddedTextures.FirstOrDefault(t => t.Name != null && t.Name.Content == "Texture 20");
+    if (tex20 == null || tex20.TextureData == null) { ScriptMessage("ERROR: Texture 20 not found"); return; }
+    using (var fs = File.Create(Path.Combine(dumpDir, "emb20_page.png"))) {
+        tex20.TextureData.Image.SavePng(fs);
+    }
+    ScriptMessage("CJK_PASS1_OK fonts=" + srcNames.Length + " page=" + page.TextureData.Width + "x" + page.TextureData.Height
+                  + " emb20=" + tex20.TextureData.Width + "x" + tex20.TextureData.Height);
 } catch (Exception ex) {
     ScriptMessage("ERROR: " + ex.GetType().Name + ": " + ex.Message);
 }

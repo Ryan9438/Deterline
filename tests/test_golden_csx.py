@@ -206,6 +206,13 @@ class TestGoldenCjkFont(unittest.TestCase):
         _check_golden(self, "cjk_pass2",
                       [ms._build_cjk_pass2_csx("/tmp/golden_cjk_work")])
 
+    def test_cjk_trigger_csx(self):
+        """S6：触发块生成器钉形（B4 实证全形态；含预折行）。"""
+        _check_golden(self, "cjk_trigger",
+                      [ms._build_cjk_trigger_csx(
+                          "room_ruins1", "obj_cactus", 220, 330, 31,
+                          "* 托丽尔你好，这里是中文测试。第二行内容稍微长一些需要折行。")])
+
 
 # ============================================================
 # D0 清偿日补齐（风险审计派 A3 + 全量实测盘点）：

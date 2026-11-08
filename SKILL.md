@@ -138,7 +138,7 @@ deterline/
 ## 命令总览
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 83 个命令 · 版本 2.3.0 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 84 个命令 · 版本 2.3.0 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -182,11 +182,17 @@ deterline/
 | `guided-add-dialogue --key "obj_x" --value "* 文本/%%"` | 引导式对话创建（分步打印进度） | static |
 | `search-sctext --value "* 你好"` | 在 SCR_TEXT 用例表中搜索文本 | static |
 | `cjk-font --value build/font_cjk` | 注入中文字体管线（sandbox 已验证；【2026-11-08】中文已在游戏内实机渲染成功（B4 页内重排全栈），见 AUDIT_2026-11-07/C3b-游戏内验证报告 §九；S6 集成待做） | sandbox |
+| `cjk-trigger --text "* 托丽尔你好，这里是中文测试。" --x 220 --y 330` | 生成并注入单个 CJK 对话触发块（B4 实证全形态：msc/facechoice/faceemotion//%%终止符/msg[1]；默认 typer31 spacing12；--text 文本自动预折行；须先 cjk-font） | sandbox |
 
 > ⚠️ `replace-string`: 全局替换，先 search-strings 确认影响面
 > ⚠️ `cjk-font`: --value 须为 font_cjk_build.py 输出目录（OFL 字体自生成）
 > ⚠️ `cjk-font`: 已证实：不能新增字体资产（追加即全局字体失效）；【2026-11-08 探针】os_get_language() 返回 zh，游戏回退 global.language="en"（一手测量，非联合推断）——ja 分支不触发。中文预折行为排版建议（防水平溢出），非防挂起
 > ⚠️ `cjk-font`: 完成后自动 verify-code gml_Script_scr_setfont（域F 协议）
+> ⚠️ `cjk-trigger`: 依赖 cjk-font 页内栈先行注入（幂等守卫会拒绝）
+> ⚠️ `cjk-trigger`: 触发位须在房间 320×480 内且可行走（x>=320 物理不可触发——B2 教训）
+> ⚠️ `cjk-trigger`: typer 须在 CJK_TYPER_TABLE（31/5/3/2/68/30，几何经 SCR_TEXTTYPE 反编译核对）
+> ⚠️ `cjk-trigger`: 折行按 writer 均匀步距模型（每字符一格）；typer31 无引擎折行故默认预折行宽 202
+> ⚠️ `cjk-trigger`: 追加到 --object（默认 obj_cactus）的 Step_1；同一目标对象只能有一个 CJK 触发块
 
 ### 📜 脚本编辑 — --file data_win，反编译/重编译 GML（6272 个脚本）
 

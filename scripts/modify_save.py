@@ -265,15 +265,16 @@ def _validate_ascii_text(text: str, label: str = "文本") -> None:
     chars = " ".join(f"{ch}(U+{ord(ch):04X})" for _, ch in non_ascii[:8])
     if ALLOW_CJK:
         print(f"⚠️ {label} 含 {len(non_ascii)} 个非 ASCII 字符: {chars}", file=sys.stderr)
-        print("   当前游戏未注入中文字体（C3b 未实施）——这些字符在游戏内将显示为空白。", file=sys.stderr)
-        print("   前瞻: C3b 字体注入完成后此警告消失。", file=sys.stderr)
+        print("   若游戏已注入中文字体（cjk-font 页内重排栈），这些字符可正常显示；", file=sys.stderr)
+        print("   对话触发块请用 cjk-trigger（自动全形态+预折行）。", file=sys.stderr)
         return
     raise ValidationError(
         f"{label} 含有非 ASCII 字符（位置 {non_ascii[0][0]}）: ...{ctx}...\n"
         f"Undertale 英文版位图字体没有中文字形，这些字符（{chars}）将显示为空白。\n"
         f"行动指南:\n"
         f"  1. 改用英文 (ASCII) 文本；或\n"
-        f"  2. 加 --allow-cjk 强行写入（需先完成中文字体注入 C3b，否则显示空白）。"
+        f"  2. 加 --allow-cjk 强行写入（需先 cjk-font 注入中文字体栈，否则显示空白）；或\n"
+        f"  3. 对话触发块直接用 cjk-trigger --text（自动全形态+预折行）。"
     )
 
 
@@ -6406,8 +6407,10 @@ using System.Collections.Generic;
 string dumpDir = @"__WORKDIR__";
 string[] srcNames = { "fnt_main", "fnt_maintext", "fnt_plain" };
 try {
-    if (Data.Fonts.Any(f => f.Name != null && f.Name.Content == "fnt_cjk_main")) {
-        ScriptMessage("ERROR: fnt_cjk_main 已存在（重复注入）——先 experiment-restore/undo 回滚");
+    // 幂等守卫（S6 页内栈）：ja_maintext 被共享表替换过（glyph 数 >1000）即已注入
+    var jaTextChk = Data.Fonts.FirstOrDefault(f => f.Name != null && f.Name.Content == "fnt_ja_maintext");
+    if (jaTextChk != null && jaTextChk.Glyphs.Count > 1000) {
+        ScriptMessage("ERROR: CJK 页内栈已注入（fnt_ja_maintext glyph=" + jaTextChk.Glyphs.Count + "）——先 experiment-restore/undo 回滚");
         return;
     }
     var sb = new System.Text.StringBuilder();
@@ -6438,159 +6441,101 @@ try {
     using (var fs = File.Create(Path.Combine(dumpDir, "emb_page.png"))) {
         page.TextureData.Image.SavePng(fs);
     }
-    ScriptMessage("CJK_PASS1_OK fonts=" + srcNames.Length + " page=" + page.TextureData.Width + "x" + page.TextureData.Height);
+    // S6：另 dump emb20（ja 字体共享页）——页内重排换页（font_emb20_compose）的底图
+    var tex20 = Data.EmbeddedTextures.FirstOrDefault(t => t.Name != null && t.Name.Content == "Texture 20");
+    if (tex20 == null || tex20.TextureData == null) { ScriptMessage("ERROR: Texture 20 not found"); return; }
+    using (var fs = File.Create(Path.Combine(dumpDir, "emb20_page.png"))) {
+        tex20.TextureData.Image.SavePng(fs);
+    }
+    ScriptMessage("CJK_PASS1_OK fonts=" + srcNames.Length + " page=" + page.TextureData.Width + "x" + page.TextureData.Height
+                  + " emb20=" + tex20.TextureData.Width + "x" + tex20.TextureData.Height);
 } catch (Exception ex) {
     ScriptMessage("ERROR: " + ex.GetType().Name + ": " + ex.Message);
 }'''
 
 # pass2（写入）：新 EmbeddedTexture×2 + TexturePageItem×3 + UndertaleFont×3
 #              + scr_setfont 加 zh 分支（方案 B 唯一代码改动点）
-_CJK_PASS2_CSX = r'''// C3b pass2 (WRITE): inject CJK fonts — plan B (recon report §4 方案B)
+_CJK_PASS2_CSX = r'''// C3b S6 pass2 (WRITE): 中文页内重排栈（B4 实证形态，AUDIT 报告 §九）
+//   emb20 象限换页（页身份不变）+ fnt_ja_maintext 重指向 TPI#6543 + 共享表 4064 字形
+//   + scr_setfont 单行映射（槽位判重）+ preload 无条件 prefetch
+//   ⚠️ 守卫不能 Contains "newfont = fnt_ja_maintext;"（基线 ja 分支本就含，恒真陷阱）
 using System;
 using System.IO;
 using System.Linq;
-using System.Collections.Generic;
-using UndertaleModLib.Util;   // GMImage.FromPng 静态调用需要（p3d 实证签名 (byte[], bool verifyHeader)）
+using UndertaleModLib.Util;   // GMImage.FromPng(byte[], bool verifyHeader)
 string workDir = @"__WORKDIR__";
 try {
-    if (Data.Fonts.Any(f => f.Name != null && f.Name.Content == "fnt_cjk_main")) {
-        ScriptMessage("ERROR: fnt_cjk_main 已存在（重复注入）");
-        return;
+    // ── 0) 幂等守卫（计数式：基线 ja 分支含 1 处 fnt_ja_maintext 映射）──
+    var sfChk = GetDecompiledText("gml_Script_scr_setfont");
+    int nMap = sfChk.Split(new[]{"newfont = fnt_ja_maintext;"}, StringSplitOptions.None).Length - 1;
+    if (nMap > 1) { ScriptMessage("ERROR: CJK 映射已存在（n=" + nMap + "）——先回滚"); return; }
+    var jaText = Data.Fonts.FirstOrDefault(f => f.Name != null && f.Name.Content == "fnt_ja_maintext");
+    if (jaText == null) { ScriptMessage("ERROR: fnt_ja_maintext not found"); return; }
+    if (jaText.Glyphs.Count > 1000) { ScriptMessage("ERROR: 共享表已注入（glyph=" + jaText.Glyphs.Count + "）"); return; }
+
+    // ── 1) emb20 象限换页（页身份不变；换页底图已由 font_emb20_compose 离线合成并 --verify）──
+    byte[] png20 = File.ReadAllBytes(Path.Combine(workDir, "emb20_page_new.png"));
+    var img20 = GMImage.FromPng(png20, false);
+    var tex20 = Data.EmbeddedTextures.FirstOrDefault(t => t.Name != null && t.Name.Content == "Texture 20");
+    if (tex20 == null || tex20.TextureData == null || tex20.TextureData.Width != 2048) {
+        ScriptMessage("ERROR: Texture 20 缺失或尺寸异常"); return;
     }
+    tex20.TextureData.Image = img20;
+
+    // ── 2) fnt_ja_maintext：TPI 重指向 #6543（(0,1024) 1024² 象限）+ 共享表 ──
+    var tpi = Data.TexturePageItems.FirstOrDefault(t => t.SourceX == 0 && t.SourceY == 1024
+                    && t.SourceWidth == 1024 && t.SourceHeight == 1024 && t.TexturePage == tex20);
+    if (tpi == null) { ScriptMessage("ERROR: TPI#6543 not found"); return; }
+    jaText.Texture = tpi;
     var spec = System.Text.Json.JsonDocument.Parse(
-        File.ReadAllText(Path.Combine(workDir, "atlas_glyphs.json"))).RootElement;
-    // 1) 新纹理页 ×2（GMImage.FromPng；本文件页格式为直通 alpha PNG，已由探针 3d 往返实证）
-    var texs = new UndertaleEmbeddedTexture[2];
-    for (int i = 0; i < 2; i++) {
-        byte[] png = File.ReadAllBytes(Path.Combine(workDir, "atlas_page_" + i + ".png"));
-        var img = GMImage.FromPng(png, false);
-        var tex = new UndertaleEmbeddedTexture();
-        tex.Name = Data.Strings.MakeString("Texture " + (Data.EmbeddedTextures.Count + i));
-        tex.Scaled = 0; tex.GeneratedMips = 0; tex.TextureLoaded = true;
-        tex.TextureWidth = img.Width; tex.TextureHeight = img.Height;
-        tex.TextureData = new UndertaleEmbeddedTexture.TexData();
-        tex.TextureData.Image = img;
-        Data.EmbeddedTextures.Add(tex);
-        texs[i] = tex;
+        File.ReadAllText(Path.Combine(workDir, "glyphs_inpage.json"))).RootElement;
+    jaText.Glyphs.Clear();
+    int n = 0;
+    foreach (var ge in spec.GetProperty("glyphs").EnumerateArray()) {
+        var g = new UndertaleFont.Glyph();
+        g.Character = (ushort)ge[0].GetInt32();
+        g.SourceX = (ushort)ge[1].GetInt32();
+        g.SourceY = (ushort)ge[2].GetInt32();
+        g.SourceWidth = (ushort)ge[3].GetInt32();
+        g.SourceHeight = (ushort)ge[4].GetInt32();
+        g.Offset = (short)ge[5].GetInt32();
+        g.Shift = (short)ge[6].GetInt32();
+        g.UnknownAlwaysZero = 0;
+        jaText.Glyphs.Add(g);
+        n++;
     }
-    // 2) TexturePageItem ×3（区域 = 字体行带）
-    var fontRoot = spec.GetProperty("fonts");
-    var tpis = new System.Collections.Generic.Dictionary<string, UndertaleTexturePageItem>();
-    foreach (var fdef in new[] { "fnt_cjk_main", "fnt_cjk_maintext", "fnt_cjk_plain" }) {
-        var fr = fontRoot.GetProperty(fdef);
-        int pageIdx = fr.GetProperty("page").GetInt32();
-        int y0 = fr.GetProperty("region_y0").GetInt32();
-        int rows = fr.GetProperty("rows").GetInt32();
-        int cellH = fr.GetProperty("cell")[1].GetInt32();
-        int h = rows * cellH;
-        var tpi = new UndertaleTexturePageItem();
-        tpi.Name = Data.Strings.MakeString("PageItem " + (Data.TexturePageItems.Count + tpis.Count));
-        tpi.SourceX = 0; tpi.SourceY = (ushort)y0;
-        tpi.SourceWidth = 2048; tpi.SourceHeight = (ushort)h;
-        tpi.TargetX = 0; tpi.TargetY = 0;   // Target 为 TPI 相对（侦察 dump: ja_main target=(0,0,1024,1024)）
-        tpi.TargetWidth = 2048; tpi.TargetHeight = (ushort)h;
-        tpi.BoundingWidth = 2048; tpi.BoundingHeight = (ushort)h;
-        tpi.TexturePage = texs[pageIdx];
-        Data.TexturePageItems.Add(tpi);
-        tpis[fdef] = tpi;
+    // 排序/去重不变量（RV-B）：引擎字形查找假定按码点有序
+    var codes = jaText.Glyphs.Select(x => (int)x.Character).ToList();
+    if (!codes.SequenceEqual(codes.OrderBy(c => c)) || codes.Distinct().Count() != codes.Count) {
+        ScriptMessage("ERROR: glyph 表排序/去重不变量破坏"); return;
     }
-    // 3) UndertaleFont ×3（标量克隆源字体；ASCII 字形已拷入新图集，中英混排可用）
-    var displayNames = new System.Collections.Generic.Dictionary<string, string> {
-        { "fnt_cjk_main", "Fusion Pixel CJK Main" },
-        { "fnt_cjk_maintext", "Fusion Pixel CJK Maintext" },
-        { "fnt_cjk_plain", "Fusion Pixel CJK Plain" },
-    };
-    int glyphTotal = 0;
-    foreach (var fdef in new[] { "fnt_cjk_main", "fnt_cjk_maintext", "fnt_cjk_plain" }) {
-        var fr = fontRoot.GetProperty(fdef);
-        var f = new UndertaleFont();
-        f.Name = Data.Strings.MakeString(fdef);
-        f.DisplayName = Data.Strings.MakeString(displayNames[fdef]);
-        f.EmSize = fr.GetProperty("emSize").GetSingle();
-        f.EmSizeIsFloat = fr.GetProperty("emSizeIsFloat").GetBoolean();
-        f.Charset = fr.GetProperty("charset").GetByte();
-        f.AntiAliasing = fr.GetProperty("antiAliasing").GetByte();
-        f.RangeStart = (ushort)fr.GetProperty("rangeStart").GetInt32();
-        f.RangeEnd = (uint)fr.GetProperty("rangeEnd").GetInt32();
-        f.LineHeight = (uint)fr.GetProperty("lineHeight").GetInt32();
-        f.Ascender = (uint)fr.GetProperty("ascender").GetInt32();
-        f.AscenderOffset = fr.GetProperty("ascenderOffset").GetInt32();
-        f.ScaleX = 1f; f.ScaleY = 1f; f.SDFSpread = 0;
-        f.Bold = fr.GetProperty("bold").GetBoolean(); f.Italic = false;
-        f.Texture = tpis[fdef];
-        foreach (var ge in fr.GetProperty("glyphs").EnumerateArray()) {
-            var g = new UndertaleFont.Glyph();
-            g.Character = (ushort)ge[0].GetInt32();
-            g.SourceX = (ushort)ge[1].GetInt32();
-            g.SourceY = (ushort)ge[2].GetInt32();
-            g.SourceWidth = (ushort)ge[3].GetInt32();
-            g.SourceHeight = (ushort)ge[4].GetInt32();
-            g.Offset = (short)ge[5].GetInt32();
-            g.Shift = (short)ge[6].GetInt32();
-            g.UnknownAlwaysZero = 0;
-            foreach (var ke in ge[7].EnumerateArray()) {
-                var k = new UndertaleFont.Glyph.GlyphKerning();
-                k.Character = (short)ke[0].GetInt32();
-                k.ShiftModifier = (short)ke[1].GetInt32();
-                g.Kerning.Add(k);
-            }
-            f.Glyphs.Add(g);
-        }
-        glyphTotal += f.Glyphs.Count;
-        Data.Fonts.Add(f);
-    }
-    // 3b) 预加载精灵 ×2（Mac runner 不按需加载新页——ja 页即经 scr_preload_textures
-    //     的 sprite_prefetch(spr_fonts_ja_preload) 预加载；游戏内空框实证必要）
-    var tpiMain = tpis["fnt_cjk_main"]; var tpiSmall = tpis["fnt_cjk_maintext"];
-    var sprA = new UndertaleSprite();
-    sprA.Name = Data.Strings.MakeString("spr_fonts_cjk_preload_main");
-    sprA.Width = 2; sprA.Height = 2;
-    sprA.Textures.Add(new UndertaleSprite.TextureEntry { Texture = tpiMain });
-    Data.Sprites.Add(sprA);
-    var sprB = new UndertaleSprite();
-    sprB.Name = Data.Strings.MakeString("spr_fonts_cjk_preload_small");
-    sprB.Width = 2; sprB.Height = 2;
-    sprB.Textures.Add(new UndertaleSprite.TextureEntry { Texture = tpiSmall });
-    Data.Sprites.Add(sprB);
-    // 3c) scr_preload_textures：ja/en 之间插 zh 分支
-    var preCode = Data.Code.ByName("gml_Script_scr_preload_textures");
-    if (preCode == null) { ScriptMessage("ERROR: gml_Script_scr_preload_textures not found"); return; }
-    string preGml = GetDecompiledText("gml_Script_scr_preload_textures");
-    // 4) 代码改动：preload zh 分支 + scr_setfont zh 映射（单一 CodeImportGroup）
-    var importGroup = new CodeImportGroup(Data) { MainThreadAction = MainThreadAction };
-    if (preGml.Contains("spr_fonts_cjk_preload_main")) {
-        ScriptMessage("SKIP: preload already patched");
-    } else {
-        const string anchor = "}\nelse\n{\n    sprite_prefetch(spr_fonts_en_preload);\n}";
-        if (!preGml.Contains(anchor)) { ScriptMessage("ERROR: preload anchor not found"); return; }
-        preGml = preGml.Replace(anchor,
-            "}\nelse if (global.language == \"zh\")\n{\n" +
-            "    sprite_prefetch(spr_fonts_cjk_preload_main);\n" +
-            "    sprite_prefetch(spr_fonts_cjk_preload_small);\n" +
-            "}\nelse\n{\n    sprite_prefetch(spr_fonts_en_preload);\n}");
-        importGroup.QueueReplace(preCode, preGml);
-    }
-    var code = Data.Code.ByName("gml_Script_scr_setfont");
-    if (code == null) { ScriptMessage("ERROR: gml_Script_scr_setfont not found"); return; }
-    string gml = GetDecompiledText("gml_Script_scr_setfont");
-    if (gml.Contains("fnt_cjk_main")) {
-        ScriptMessage("SKIP: scr_setfont already patched");
-    } else {
-        int anchor = gml.IndexOf("draw_set_font(newfont);");
-        if (anchor < 0) { ScriptMessage("ERROR: scr_setfont anchor not found"); return; }
-        string zh = "if (global.language == \"zh\")\n{\n" +
-                    "    if (newfont == fnt_main)\n    {\n        newfont = fnt_cjk_main;\n    }\n" +
-                    "    if (newfont == fnt_maintext)\n    {\n        newfont = fnt_cjk_maintext;\n    }\n" +
-                    "    if (newfont == fnt_plain)\n    {\n        newfont = fnt_cjk_plain;\n    }\n" +
-                    "}\n";
-        gml = gml.Insert(anchor, zh);
-        importGroup.QueueReplace(code, gml);
-    }
-    importGroup.Import();
-    ScriptMessage("CJK_PASS2_OK fonts=3 textures=2 tpis=3 sprites=2 glyphs=" + glyphTotal);
+
+    // ── 3) scr_setfont 单行映射（唯一代码改动点；计数判重见守卫）──
+    var sf = Data.Code.ByName("gml_Script_scr_setfont");
+    string sgml = GetDecompiledText("gml_Script_scr_setfont");
+    int anchor = sgml.IndexOf("draw_set_font(newfont);");
+    if (anchor < 0) { ScriptMessage("ERROR: setfont anchor missing"); return; }
+    sgml = sgml.Insert(anchor, "// CJK_MAP\nif (newfont == fnt_maintext) { newfont = fnt_ja_maintext; }\n");
+    var ig1 = new CodeImportGroup(Data) { MainThreadAction = MainThreadAction };
+    ig1.QueueReplace(sf, sgml);
+    ig1.Import();
+
+    // ── 4) preload 无条件 prefetch（既有页）──
+    var pc = Data.Code.ByName("gml_Script_scr_preload_textures");
+    string pgml = GetDecompiledText("gml_Script_scr_preload_textures");
+    int pcAnchor = pgml.IndexOf("sprite_prefetch(spr_maincharad);");
+    if (pcAnchor < 0) { ScriptMessage("ERROR: preload anchor missing"); return; }
+    int nPre = pgml.Split(new[]{"sprite_prefetch(spr_fonts_ja_preload);"}, StringSplitOptions.None).Length - 1;
+    if (nPre > 1) { ScriptMessage("ERROR: preload 已有无条件分支（n=" + nPre + "）"); return; }
+    pgml = pgml.Insert(pcAnchor, "sprite_prefetch(spr_fonts_ja_preload); // CJK_UNCOND\n");
+    var ig2 = new CodeImportGroup(Data) { MainThreadAction = MainThreadAction };
+    ig2.QueueReplace(pc, pgml);
+    ig2.Import();
+
+    ScriptMessage("CJK_PASS2_OK glyphs=" + n + " tpi=(0,1024) setfont_map=1 preload_uncond=1");
 } catch (Exception ex) {
     ScriptMessage("ERROR: " + ex.GetType().Name + ": " + ex.Message);
-}'''
+}''' 
 
 
 def _build_cjk_pass1_csx(work_dir: str) -> str:
@@ -6605,15 +6550,18 @@ def _build_cjk_pass2_csx(work_dir: str) -> str:
 
 def cmd_cjk_font(game_file: Path, build_dir: Path,
                  work_dir: Path = None, skip_pass1: bool = False) -> bool:
-    """C3b：注入中文字体（方案 B）。四步管线：
+    """C3b S6：中文页内重排注入（B4 实证栈，AUDIT 报告 §九）。五步管线：
 
-    1. pass1（只读 CSX）：dump 源字体元数据 + 共享纹理页 PNG → work_dir
-    2. tools/font_cjk_atlas.py：ASCII 拷贝 + CJK 排版 → 两张 2048 图集 + glyph 规格
-    3. pass2（写 CSX，默认沙箱）：新纹理/TPI/字体 ×3 + scr_setfont zh 分支
-    4. verify-code gml_Script_scr_setfont（域F 教训：代码改动必须字节级体检）
+    1. pass1（只读 CSX）：dump 源字体元数据 + emb19 页 + emb20 页 PNG → work_dir
+    2. tools/font_cjk_atlas.py --mode in-page：ASCII 拷贝 + CJK 排版 → 1024² 共享图集
+    3. tools/font_emb20_compose.py --verify：emb20 象限合成（页身份不变；像素 diff 自证）
+    4. pass2（写 CSX，默认沙箱）：emb20 换页 + fnt_ja_maintext@TPI6543 共享表 4064 字形
+       + scr_setfont 单行映射（计数守卫）+ preload 无条件 prefetch
+    5. verify-code gml_Script_scr_setfont（域F 教训：代码改动必须字节级体检）
 
     build_dir 为 tools/font_cjk_build.py 的输出（meta.json/glyphs.json/cjk_page_*.png）。
-    游戏内验证（语言 zh 分支生效、字形渲染）属 C3b-4，未包含在本命令。
+    约束：不新增字体资产（fonts=20 不变）；不新增纹理页（约束④：新页不被字体渲染器加载）。
+    对话触发块生成见 cjk-trigger 命令；游戏内渲染已由 B4 boot 实证（`* B4中文测试ABC`）。
     """
     import json as _json
     work_dir = work_dir or (game_file.parent / "cjk_work")
@@ -6634,27 +6582,205 @@ def cmd_cjk_font(game_file: Path, build_dir: Path,
     if not skip_pass1:
         out = _run_utmt(_build_cjk_pass1_csx(str(work_dir)), game_file, save=False)
         if "CJK_PASS1_OK" not in out:
-            raise RuntimeError(f"pass1 失败（未注入任何内容）:\n{out}")
+            raise RuntimeError(f"pass1 失败（未注入任何内容）：\\n{out}")
 
-    # 3) 图集构建（纯 Python，确定性）
+    # 3) 共享图集构建（in-page 模式，纯 Python，确定性）
     atlas_tool = Path(__file__).resolve().parent.parent / "tools" / "font_cjk_atlas.py"
     r = subprocess.run(
         [sys.executable, str(atlas_tool),
          "--build-dir", str(build_dir), "--pass1-dir", str(work_dir),
-         "--out-dir", str(work_dir)],
+         "--out-dir", str(work_dir), "--mode", "in-page"],
         capture_output=True, text=True)
     if r.returncode != 0:
-        raise RuntimeError("图集构建失败:\n" + r.stdout + r.stderr)
+        raise RuntimeError("图集构建失败：\\n" + r.stdout + r.stderr)
     print(r.stdout.strip())
 
-    # 4) pass2（写，默认沙箱）
+    # 4) emb20 象限合成（像素 diff 自证；越界变化 → 硬失败）
+    compose_tool = Path(__file__).resolve().parent.parent / "tools" / "font_emb20_compose.py"
+    r = subprocess.run(
+        [sys.executable, str(compose_tool),
+         "--emb20", str(work_dir / "emb20_page.png"),
+         "--atlas", str(work_dir / "font_atlas_inpage.png"),
+         "--out", str(work_dir / "emb20_page_new.png"), "--verify"],
+        capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError("emb20 合成失败：\\n" + r.stdout + r.stderr)
+    print(r.stdout.strip())
+
+    # 5) pass2（写，默认沙箱）
     out = _run_utmt(_build_cjk_pass2_csx(str(work_dir)), game_file, save=True)
     if "CJK_PASS2_OK" not in out:
-        raise RuntimeError(f"pass2 失败（沙箱未变更/回退）:\n{out}")
+        raise RuntimeError(f"pass2 失败（沙箱未变更/回退）：\\n{out}")
 
-    # 5) scr_setfont 字节级体检（WARN/不稳定 → 返回 False）
+    # 6) scr_setfont 字节级体检（WARN/不稳定 → 返回 False）
     print("→ verify-code gml_Script_scr_setfont（域F 协议）")
     return cmd_verify_code(game_file, "gml_Script_scr_setfont")
+
+
+# ============================================================
+# C3b S6：CJK 折行 util + 对话触发块生成器
+# ============================================================
+
+# typer → (spacing, writingxend)；spacing = writer 逐字推进常数（SCR_TEXTSETUP arg8）。
+# 只收录经 B3/B4 实证或 SCR_TEXTTYPE 反编译核对过几何的 typer。
+CJK_TYPER_TABLE = {
+    31: (12, 9999),   # fnt_maintext, x+20 起步，无自动折行（B4 主臂实证）
+    5: (8, 290),      # fnt_maintext, 标准对话（引擎按 writingxend 自动折行）
+    3: (10, 100),     # fnt_curs, writingy 在框上缘外（设计性）
+    2: (9, 190),      # fnt_plain
+    68: (9, 500),     # fnt_plain, c_white
+    30: (20, 9999),   # fnt_main, 大间距无折行
+}
+
+
+def cjk_wrap_text(text: str, chars_per_line: int) -> str:
+    """按 writer 均匀步距模型折行：typer 的 spacing 对每个字符一视同仁
+    （Draw_0 逐字符 letterx += spacing，空格也占一格），故一格 = 一字符。
+
+    规则：
+    - ASCII 词 [A-Za-z0-9'] 整体打包不切分（超长词硬切）；CJK 逐字可断
+    - 断行处空格吞掉（rstrip），行中空格占格
+    - 已有的 "&"（writer 硬换行）重置行计数；行间插 "&"（SCR_NEWLINE 标记）
+    - 短于限宽原样返回
+    """
+    if chars_per_line <= 0 or not text:
+        return text
+    out = []
+    for seg in text.split("&"):
+        # 词元化：ASCII 词整体 / 单个非 ASCII 字符 / 空格
+        tokens = []
+        i = 0
+        while i < len(seg):
+            ch = seg[i]
+            if ch == " ":
+                tokens.append(" ")
+                i += 1
+            elif ch.isascii() and (ch.isalnum() or ch == "'"):
+                j = i
+                while j < len(seg) and seg[j].isascii() and (seg[j].isalnum() or seg[j] == "'"):
+                    j += 1
+                tokens.append(seg[i:j])
+                i = j
+            else:
+                tokens.append(ch)
+                i += 1
+        cur = ""
+        for tok in tokens:
+            if tok == " ":
+                if cur:
+                    cur += tok       # 行尾空格暂挂，落行时 rstrip
+                continue
+            if len(tok) > chars_per_line:
+                if cur:
+                    out.append(cur.rstrip(" "))
+                w = tok
+                while len(w) > chars_per_line:
+                    out.append(w[:chars_per_line])
+                    w = w[chars_per_line:]
+                cur = w
+                continue
+            if len(cur) + len(tok) <= chars_per_line:   # cur 含试探性尾随空格
+                cur += tok
+            else:
+                out.append(cur.rstrip(" "))
+                cur = tok
+        if cur:
+            out.append(cur.rstrip(" "))
+    return "&".join(out)
+
+
+def _gml_escape(text: str) -> str:
+    """GML 字符串字面量转义（反斜杠与双引号）。"""
+    return text.replace("\\\\", "\\\\\\\\").replace('"', '\\\\"')
+
+
+def _build_cjk_trigger_csx(room_name: str, obj_name: str, x: int, y: int,
+                           typer: int, text: str, wrap: bool = True,
+                           width_room_px: int = None) -> str:
+    """生成单个 CJK 对话触发块 CSX（追加到 obj_<名>_Step_1）。
+
+    触发块形态 = B4 实证全形态（缺一即幽灵框/空框，见 AUDIT §八/§九）：
+    msc=0 / typer / facechoice=3 / faceemotion=0 / msg[0] 带 "/%%" 终止符 /
+    msg[1]="%%%" / id 守卫三连 / distance<60。
+    typer 必须在 CJK_TYPER_TABLE 内（几何未核对的 typer 拒绝）。
+    位置硬校验：0 <= x < 320（房间宽 320——越界即物理不可触发，B2 教训）。
+    """
+    if typer not in CJK_TYPER_TABLE:
+        raise RuntimeError(f"typer {typer} 几何未核对（合法值："
+                           f"{sorted(CJK_TYPER_TABLE)}）——查 SCR_TEXTTYPE 后再加表")
+    if not (0 <= x < 320 and 0 <= y < 480):
+        raise RuntimeError(f"触发位 ({x},{y}) 越界——房间 320×480，越界即不可触发"
+                           f"（B2 教训：报告 §九）")
+    if not text or not text.strip():
+        raise RuntimeError("text 为空")
+    if wrap:
+        spacing = CJK_TYPER_TABLE[typer][0]
+        if width_room_px is None:
+            # typer31 无引擎折行（wxend=9999）→ 默认按标准框宽 202（view+290 − view+88）
+            width_room_px = 202
+        text = cjk_wrap_text(text, max(1, width_room_px // spacing))
+    if not text.endswith("/%%"):
+        text = text + "/%%"
+    gml_text = _gml_escape(text)
+    step_name = f"gml_Object_{obj_name}_Step_1"
+    return f'''// C3b S6 cjk-trigger：CJK 对话触发块（B4 实证全形态）
+using System;
+using System.Linq;
+try {{
+    var room = Data.Rooms.First(r => r.Name.Content == "{room_name}");
+    var obj = Data.GameObjects.First(o => o.Name.Content == "{obj_name}");
+    string stepName = "{step_name}";
+    var stepCode = Data.Code.ByName(stepName);
+    string tgml = GetDecompiledText(stepName);
+    if (tgml.Contains("CJK_TRIGGER")) {{ ScriptMessage("ERROR: CJK 触发块已存在——先回滚"); return; }}
+    // 幂等守卫（计数式）：ja_maintext 共享表未注入则拒绝（触发块依赖 CJK 栈）
+    var jaText = Data.Fonts.FirstOrDefault(f => f.Name != null && f.Name.Content == "fnt_ja_maintext");
+    if (jaText == null || jaText.Glyphs.Count <= 1000) {{
+        ScriptMessage("ERROR: CJK 页内栈未注入——先运行 cjk-font"); return;
+    }}
+    uint iid = Data.GeneralInfo.LastObj;
+    Data.GeneralInfo.LastObj = iid + 1;
+    var inst = new UndertaleRoom.GameObject();
+    inst.InstanceID = iid;
+    inst.X = {x}; inst.Y = {y};
+    inst.ObjectDefinition = obj;
+    room.GameObjects.Add(inst);
+    string block = ""
+        + "if (id == " + iid + " && !instance_exists(obj_dialoguer) && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))\\n"
+        + "{{\\n"
+        + "    if (distance_to_object(obj_mainchara) < 60)\\n"
+        + "    {{\\n"
+        + "        global.msc = 0;\\n"
+        + "        global.typer = {typer};\\n"
+        + "        global.facechoice = 3;\\n        global.faceemotion = 0;\\n"
+        + "        global.msg[0] = \\"{gml_text}\\";\\n"
+        + "        global.msg[1] = \\"%%%\\";\\n"
+        + "        instance_create(0, 0, obj_dialoguer);\\n"
+        + "    }}\\n"
+        + "}}\\n"
+        + "// CJK_TRIGGER\\n";
+    tgml = tgml + "\\n" + block;
+    var ig = new CodeImportGroup(Data) {{ MainThreadAction = MainThreadAction }};
+    ig.QueueReplace(stepCode, tgml);
+    ig.Import();
+    ScriptMessage("CJK_TRIGGER_OK id=" + iid + " typer={typer} @({x},{y})");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.GetType().Name + ": " + ex.Message);
+}}'''
+
+
+def cmd_cjk_trigger(game_file: Path, room_name: str, obj_name: str, x: int, y: int,
+                    typer: int, text: str, wrap: bool = True,
+                    width_room_px: int = None) -> bool:
+    """C3b S6：注入单个 CJK 对话触发块（默认沙箱）+ 触发后体检。"""
+    csx = _build_cjk_trigger_csx(room_name, obj_name, x, y, typer, text, wrap, width_room_px)
+    out = _run_utmt(csx, game_file, save=True)
+    if "CJK_TRIGGER_OK" not in out:
+        raise RuntimeError(f"cjk-trigger 失败（沙箱未变更/回退）：\\n{out}")
+    print(out.strip().splitlines()[-1])
+    step_name = f"gml_Object_{obj_name}_Step_1"
+    print(f"→ verify-code {step_name}（域F 协议）")
+    return cmd_verify_code(game_file, step_name)
 
 
 # ============================================================
@@ -6920,7 +7046,7 @@ def main():
                                      "create-pit",
                                      "create-battle",
                                      "verify-nsid", "verify-instances", "verify-code", "smoke-test", "diff-snapshots", "set-derived",
-                                     "cjk-font", "md5"])
+                                     "cjk-font", "cjk-trigger", "md5"])
     parser.add_argument("--key", help="键名或数字索引 (file0 用数字)")
     parser.add_argument("--value", help="要设置/搜索的值 (set/find 操作必需)")
     parser.add_argument("--old", help="replace-string 的旧文本 (decompile-code 兼容别名，等同 --search)")
@@ -7005,6 +7131,15 @@ def main():
                         help="verify-code: 输出完整反汇编文本（ASM| 行）")
     parser.add_argument("--work-dir", type=str, default=None,
                         help="cjk-font: 中间产物目录（pass1 dump/图集；默认 game 文件旁 cjk_work/）")
+    parser.add_argument("--room", type=str, default="room_ruins1",
+                        help="cjk-trigger: 目标房间名（默认 room_ruins1）")
+    parser.add_argument("--object", type=str, default="obj_cactus",
+                        help="cjk-trigger: 承载触发块的对象名（其 Step_1 被追加；默认 obj_cactus）")
+    parser.add_argument("--typer", type=int, default=31,
+                        help="cjk-trigger: SCR_TEXTTYPE 编号（默认 31 = fnt_maintext spacing12；须在 CJK_TYPER_TABLE）")
+    # cjk-trigger 复用全局 --x/--y/--text/--width：x,y=触发位（x 须<320）、text=对话文本、width=预折行宽度(房间像素)
+    parser.add_argument("--no-wrap", action="store_true",
+                        help="cjk-trigger: 关闭预折行（默认开）")
     parser.add_argument("--auto-snapshot", action="store_true",
                         help="每次写入操作前自动创建实验快照")
     parser.add_argument("--apply", action="store_true",
@@ -7087,6 +7222,9 @@ def main():
     # other commands keep the historical 320/240 default.
     x_explicit = args.x is not None
     y_explicit = args.y is not None
+    # cjk-trigger 用原始 None 判定（其默认 220/330 与 spawn 的 320/240 不同）
+    args.x_raw = args.x
+    args.y_raw = args.y
     if args.x is None:
         args.x = 320
     if args.y is None:
@@ -7508,6 +7646,16 @@ def main():
                 if not cmd_cjk_font(game_file, Path(args.value).expanduser(),
                                     Path(args.work_dir).expanduser() if args.work_dir else None):
                     sys.exit(1)  # scr_setfont 字节级体检 WARN 必须非零退出
+            elif args.action == "cjk-trigger":
+                if args.text is None:
+                    parser.error("--text 是必需的 (对话文本)")
+                if not cmd_cjk_trigger(game_file, args.room, args.object,
+                                       220 if args.x_raw is None else args.x_raw,
+                                       330 if args.y_raw is None else args.y_raw,
+                                       args.typer, args.text,
+                                       wrap=not args.no_wrap,
+                                       width_room_px=args.width):
+                    sys.exit(1)  # Step_1 字节级体检 WARN 必须非零退出
             else:
                 parser.error(f"'{args.action}' 不支持 data_win 文件")
         except (FileNotFoundError, ValueError, IndexError, RuntimeError, DeterlineError) as e:

@@ -702,6 +702,20 @@
       "verify": "static",
       "summary": "从命名快照恢复（⚠️ 覆盖 game.ios + file0）",
       "example": "experiment-restore --value \"test1\""
+    },
+    {
+      "action": "cjk-trigger",
+      "group": "text",
+      "verify": "sandbox",
+      "summary": "生成并注入单个 CJK 对话触发块（B4 实证全形态：msc/facechoice/faceemotion//%%终止符/msg[1]；默认 typer31 spacing12；--text 文本自动预折行；须先 cjk-font）",
+      "example": "cjk-trigger --text \"* 托丽尔你好，这里是中文测试。\" --x 220 --y 330",
+      "notes": [
+        "依赖 cjk-font 页内栈先行注入（幂等守卫会拒绝）",
+        "触发位须在房间 320×480 内且可行走（x>=320 物理不可触发——B2 教训）",
+        "typer 须在 CJK_TYPER_TABLE（31/5/3/2/68/30，几何经 SCR_TEXTTYPE 反编译核对）",
+        "折行按 writer 均匀步距模型（每字符一格）；typer31 无引擎折行故默认预折行宽 202",
+        "追加到 --object（默认 obj_cactus）的 Step_1；同一目标对象只能有一个 CJK 触发块"
+      ]
     }
   ]
 }
