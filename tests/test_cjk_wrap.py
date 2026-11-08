@@ -93,6 +93,30 @@ class TestCjkTriggerBuilder(unittest.TestCase):
             ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 480, 240, 31, "x")
         with self.assertRaisesRegex(RuntimeError, "320"):
             ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", -5, 240, 31, "x")
+        with self.assertRaisesRegex(RuntimeError, "480"):
+            ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 100, 480, 31, "x")
+
+    def test_escape_layers(self):
+        # P1：GML 层 + C# 层嵌套转义——C# 反转义得 GML 转义形态，GML 反转义得原文
+        for raw in ('plain', 'say "hi"', 'back\\slash', 'mix\"\\end'):
+            gml = ms._gml_escape(raw)
+            csx = ms._csx_escape(gml)
+            gml_back = csx.replace("\\\\", "\x00").replace('\\"', '"').replace("\x00", "\\")
+            self.assertEqual(gml_back, gml, f"GML 层还原失败: {raw!r}")
+        # 反斜杠 1→2（旧实现的 2→4/1 穿透 bug 钉形）
+        self.assertEqual(ms._gml_escape('a\\b'), 'a\\\\b')
+        self.assertEqual(ms._gml_escape('a"b'), 'a\\"b')
+
+    def test_writer_special_chars_rejected(self):
+        for bad in ("50%off", "and/or"):
+            with self.assertRaisesRegex(RuntimeError, "writer 专用字符"):
+                ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 100, 100, 31, bad, wrap=False)
+
+    def test_terminator_not_split_by_wrap(self):
+        csx = ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 100, 100, 31,
+                                        "abcd/%%", wrap=True, width_room_px=12)
+        self.assertNotIn("/&", csx.split("msg[0]")[1])   # 终止符不被折行劈开
+        self.assertNotIn("&%%", csx.split("msg[0]")[1])
 
     def test_unknown_typer_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "typer"):

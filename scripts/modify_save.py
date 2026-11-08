@@ -6526,7 +6526,7 @@ try {
     int pcAnchor = pgml.IndexOf("sprite_prefetch(spr_maincharad);");
     if (pcAnchor < 0) { ScriptMessage("ERROR: preload anchor missing"); return; }
     int nPre = pgml.Split(new[]{"sprite_prefetch(spr_fonts_ja_preload);"}, StringSplitOptions.None).Length - 1;
-    if (nPre > 1) { ScriptMessage("ERROR: preload 已有无条件分支（n=" + nPre + "）"); return; }
+    if (nPre > 1 || pgml.Contains("// CJK_UNCOND")) { ScriptMessage("ERROR: preload 已有无条件分支（n=" + nPre + "）"); return; }
     pgml = pgml.Insert(pcAnchor, "sprite_prefetch(spr_fonts_ja_preload); // CJK_UNCOND\n");
     var ig2 = new CodeImportGroup(Data) { MainThreadAction = MainThreadAction };
     ig2.QueueReplace(pc, pgml);
@@ -6647,6 +6647,9 @@ def cjk_wrap_text(text: str, chars_per_line: int) -> str:
         return text
     out = []
     for seg in text.split("&"):
+        if seg == "":
+            out.append("")               # 保留显式空行（"&&"）
+            continue
         # 词元化：ASCII 词整体 / 单个非 ASCII 字符 / 空格
         tokens = []
         i = 0
@@ -6690,8 +6693,21 @@ def cjk_wrap_text(text: str, chars_per_line: int) -> str:
 
 
 def _gml_escape(text: str) -> str:
-    """GML 字符串字面量转义（反斜杠与双引号）。"""
-    return text.replace("\\\\", "\\\\\\\\").replace('"', '\\\\"')
+    """GML 字符串字面量转义：反斜杠 1→2、双引号 → \"（GML 层）。"""
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _csx_escape(text: str) -> str:
+    """C# 常规字符串字面量转义：反斜杠/双引号/真实换行（CSX 宿主层）。
+
+    嵌套次序：原始文本 → _gml_escape（GML 层）→ _csx_escape（C# 层）。
+    C# 反转义后即得 GML 转义形态，GML 反转义后即得原始文本。
+    """
+    return (text.replace("\\", "\\\\")
+                .replace('"', '\\"')
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t"))
 
 
 def _build_cjk_trigger_csx(room_name: str, obj_name: str, x: int, y: int,
@@ -6713,15 +6729,30 @@ def _build_cjk_trigger_csx(room_name: str, obj_name: str, x: int, y: int,
                            f"（B2 教训：报告 §九）")
     if not text or not text.strip():
         raise RuntimeError("text 为空")
+    if "\n" in text or "\r" in text:
+        raise RuntimeError("text 含真实换行——多行对话请用 writer 硬换行标记 & 或拆多条触发块")
+    if "\t" in text:
+        raise RuntimeError("text 含制表符——writer 无此字形，请改空格")
+    # 终止符摘出（折行不得劈开 "/%%"），中部 writer 专用字符校验
+    terminator = ""
+    if text.endswith("/%%"):
+        text, terminator = text[:-3], "/%%"
+    for ch in ("/", "%"):
+        if ch in text:
+            raise RuntimeError(f"text 含 writer 专用字符 {ch!r}（halt/翻页语义）——"
+                               f"请改写文本（百分号用中文表述）")
     if wrap:
-        spacing = CJK_TYPER_TABLE[typer][0]
+        spacing, wxend = CJK_TYPER_TABLE[typer]
         if width_room_px is None:
             # typer31 无引擎折行（wxend=9999）→ 默认按标准框宽 202（view+290 − view+88）
             width_room_px = 202
+        if 0 < wxend < 9000:                       # 引擎会按 wxend 二次折行 → 预折行不超它
+            width_room_px = min(width_room_px, wxend)
         text = cjk_wrap_text(text, max(1, width_room_px // spacing))
+    text = text + terminator
     if not text.endswith("/%%"):
         text = text + "/%%"
-    gml_text = _gml_escape(text)
+    gml_text = _csx_escape(_gml_escape(text))
     step_name = f"gml_Object_{obj_name}_Step_1"
     return f'''// C3b S6 cjk-trigger：CJK 对话触发块（B4 实证全形态）
 using System;
@@ -7091,7 +7122,7 @@ def main():
     parser.add_argument("--text-key", type=str, default=None,
                         help="textdata key (npc-dialogue/guard-npc-alarm/npc-choice 用)")
     parser.add_argument("--text", type=str, default=None,
-                        help="对话内容 ASCII (npc-dialogue 用)")
+                        help="对话文本 (npc-dialogue 用 ASCII；cjk-trigger 用 CJK，触发框全形态+预折行自动补全)")
     parser.add_argument("--yes-text-key", type=str, default=None,
                         help="YES 分支 textdata key (npc-choice 用)")
     parser.add_argument("--yes-text", type=str, default=None,
@@ -7155,7 +7186,7 @@ def main():
 
     # Room editing (P4-2)
     parser.add_argument("--width", type=int, default=None,
-                        help="房间宽度 (create-room/set-room-prop 用)")
+                        help="房间宽度 (create-room/set-room-prop)；cjk-trigger: 预折行宽度（房间像素，默认 typer31=202 且不超该 typer 的 writingxend）")
     parser.add_argument("--height", type=int, default=None,
                         help="房间高度 (create-room/set-room-prop 用)")
     parser.add_argument("--speed", type=int, default=None,

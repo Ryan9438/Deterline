@@ -69,7 +69,7 @@ try {
     int pcAnchor = pgml.IndexOf("sprite_prefetch(spr_maincharad);");
     if (pcAnchor < 0) { ScriptMessage("ERROR: preload anchor missing"); return; }
     int nPre = pgml.Split(new[]{"sprite_prefetch(spr_fonts_ja_preload);"}, StringSplitOptions.None).Length - 1;
-    if (nPre > 1) { ScriptMessage("ERROR: preload 已有无条件分支（n=" + nPre + "）"); return; }
+    if (nPre > 1 || pgml.Contains("// CJK_UNCOND")) { ScriptMessage("ERROR: preload 已有无条件分支（n=" + nPre + "）"); return; }
     pgml = pgml.Insert(pcAnchor, "sprite_prefetch(spr_fonts_ja_preload); // CJK_UNCOND\n");
     var ig2 = new CodeImportGroup(Data) { MainThreadAction = MainThreadAction };
     ig2.QueueReplace(pc, pgml);

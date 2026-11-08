@@ -181,7 +181,7 @@ deterline/
 | `batch-add-textentry --value entries.json` | 从 JSON 文件批量导入（[{"key":"k","text":"t"}]，支持 --face/--emotion） | sandbox |
 | `guided-add-dialogue --key "obj_x" --value "* 文本/%%"` | 引导式对话创建（分步打印进度） | static |
 | `search-sctext --value "* 你好"` | 在 SCR_TEXT 用例表中搜索文本 | static |
-| `cjk-font --value build/font_cjk` | 注入中文字体管线（sandbox 已验证；【2026-11-08】中文已在游戏内实机渲染成功（B4 页内重排全栈），见 AUDIT_2026-11-07/C3b-游戏内验证报告 §九；S6 集成待做） | sandbox |
+| `cjk-font --value build/font_cjk` | 注入中文字体管线（sandbox 已验证；【2026-11-08】中文已在游戏内实机渲染成功（B4 页内重排全栈），见 AUDIT_2026-11-07/C3b-游戏内验证报告 §九；S6 已集成（cjk-trigger 触发块命令随附）） | sandbox |
 | `cjk-trigger --text "* 托丽尔你好，这里是中文测试。" --x 220 --y 330` | 生成并注入单个 CJK 对话触发块（B4 实证全形态：msc/facechoice/faceemotion//%%终止符/msg[1]；默认 typer31 spacing12；--text 文本自动预折行；须先 cjk-font） | sandbox |
 
 > ⚠️ `replace-string`: 全局替换，先 search-strings 确认影响面
@@ -193,6 +193,7 @@ deterline/
 > ⚠️ `cjk-trigger`: typer 须在 CJK_TYPER_TABLE（31/5/3/2/68/30，几何经 SCR_TEXTTYPE 反编译核对）
 > ⚠️ `cjk-trigger`: 折行按 writer 均匀步距模型（每字符一格）；typer31 无引擎折行故默认预折行宽 202
 > ⚠️ `cjk-trigger`: 追加到 --object（默认 obj_cactus）的 Step_1；同一目标对象只能有一个 CJK 触发块
+> ⚠️ `cjk-trigger`: 触发半径硬编码 60（B4 实证值，与全局 --range 无关）
 
 ### 📜 脚本编辑 — --file data_win，反编译/重编译 GML（6272 个脚本）
 

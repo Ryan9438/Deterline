@@ -254,7 +254,7 @@
       "action": "cjk-font",
       "group": "text",
       "verify": "sandbox",
-      "summary": "注入中文字体管线（sandbox 已验证；【2026-11-08】中文已在游戏内实机渲染成功（B4 页内重排全栈），见 AUDIT_2026-11-07/C3b-游戏内验证报告 §九；S6 集成待做）",
+      "summary": "注入中文字体管线（sandbox 已验证；【2026-11-08】中文已在游戏内实机渲染成功（B4 页内重排全栈），见 AUDIT_2026-11-07/C3b-游戏内验证报告 §九；S6 已集成（cjk-trigger 触发块命令随附））",
       "example": "cjk-font --value build/font_cjk",
       "notes": [
         "--value 须为 font_cjk_build.py 输出目录（OFL 字体自生成）",
@@ -714,7 +714,8 @@
         "触发位须在房间 320×480 内且可行走（x>=320 物理不可触发——B2 教训）",
         "typer 须在 CJK_TYPER_TABLE（31/5/3/2/68/30，几何经 SCR_TEXTTYPE 反编译核对）",
         "折行按 writer 均匀步距模型（每字符一格）；typer31 无引擎折行故默认预折行宽 202",
-        "追加到 --object（默认 obj_cactus）的 Step_1；同一目标对象只能有一个 CJK 触发块"
+        "追加到 --object（默认 obj_cactus）的 Step_1；同一目标对象只能有一个 CJK 触发块",
+        "触发半径硬编码 60（B4 实证值，与全局 --range 无关）"
       ]
     }
   ]
