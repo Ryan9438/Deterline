@@ -70,6 +70,8 @@ class TestFileMigrationChecklist(unittest.TestCase):
     - O2 步 2：rooms.json 两处（加载/写入）随 rooms_data.py 迁入包内，按方案
       风险 #3 缓解统一为包根解析 parents[1]，并合并为单点 _rooms_json_path()
       （原两处重复字面量 → 一处）。
+    - O2 步 9：cjk tools 两处随 cmds/cjk.py 迁入，parent.parent → parents[2]
+      （方案风险 #3 缓解明文项；验收必须实际触发该路径）。
     """
 
     EXPECTED = [
@@ -78,10 +80,10 @@ class TestFileMigrationChecklist(unittest.TestCase):
          'str(Path(__file__).resolve().parent)'),
         ("rooms.json 路径单点（rooms_data.py，O2 步 2 包根解析）",
          'parents[1] / "rooms.json"'),
-        ("cjk 图集工具路径（cjk 域迁移项，S6 新增）",
-         'parent.parent / "tools" / "font_cjk_atlas.py"'),
-        ("cjk 合成工具路径（cjk 域迁移项，S6 新增）",
-         'parent.parent / "tools" / "font_emb20_compose.py"'),
+        ("cjk 图集工具路径（cmds/cjk.py，步 9 包根解析 parents[2]）",
+         'parents[2] / "tools" / "font_cjk_atlas.py"'),
+        ("cjk 合成工具路径（cmds/cjk.py，步 9 包根解析 parents[2]）",
+         'parents[2] / "tools" / "font_emb20_compose.py"'),
     ]
 
     def test_file_usage_set_matches_checklist(self):
