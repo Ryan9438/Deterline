@@ -248,8 +248,9 @@ class TestSpineHelpers(SpineTestBase):
         with dual_patch_utmt(side_effect=RuntimeError(sentinel)):
             with self.assertRaisesRegex(RuntimeError, sentinel):
                 utmt._run_utmt("// x", self.game_file, save=False)  # 包内路径
-            # ms 裸名路径：cmd_smoke_test 等 ms 驻留命令经 ms globals 调用
-            with mock.patch.object(ms, "_run_utmt") as probe:
-                pass  # ms 挂点存在性由 dual_patch 本身保证（同一 mock 两处挂载）
+            # ms 路径演练（步 3 复核 P3-2：死 probe 换真触发；迁移全程有效——
+            # ms 挂点即 shim re-export 绑定，patch 直接改写该命名空间条目）
+            with self.assertRaisesRegex(RuntimeError, sentinel):
+                ms._run_utmt("// x", self.game_file, save=False)
         # 双挂载断言：patch 退出后两处均恢复为同一真身
         self.assertIs(ms._run_utmt, utmt._run_utmt)

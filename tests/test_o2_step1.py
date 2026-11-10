@@ -160,13 +160,18 @@ class TestShimReexportsAreLiveBindings(unittest.TestCase):
             tree = ast.parse(f.read_text(encoding="utf-8"), filename=str(f))
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom):
+                    if node.names and node.names[0].name == "*":
+                        offenders.append(f"{rel}:{node.lineno}: 星号导入"
+                                         f"（绕过符号级警戒线，一并拒绝）")
                     for a in node.names:
-                        if a.name == "ROOMS":
-                            offenders.append(f"{rel}:{node.lineno}: from-import ROOMS")
+                        if a.name == "ROOMS" or a.asname == "ROOMS":
+                            offenders.append(f"{rel}:{node.lineno}: "
+                                             f"from-import ROOMS as {a.asname or a.name}")
                 elif isinstance(node, ast.Import):
                     for a in node.names:
-                        if a.name.endswith(".ROOMS"):
-                            offenders.append(f"{rel}:{node.lineno}: import ROOMS")
+                        if a.name.endswith(".ROOMS") or a.asname == "ROOMS":
+                            offenders.append(f"{rel}:{node.lineno}: "
+                                             f"import {a.name} as {a.asname or a.name}")
                 elif isinstance(node, ast.Name) and node.id == "ROOMS":
                     offenders.append(f"{rel}:{node.lineno}: 裸名 ROOMS")
         self.assertEqual(
