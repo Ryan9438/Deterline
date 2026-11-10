@@ -51,9 +51,16 @@ def authoritative_actions() -> list:
     """
     pkg_cli = SCRIPT.parent / "deterline" / "cli.py"
     if pkg_cli.exists():
-        sys.path.insert(0, str(SCRIPT.parent))
-        import deterline.cli as cli_mod
-        actions = list(getattr(cli_mod, "ACTION_CHOICES"))
+        sp = str(SCRIPT.parent)
+        if sp not in sys.path:
+            sys.path.insert(0, sp)
+        try:
+            import deterline.cli as cli_mod
+            actions = list(getattr(cli_mod, "ACTION_CHOICES"))
+        except (ImportError, AttributeError) as e:
+            raise RuntimeError(
+                f"import deterline.cli 失败（拆包过渡期 cli 半成品？）: {e!r}——"
+                f"请完成 cli.py 的 ACTION_CHOICES 或暂回退正则路径") from e
         if len(set(actions)) != len(actions):
             raise RuntimeError("deterline.cli ACTION_CHOICES 含重复项")
         return actions

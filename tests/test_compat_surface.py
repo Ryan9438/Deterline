@@ -1,12 +1,14 @@
 """O2-step0 A8（研讨会2/01 §2.4）：modify_save.py 兼容面显式测试。
 
-测试套件实际引用的 ms.* 名字（2026-11-10 全量提取，73 个）钉成显式清单。
+测试套件实际引用的 ms.* 名字钉成显式清单（2026-11-10 复核席修订：79 个——
+含 patch.object/getattr 字符串形式引用与 test_o2_step0 的 4 个新名）。
 拆包后 modify_save.py 变 shim——本测试防止有人在 shim 上"清理"导出
 （shim 只能 import 与 re-export，见研讨会2/01 风险 #9）。
-维护方式：tests/ 中新增 ms.* 引用后，把名字加进 COMPAT_SURFACE。
 
-清单来源：grep -rhoE "ms\\.[A-Za-z_][A-Za-z0-9_]*" tests/*.py | sort -u
-"""
+维护方式：tests/ 新增 ms.* 引用后把名字加进 COMPAT_SURFACE；
+test_live_reference_set_matches 会用提取器做集合 diff，漂移即爆红。
+提取注意：正则须带 (?<[A-Za-z]) 否则 "rooms.json" 子串误报出 "json"；
+patch.object(ms, "<名字>") 与 getattr(ms, "<名字>") 的字符串形式也算（提取器两种都收）。"""
 
 import sys
 import unittest
@@ -17,8 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import modify_save as ms
 
 COMPAT_SURFACE = [
+    "COMMIT_ACTIVE",
     "FILE0_FIELDS",
     "ITEMS",
+    "NO_STEAM_SYNC",
     "NotFoundError",
     "SANDBOX_ACTIVE",
     "SANDBOX_ORIGINAL",
@@ -31,6 +35,7 @@ COMPAT_SURFACE = [
     "_csx_escape",
     "_csx_verbatim_escape",
     "_effective_game_file",
+    "_get_decompiled_code",
     "_gml_escape",
     "_instances_check_snippet",
     "_load_gml_value",
@@ -42,11 +47,14 @@ COMPAT_SURFACE = [
     "_read_ini",
     "_resolve_file0_key",
     "_resolve_write_target",
+    "_run_utmt",
     "_validate_ascii_text",
     "build_gml_bg_code",
     "build_set_room_bg_stmts",
     "cjk_wrap_text",
     "cmd_batch_textdata",
+    "cmd_cjk_font",
+    "cmd_cjk_trigger",
     "cmd_code_append",
     "cmd_code_find_replace",
     "cmd_code_prepend",
@@ -99,9 +107,26 @@ class TestCompatSurface(unittest.TestCase):
         missing = [n for n in COMPAT_SURFACE if not hasattr(ms, n)]
         self.assertEqual(missing, [], f"modify_save.py 兼容面缺名: {missing}")
 
+    def test_live_reference_set_matches(self):
+        """复核席 P1-1/P2-6：清单与测试实际引用集合 diff——漂移即爆红。"""
+        import re as _re2
+        refs = set()
+        pat_dotted = _re2.compile(r'(?<![A-Za-z])ms\.([A-Za-z_][A-Za-z0-9_]*)')
+        pat_str = _re2.compile(r'(?:patch\.object|getattr)\(\s*ms,\s*["\']([A-Za-z_][A-Za-z0-9_]*)["\']')
+        for f in Path(__file__).resolve().parent.glob("test_*.py"):
+            t = f.read_text(encoding="utf-8")
+            refs.update(pat_dotted.findall(t))
+            refs.update(pat_str.findall(t))
+        refs.discard("json")  # "rooms.json" 子串防误报兜底（负向环视已挡大部分）
+        listed = set(COMPAT_SURFACE)
+        self.assertEqual(refs - listed, set(),
+                         f"测试引用了清单外的 ms.* 名字（请加入 COMPAT_SURFACE）: {sorted(refs - listed)}")
+        self.assertEqual(listed - refs, set(),
+                         f"清单列出了已无人引用的名字（请移除并归因）: {sorted(listed - refs)}")
+
     def test_surface_count_reported(self):
         # 面扩大是正常演进（新命令），缩小是事故；此断言让增减在 diff 里可见
-        self.assertGreaterEqual(len(COMPAT_SURFACE), 73,
+        self.assertGreaterEqual(len(COMPAT_SURFACE), 79,
                                 "兼容面缩水——若为有意清理，先更新本清单并归因")
 
 

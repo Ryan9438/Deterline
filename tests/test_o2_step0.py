@@ -25,8 +25,11 @@ GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 
 def _run_help(script: str) -> str:
     import subprocess
+    # COLUMNS 固定：argparse HelpFormatter 是 terminal-size aware（复核席 P1-3：
+    # 导出过 COLUMNS 的机器上输出重排，A2 逐字节断言会假失败）
     r = subprocess.run([sys.executable, str(REPO / script), "--help"],
-                       capture_output=True, text=True, cwd=str(REPO))
+                       capture_output=True, text=True, cwd=str(REPO),
+                       env={**os.environ, "COLUMNS": "80"})
     if r.returncode != 0:
         raise RuntimeError(f"{script} --help 退出码 {r.returncode}: {r.stderr[-300:]}")
     return r.stdout
@@ -96,22 +99,30 @@ class TestSentinelDrill(unittest.TestCase):
     """风险 #1 提前冒烟：patch ms._run_utmt 为 raise 哨兵，确认零穿透。"""
 
     def test_cjk_trigger_intercepted_by_sentinel(self):
-        # 真实数据文件（只读路径：_run_utmt 被哨兵替换，不可能起子进程/写文件）
-        game_file = ms.find_game_data_file()
-        sentinel_err = "SENTINEL: _run_utmt 不应被直接调用（应经模块属性被本测试拦截）"
-        with mock.patch.object(ms, "_run_utmt", side_effect=RuntimeError(sentinel_err)):
-            with self.assertRaisesRegex(RuntimeError, "SENTINEL"):
-                ms.cmd_cjk_trigger(game_file, "room_ruins1", "obj_cactus",
-                                   220, 330, 31, "* 哨兵演练文本")
+        # ⚠️ 用临时假数据文件（复核席 P1-2）：真实文件路径在 patch 失效场景下
+        # 会让 _run_utmt 真身跑在真文件上；假文件让该失败模式降级为 FileNotFoundError。
+        # 且 cmd_cjk_trigger 的 CSX 构建纯内存、_run_utmt 被哨兵替换——零真实目录接触。
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            fake = Path(td) / "game.ios"
+            fake.write_bytes(b"fake")
+            sentinel_err = "SENTINEL: _run_utmt 不应被直接调用（应经模块属性被本测试拦截）"
+            with mock.patch.object(ms, "_run_utmt", side_effect=RuntimeError(sentinel_err)):
+                with self.assertRaisesRegex(RuntimeError, "SENTINEL"):
+                    ms.cmd_cjk_trigger(fake, "room_ruins1", "obj_cactus",
+                                       220, 330, 31, "* 哨兵演练文本")
         # 若上面没有触发哨兵（例如命令路径绕过了模块属性），
         # assertRaisesRegex 会以"未触发 RuntimeError"失败——零穿透即测试失败。
 
     def test_cjk_font_pass1_intercepted_by_sentinel(self):
         import json as _json
         import tempfile
-        game_file = ms.find_game_data_file()
         sentinel_err = "SENTINEL: pass1 不应直接起 UTMT 子进程"
         with tempfile.TemporaryDirectory() as td:
+            # 假 game_file（复核席 P1-2：work_dir 默认 game_file.parent/cjk_work，
+            # 真实文件路径会在真游戏目录 mkdir——改临时目录后全程零真实接触）
+            fake = Path(td) / "game.ios"
+            fake.write_bytes(b"fake")
             # 合规假 build_dir（通过前置校验，让执行路径抵达 _run_utmt）
             bd = Path(td) / "build"
             bd.mkdir()
@@ -120,7 +131,7 @@ class TestSentinelDrill(unittest.TestCase):
             (bd / "cjk_page_0.png").write_bytes(b"png")
             with mock.patch.object(ms, "_run_utmt", side_effect=RuntimeError(sentinel_err)):
                 with self.assertRaisesRegex(RuntimeError, "SENTINEL"):
-                    ms.cmd_cjk_font(game_file, bd, skip_pass1=False)
+                    ms.cmd_cjk_font(fake, bd, skip_pass1=False)
         # pass2 亦经同一属性（golden 套件 _capture 是同一机制的日常版）
 
 
