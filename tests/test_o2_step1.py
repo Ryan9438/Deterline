@@ -224,6 +224,27 @@ class TestShimReexportsAreLiveBindings(unittest.TestCase):
     def test_ms_state_attribute_is_canonical_module(self):
         self.assertIs(ms.state, state)
 
+    def test_shim_is_import_only(self):
+        """O2 步 10 终态守卫（风险 #9）：shim 顶层只许 import/re-export +
+        包引导 If + __main__ 守卫——零 def/class/赋值逻辑。"""
+        tree = ast.parse((SCRIPTS / "modify_save.py").read_text(encoding="utf-8"))
+        for n in tree.body:
+            if isinstance(n, (ast.FunctionDef, ast.ClassDef)):
+                self.fail(f"shim 顶层出现 {type(n).__name__}——实现必须留在包内")
+            if isinstance(n, ast.If):
+                src = ast.unparse(n.test)
+                self.assertTrue(
+                    "_HERE not in sys.path" in src or '__name__' in src,
+                    f"shim 顶层出现未知 If：{src[:60]}——shim 只许包引导/入口守卫")
+            if isinstance(n, ast.Assign):
+                # 唯一豁免：包引导自举 _HERE（复核 P1-1 的实现本体）
+                tid = n.targets[0].id if (len(n.targets) == 1
+                                          and isinstance(n.targets[0], ast.Name)) else None
+                ok = tid in ("_HERE", "__version__")  # 自举 + 外部兼容版本号
+                if not ok:
+                    self.fail(f"shim 顶层出现赋值 {ast.unparse(n)[:60]}——"
+                              f"第二真相源（A8 风险 #9）")
+
 
 if __name__ == "__main__":
     unittest.main()
