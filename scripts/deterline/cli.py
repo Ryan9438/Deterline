@@ -58,7 +58,7 @@ ACTION_CHOICES = ["get", "set", "list", "find", "reset-flags", "reset-all",
                                      "create-pit",
                                      "create-battle",
                                      "verify-nsid", "verify-instances", "verify-code", "smoke-test", "diff-snapshots", "set-derived",
-                                     "cjk-font", "cjk-trigger", "md5"]
+                                     "cjk-font", "cjk-trigger", "cjk-check", "md5"]
 
 
 def main():
@@ -265,6 +265,8 @@ def main():
                         help="cjk-trigger: 承载触发块的对象名（其 Step_1 被追加；默认 obj_cactus）")
     parser.add_argument("--typer", type=int, default=31,
                         help="cjk-trigger: SCR_TEXTTYPE 编号（默认 31 = fnt_maintext spacing12；须在 CJK_TYPER_TABLE）")
+    parser.add_argument("--glyphs", type=str, default=None,
+                        help="cjk-check: 字形表路径（默认 build/font_cjk/glyphs.json）")
     # cjk-trigger 复用全局 --x/--y/--text/--width：x,y=触发位（x 须<320）、text=对话文本、width=预折行宽度(房间像素)
     parser.add_argument("--no-wrap", action="store_true",
                         help="cjk-trigger: 关闭预折行（默认开）")
@@ -779,6 +781,13 @@ def main():
                                        wrap=not args.no_wrap,
                                        width_room_px=args.width):
                     sys.exit(1)  # Step_1 字节级体检 WARN 必须非零退出
+            elif args.action == "cjk-check":
+                if args.text is None and args.value is None:
+                    parser.error("--text 传文本 或 --value 传文本文件路径，二选一")
+                cjk.cmd_cjk_check(args.text,
+                                  Path(args.glyphs) if args.glyphs else None,
+                                  Path(args.value) if args.value else None)
+
             else:
                 parser.error(f"'{args.action}' 不支持 data_win 文件")
         except (FileNotFoundError, ValueError, IndexError, RuntimeError, errors.DeterlineError) as e:

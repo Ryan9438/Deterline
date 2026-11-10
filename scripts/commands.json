@@ -9,7 +9,7 @@
     },
     "invariants": "action 集合必须与 modify_save.py --action choices 完全一致（test_docs_lint 校验）。新增命令流程：改 modify_save.py → 加本文件条目（含 golden test / doctor 项）→ python3 tools/gen_docs.py。"
   },
-  "version": "2.3.1",
+  "version": "2.3.2",
   "groups": [
     {
       "id": "save",
@@ -716,6 +716,18 @@
         "折行按 writer 均匀步距模型（每字符一格）；typer31 无引擎折行故默认预折行宽 202",
         "追加到 --object（默认 obj_cactus）的 Step_1；同一目标对象只能有一个 CJK 触发块",
         "触发半径硬编码 60（B4 实证值，与全局 --range 无关）"
+      ]
+    },
+    {
+      "action": "cjk-check",
+      "group": "text",
+      "verify": "static",
+      "summary": "CJK 字形覆盖预检（C3a-L1）：--text 文本或 --value 文本文件逐字对照 glyphs.json，输出缺失码点与行动建议；退出码 全覆盖0/缺失1/无字形表2。static 级保证——覆盖≠渲染（B4 仅 N=1）",
+      "example": "cjk-check --text \"* 托丽尔你好。\"",
+      "notes": [
+        "默认字形表 build/font_cjk/glyphs.json（4064 码点 = ASCII + GB2312 一级 + 全角标点 + 假名，full:false）",
+        "缺失二级字 → font_cjk_build --full 重建；表外符号 → 换字符",
+        "ASCII 直通判定（<128 恒覆盖——由原生字体承担）"
       ]
     }
   ]

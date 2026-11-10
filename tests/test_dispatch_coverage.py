@@ -226,3 +226,38 @@ class TestSaveDomainSmokes(_SaveDirBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCjkCheckSmoke(_SaveDirBase):
+    """cjk-check 冒烟（纯文本×JSON 运算，零游戏依赖）。"""
+
+    def test_full_coverage_exit0(self):
+        import io as _io
+        import contextlib as _ctxlib
+        buf = _io.StringIO()
+        with _ctxlib.redirect_stdout(buf):
+            ms.cmd_cjk_check("* 托丽尔你好，这里是中文测试。",
+                             Path(REPO) / "build" / "font_cjk" / "glyphs.json")
+        self.assertIn("覆盖完备", buf.getvalue())
+
+    def test_missing_glyph_exit1(self):
+        import io as _io
+        import contextlib as _ctxlib
+        # '𠀀'（U+20000，表外）必不在 4064 码点集内
+        with self.assertRaises(SystemExit) as cm:
+            with _ctxlib.redirect_stdout(_io.StringIO()):
+                ms.cmd_cjk_check("* 托丽尔你好𠀀",
+                                 Path(REPO) / "build" / "font_cjk" / "glyphs.json")
+        self.assertEqual(cm.exception.code, 1)
+
+    def test_missing_glyphs_table_exit2(self):
+        import io as _io
+        import contextlib as _ctxlib
+        with self.assertRaises(SystemExit) as cm:
+            with _ctxlib.redirect_stderr(_io.StringIO()):
+                ms.cmd_cjk_check("* 你好", Path("/nonexistent/glyphs.json"))
+        self.assertEqual(cm.exception.code, 2)
+
+    def test_empty_text_raises(self):
+        with self.assertRaises(ms.ValidationError):
+            ms.cmd_cjk_check("   ")

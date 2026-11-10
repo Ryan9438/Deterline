@@ -85,6 +85,8 @@ class TestFileMigrationChecklist(unittest.TestCase):
          'parents[3] / "tools" / "font_cjk_atlas.py"'),
         ("cjk 合成工具路径（cmds/cjk.py，包根解析 parents[3]=仓库根，步 9 引入/A3 修正）",
          'parents[3] / "tools" / "font_emb20_compose.py"'),
+        ("cjk-check 默认字形表（cmds/cjk.py，包根解析 parents[3]=仓库根 build/）",
+         'parents[3] / "build" / "font_cjk" / "glyphs.json"'),
     ]
 
     def test_file_usage_set_matches_checklist(self):

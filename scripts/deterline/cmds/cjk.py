@@ -10,14 +10,15 @@ scripts/）——已登记 tests/test_o2_step0.py::TestFileMigrationChecklist。
 本域自带 _gml_escape/_csx_escape 定义（1:1 平移，域内裸调用绑定本地版——
 与父版"cjk 块后定义覆盖全局"的有效语义一致；utmt 版与 cjk 版 _csx_escape
 五 replace 语义等同，步 3 复核 20024 语料证明）。
-跨模块一律模块属性形式：utmt./verify.
+跨模块一律模块属性形式：utmt./verify./errors.
 """
 
+import json
 import subprocess
 import sys
 from pathlib import Path
 
-from .. import utmt
+from .. import errors, utmt
 from . import verify
 
 # typer → (spacing, writingxend)；spacing = writer 逐字推进常数（SCR_TEXTSETUP arg8）。
@@ -431,3 +432,55 @@ def cmd_cjk_trigger(game_file: Path, room_name: str, obj_name: str, x: int, y: i
     step_name = f"gml_Object_{obj_name}_Step_1"
     print(f"→ verify-code {step_name}（域F 协议）")
     return verify.cmd_verify_code(game_file, step_name)
+
+
+# ============================================================
+# cjk-check：字形覆盖预检（C3a-L1 收口，2026-11-11 价值席裁决落地）
+# ============================================================
+
+def cmd_cjk_check(text: str, glyphs_json: Path | None = None,
+                  text_file: Path | None = None) -> None:
+    """预检文本能否被当前 CJK 图集渲染（字形覆盖判定，static 级保证）。
+
+    读 glyphs.json 建码点集合 → 逐字判定 → 覆盖/缺失清单。
+    退出码：全覆盖 0 / 有缺失 1（NO_MATCH 约定族）/ 图集缺失 2（指引）。
+    诚实边界：覆盖≠渲染——B4 仅 N=1 实证、canary UV 钳位未判定；
+    本命令只回答"图集里有没有这个字形"，不回答"游戏画出来对不对"。
+    """
+    from deterline import errors as _errors_mod  # noqa: F401 — 域内已有 errors 导入
+
+    if text_file is not None:
+        if not text_file.exists():
+            raise errors.NotFoundError(f"文本文件不存在: {text_file}")
+        text = text_file.read_text(encoding="utf-8")
+    if not text or not text.strip():
+        raise errors.ValidationError("text 为空——用 --text 传文本或 --value 传文本文件路径")
+
+    default = Path(__file__).resolve().parents[3] / "build" / "font_cjk" / "glyphs.json"
+    gj = glyphs_json or default
+    if not gj.exists():
+        print(f"错误: 未找到字形表 {gj}", file=sys.stderr)
+        print("  先运行 cjk-font（五步管线产出 glyphs.json），或 --glyphs 指定他处字形表",
+              file=sys.stderr)
+        sys.exit(2)
+    glyphs = json.loads(gj.read_text(encoding="utf-8"))
+    known = {g["code"] for g in glyphs if isinstance(g, dict) and "code" in g}
+
+    missing: dict[str, list[str]] = {}
+    for ch in text:
+        if ch in ("\n", "\r", "\t"):
+            continue
+        cp = ord(ch)
+        if cp in known or cp < 128:
+            continue
+        missing.setdefault(ch, []).append(f"U+{cp:04X}")
+    if not missing:
+        print(f"✓ 覆盖完备: {len(set(text))} 个不同字符全部在图集内（含 ASCII 直通）")
+        return
+    print(f"✗ 缺失 {len(missing)} 个字形（图集 {len(known)} 码点）:")
+    for ch, codes in sorted(missing.items()):
+        cp = ord(ch)
+        hint = ("GB2312 二级字 → 重建图集 --full" if 0x4E00 <= cp <= 0x9FA5
+                else "表外符号 → 替换字符或扩字形表")
+        print(f"  '{ch}' {codes[0]}  ({hint})")
+    sys.exit(1)

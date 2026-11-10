@@ -37,7 +37,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 ## 命令总表（全量 · 自动生成）
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 84 个命令 · 版本 2.3.1 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 85 个命令 · 版本 2.3.2 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -82,6 +82,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 | `search-sctext --value "* 你好"` | 在 SCR_TEXT 用例表中搜索文本 | static |
 | `cjk-font --value build/font_cjk` | 注入中文字体管线（sandbox 已验证；【2026-11-08】中文已在游戏内实机渲染成功（B4 页内重排全栈），见 AUDIT_2026-11-07/C3b-游戏内验证报告 §九；S6 已集成（cjk-trigger 触发块命令随附）） | sandbox |
 | `cjk-trigger --text "* 托丽尔你好，这里是中文测试。" --x 220 --y 330` | 生成并注入单个 CJK 对话触发块（B4 实证全形态：msc/facechoice/faceemotion//%%终止符/msg[1]；默认 typer31 spacing12；--text 文本自动预折行；须先 cjk-font） | sandbox |
+| `cjk-check --text "* 托丽尔你好。"` | CJK 字形覆盖预检（C3a-L1）：--text 文本或 --value 文本文件逐字对照 glyphs.json，输出缺失码点与行动建议；退出码 全覆盖0/缺失1/无字形表2。static 级保证——覆盖≠渲染（B4 仅 N=1） | static |
 
 > ⚠️ `replace-string`: 全局替换，先 search-strings 确认影响面
 > ⚠️ `cjk-font`: --value 须为 font_cjk_build.py 输出目录（OFL 字体自生成）
@@ -93,6 +94,9 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 > ⚠️ `cjk-trigger`: 折行按 writer 均匀步距模型（每字符一格）；typer31 无引擎折行故默认预折行宽 202
 > ⚠️ `cjk-trigger`: 追加到 --object（默认 obj_cactus）的 Step_1；同一目标对象只能有一个 CJK 触发块
 > ⚠️ `cjk-trigger`: 触发半径硬编码 60（B4 实证值，与全局 --range 无关）
+> ⚠️ `cjk-check`: 默认字形表 build/font_cjk/glyphs.json（4064 码点 = ASCII + GB2312 一级 + 全角标点 + 假名，full:false）
+> ⚠️ `cjk-check`: 缺失二级字 → font_cjk_build --full 重建；表外符号 → 换字符
+> ⚠️ `cjk-check`: ASCII 直通判定（<128 恒覆盖——由原生字体承担）
 
 ### 📜 脚本编辑 — --file data_win，反编译/重编译 GML（6272 个脚本）
 

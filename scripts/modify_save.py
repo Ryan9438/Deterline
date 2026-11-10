@@ -8,7 +8,7 @@ scripts/deterline/{errors,config,state,paths,utmt,rooms_data,inifile,file0}
 运行入口不变：python3 scripts/modify_save.py ...（与 run.py 子进程转发）。
 """
 
-__version__ = "2.3.1"
+__version__ = "2.3.2"
 
 import sys
 from pathlib import Path
@@ -109,7 +109,8 @@ from deterline.cmds.cjk import (CJK_TYPER_TABLE, _CJK_PASS1_CSX,  # noqa: E402,F
                                 _CJK_PASS2_CSX, _build_cjk_pass1_csx,
                                 _build_cjk_pass2_csx, cmd_cjk_font,
                                 cjk_wrap_text, _gml_escape, _csx_escape,
-                                _build_cjk_trigger_csx, cmd_cjk_trigger)
+                                _build_cjk_trigger_csx, cmd_cjk_trigger,
+                                cmd_cjk_check)
 from deterline.cli import main  # noqa: E402
 
 if __name__ == "__main__":
