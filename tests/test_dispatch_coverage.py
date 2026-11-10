@@ -366,3 +366,37 @@ class TestDoctorSmoke(_SaveDirBase):
             with _ctxlib.redirect_stdout(_io.StringIO()):
                 ms.cmd_doctor(None)
         self.assertEqual(cm.exception.code, 1)
+
+    def test_duplicate_key_ini_is_read_only(self):
+        """复核 P1-1：doctor 对重复键 ini 必须零写盘（_read_ini 会备份+改写）。"""
+        import io as _io
+        import contextlib as _ctxlib
+        (self.save_dir / "undertale.ini").write_text(
+            "[General]\nLove=1\nLove=2\n", encoding="utf-8")
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE")
+        before = {q.name: (q.stat().st_mtime_ns, q.stat().st_size)
+                  for q in self.save_dir.iterdir()}
+        with mock.patch.object(deterline.paths, "find_game_data_file", return_value=game):
+            with self.assertRaises(SystemExit) as cm:
+                with _ctxlib.redirect_stdout(_io.StringIO()):
+                    ms.cmd_doctor(self.save_dir)
+        after = {q.name: (q.stat().st_mtime_ns, q.stat().st_size)
+                 for q in self.save_dir.iterdir()}
+        self.assertEqual(set(after) - set(before), set(),
+                         "doctor 不得产生新文件（.bak×2 = 违反零写盘）")
+        self.assertEqual((self.save_dir / "undertale.ini").read_text(),
+                         "[General]\nLove=1\nLove=2\n", "doctor 不得改写 ini 本体")
+        self.assertIn(cm.exception.code, (0, 1))
+
+    def test_dir_pointing_game_file_no_crash(self):
+        """复核 P1-2：--dir 指向存档目录（find_game_data_file 返回目录本身）
+        → is_file 守卫降级为 ✗ 行，不裸 IsADirectoryError。"""
+        import io as _io
+        import contextlib as _ctxlib
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=self.save_dir):  # 目录！
+            with self.assertRaises(SystemExit) as cm:
+                with _ctxlib.redirect_stdout(_io.StringIO()):
+                    ms.cmd_doctor(self.save_dir)
+        self.assertEqual(cm.exception.code, 1)  # ✗ 降级，非裸异常

@@ -9,7 +9,8 @@
 跨模块一律模块属性形式：paths./rooms_data./file0./inifile./utmt./errors.
 """
 
-import hashlib
+import configparser
+import json as _json
 import shutil
 import sys
 from pathlib import Path
@@ -17,14 +18,6 @@ from pathlib import Path
 from .. import errors, file0, inifile, paths, rooms_data, utmt
 
 _ROOT = Path(__file__).resolve().parents[3]  # doctor: 仓库根（基线/字形表）
-
-
-def _md5(path: Path) -> str:
-    h = hashlib.md5()
-    with open(str(path), "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def cmd_doctor(save_dir: Path, dir_override: str | None = None) -> None:
@@ -47,11 +40,12 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None) -> None:
     # 1. rooms.json（路径复用 rooms_data 单点，不新增模块路径位点）
     rooms_json = rooms_data._rooms_json_path()
     try:
+        # 直接 json.load 判定（rooms_data._load_rooms 会把损坏吞成空表，
+        # 复核 P2-1：损坏文件误报"✓ 0 条"）；解析成功后再经 _load_rooms 供后续
+        raw = _json.loads(rooms_json.read_text(encoding="utf-8")) if rooms_json.exists() else {}
+        n = len(raw) if isinstance(raw, dict) else 0
+        check(f"rooms.json 可解析（{n} 条）", bool(raw), "" if raw else "文件缺失或内容为空")
         rooms_data._load_rooms()
-        bad = sum(1 for k in rooms_data.ROOMS if not str(k).lstrip("-").isdigit())
-        check(f"rooms.json 可解析（{len(rooms_data.ROOMS)} 条）",
-              rooms_json.exists() and bad == 0,
-              "" if bad == 0 else f"{bad} 个非数字键")
     except Exception as e:  # noqa: BLE001 — 体检命令吞异常改为 ✗ 行
         check("rooms.json 可解析", False, str(e)[:80])
 
@@ -67,9 +61,13 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None) -> None:
             check(f"file0 可解析（玩家 {name}，{len(nums)} 变量）", True)
         except Exception as e:
             check("file0 可解析", False, str(e)[:80])
+        # ⚠️ 只读解析：不得走 inifile._read_ini——其 DuplicateOptionError 分支
+        # 会备份+改写 ini（复核 P1-1：doctor 承诺零写盘）
         try:
-            inifile._read_ini(ini)
-            check("undertale.ini 可解析", True)
+            cp = configparser.ConfigParser(strict=False)
+            cp.read(str(ini), encoding="utf-8")
+            dup = sum(len(cp.options(sec)) for sec in cp.sections())
+            check(f"undertale.ini 可解析（{len(cp.sections())} 节 {dup} 键，strict=False 容忍重复键）", True)
         except Exception as e:
             check("undertale.ini 可解析", False, str(e)[:80])
 
@@ -79,11 +77,14 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None) -> None:
     except FileNotFoundError as e:
         game_file = None
         check("游戏数据文件定位", False, str(e)[:80])
+    if game_file is not None and not game_file.is_file():
+        check("游戏数据文件定位", False, f"{game_file} 是目录不是文件（--dir 指向存档目录？）")
+        game_file = None
     if game_file is not None:
-        md5 = _md5(game_file)
+        md5 = utmt._md5_file(game_file)
         baseline = _ROOT / "game.ios"
         if game_file.suffix == ".ios" and baseline.exists() and game_file.exists():
-            same = md5 == _md5(baseline)
+            same = md5 == utmt._md5_file(baseline)
             check(f"游戏文件与仓库基线比对", same,
                   f"{game_file.name} md5={md5[:12]}…" + ("" if same else "（≠基线——实验态属正常）"))
         else:
@@ -125,6 +126,8 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None) -> None:
               "full:false——二级字需 --full 重建（cjk-check 预检）")
     except FileNotFoundError:
         check("CJK 字形表", False, f"缺 {glyphs}——先跑 cjk-font")
+    except Exception as e:  # noqa: BLE001 — 损坏 JSON 等也降级为 ✗ 行（复核 P2-2）
+        check("CJK 字形表", False, str(e)[:80])
 
     print(f"--- 体检完成: {'全部通过 ✓' if fails == 0 else f'{fails} 项 ✗'} ---")
     if fails:
