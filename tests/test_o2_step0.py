@@ -17,6 +17,9 @@ from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "tests"))
+
+from _o2_patch import dual_patch_utmt  # O2 步 3：双路径 patch
 
 import modify_save as ms
 
@@ -125,7 +128,7 @@ class TestSentinelDrill(unittest.TestCase):
             fake = Path(td) / "game.ios"
             fake.write_bytes(b"fake")
             sentinel_err = "SENTINEL: _run_utmt 不应被直接调用（应经模块属性被本测试拦截）"
-            with mock.patch.object(ms, "_run_utmt", side_effect=RuntimeError(sentinel_err)):
+            with dual_patch_utmt(side_effect=RuntimeError(sentinel_err)):
                 with self.assertRaisesRegex(RuntimeError, "SENTINEL"):
                     ms.cmd_cjk_trigger(fake, "room_ruins1", "obj_cactus",
                                        220, 330, 31, "* 哨兵演练文本")
@@ -147,7 +150,7 @@ class TestSentinelDrill(unittest.TestCase):
             (bd / "meta.json").write_text(_json.dumps({"px": 12, "cell": 13}), encoding="utf-8")
             (bd / "glyphs.json").write_text("[]", encoding="utf-8")
             (bd / "cjk_page_0.png").write_bytes(b"png")
-            with mock.patch.object(ms, "_run_utmt", side_effect=RuntimeError(sentinel_err)):
+            with dual_patch_utmt(side_effect=RuntimeError(sentinel_err)):
                 with self.assertRaisesRegex(RuntimeError, "SENTINEL"):
                     ms.cmd_cjk_font(fake, bd, skip_pass1=False)
         # pass2 亦经同一属性（golden 套件 _capture 是同一机制的日常版）

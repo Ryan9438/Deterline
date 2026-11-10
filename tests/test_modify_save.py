@@ -13,6 +13,9 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _o2_patch import dual_patch_utmt  # O2 步 3：双路径 patch
 
 import modify_save as ms
 
@@ -265,7 +268,7 @@ class TestTextdataUpdate(unittest.TestCase):
     def test_builds_csx_with_existing_key_and_new_value(self):
         captured, fake_run = self._capture(
             "OK: Updated 1 entry(s) for 'obj_darksans1_345'\n")
-        with mock.patch.object(ms, "_run_utmt", fake_run):
+        with dual_patch_utmt(side_effect=fake_run):
             ms.cmd_textdata_update(Path("game.ios"), "obj_darksans1_345", "* hello there, pal./")
         # 生成的 C# 用 verbatim 字符串：引号加倍
         self.assertIn('@"ds_map_add(global.text_data_en, ""obj_darksans1_345"", ""* hello there, pal./"");"',
@@ -277,7 +280,7 @@ class TestTextdataUpdate(unittest.TestCase):
         captured, fake_run = self._capture("ERROR: No entry found for key 'nope' (use add-textentry first)\n")
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf):
-            with mock.patch.object(ms, "_run_utmt", fake_run):
+            with dual_patch_utmt(side_effect=fake_run):
                 ms.cmd_textdata_update(Path("game.ios"), "nope", "* x/")
         self.assertIn("No entry found", buf.getvalue())
 
@@ -287,7 +290,7 @@ class TestTextdataUpdate(unittest.TestCase):
 
     def test_face_emotion_injected(self):
         captured, fake_run = self._capture("OK: Updated 1 entry(s) for 'k'\n")
-        with mock.patch.object(ms, "_run_utmt", fake_run):
+        with dual_patch_utmt(side_effect=fake_run):
             ms.cmd_textdata_update(Path("game.ios"), "k", "* hi/", face=3, emotion=1)
         self.assertIn(r'\F3\E1* hi/', captured["csx"])
 

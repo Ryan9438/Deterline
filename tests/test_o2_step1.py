@@ -147,6 +147,37 @@ class TestShimReexportsAreLiveBindings(unittest.TestCase):
             self.assertIs(getattr(ms, name), getattr(state, name),
                           f"ms.{name} 与 state.{name} 不同一——shim 出现第二真相源")
 
+    def test_rooms_never_imported_or_bare_outside_rooms_data(self):
+        """步 2 复核 P2-1 前瞻加固：ROOMS 是重绑定型全局（_load_rooms 换 dict
+        对象）——任何 from-import 快照都会指向旧 dict（stale-dict 陷阱）。
+        禁止 rooms_data.py 之外的任何 ROOMS 导入/裸名；ms 不得持有 ROOMS
+        属性（读者一律 rooms_data.ROOMS 模块属性）。"""
+        offenders = []
+        for f in _iter_package_files():
+            rel = f.relative_to(REPO)
+            if f.name == "rooms_data.py" and f.parent.name == "deterline":
+                continue
+            tree = ast.parse(f.read_text(encoding="utf-8"), filename=str(f))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    for a in node.names:
+                        if a.name == "ROOMS":
+                            offenders.append(f"{rel}:{node.lineno}: from-import ROOMS")
+                elif isinstance(node, ast.Import):
+                    for a in node.names:
+                        if a.name.endswith(".ROOMS"):
+                            offenders.append(f"{rel}:{node.lineno}: import ROOMS")
+                elif isinstance(node, ast.Name) and node.id == "ROOMS":
+                    offenders.append(f"{rel}:{node.lineno}: 裸名 ROOMS")
+        self.assertEqual(
+            offenders, [],
+            "ROOMS 只能经 rooms_data.ROOMS 模块属性访问（stale-dict 陷阱，"
+            "步 2 复核 P2-1）：\n" + "\n".join(offenders))
+
+    def test_ms_does_not_hold_rooms_binding(self):
+        self.assertFalse(hasattr(ms, "ROOMS"),
+                         "ms 不得 re-export ROOMS（重绑定型全局的快照绑定 = 陷阱）")
+
     def test_ms_flags_come_from_import_not_literal(self):
         """复核 P2-2：assertIs 对 False/None 单例恒真，挡不住 shim 手写
         `SANDBOX_ACTIVE = False` 字面量第二真相源。AST 断言：ms 的 7 个旗标

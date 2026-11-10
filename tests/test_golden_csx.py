@@ -18,6 +18,9 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _o2_patch import dual_patch_utmt  # O2 步 3：双路径 patch（ms 裸名 + 包内模块属性）
 
 import modify_save as ms
 
@@ -32,7 +35,7 @@ def _capture(fn, *args, **kwargs):
         captured.append(csx_code)
         return "VERIFY_NSID:bad=0 fixed=0\nVERIFY_INSTANCES:bad=0 zero=0 dup=0 null=0 nonexist=0 fixed=0"
 
-    with mock.patch.object(ms, "_run_utmt", side_effect=fake_run):
+    with dual_patch_utmt(side_effect=fake_run):
         result = fn(*args, **kwargs)
     return captured, result
 
@@ -251,7 +254,7 @@ def _capture_stateful(fn, *args, replies=None, **kwargs):
                 return response
         return DEFAULT_UTMT_OUT
 
-    with mock.patch.object(ms, "_run_utmt", side_effect=fake_run):
+    with dual_patch_utmt(side_effect=fake_run):
         result = fn(*args, **kwargs)
     return captured, result
 
