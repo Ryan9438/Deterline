@@ -8,9 +8,11 @@ room-list P0 的土壤：接线层 bug 不被 CSX golden 钉住，而冷路径�
    为空：10 条 save 域命令已全数冒烟，84/84）。新增命令不带测试即爆红。
 2. 三方 SSOT 扩展：commands.json actions == cli.ACTION_CHOICES == dispatch
    分支集合（docs lint 已有两腿，此处补齐 dispatch 腿的 In-tuple 形态）。
-3. 十条 save 域命令冒烟：全部 tmp 目录（experiment 系经 DETERLINE_GAME_FILE
-   env 隔离——cmd_experiment_* 无 dir 参数，find_game_data_file() 直连真实
-   Steam 路径，env 不重定向会碰真盘！），零 UTMT 子进程，纯 shutil/json。
+3. 十条 save 域命令冒烟：全部 tmp 目录（experiment 系经
+   patch paths.find_game_data_file 隔离——⚠️ 教训：DETERLINE_GAME_FILE env
+   是优先级 3 兜底，本机 Steam 路径（优先级 1）恒压过 env，曾致冒烟打到
+   真实 Steam 目录覆盖两枚旧快照，见 CHANGELOG v2.3.2 事故记录），
+   零 UTMT 子进程，纯 shutil/json。
 
 ALLOWLIST 语义：带理由的显式豁免清单。条目被覆盖后成为陈余（爆红提示清理）。
 """
@@ -31,9 +33,42 @@ sys.path.insert(0, str(REPO / "scripts"))
 import modify_save as ms  # noqa: E402
 import deterline.paths  # noqa: E402
 
-# 覆盖豁免清单：{action: 理由}。当前为空——84/84 全覆盖。
+# 覆盖豁免清单：{action: 理由}（复核 P1-2 修正后按 AST 精确分支归属实测）。
+# 两类豁免：
+#   - md5/sandbox-restore：逻辑内联在 cli.py dispatch（无 cmd_* 函数可单测；
+#     收编 = 表驱动 dispatch 的独立后续项）
+#   - 其余 22 条：读式/诊断命令（UTMT 查询+打印）或重游戏依赖命令
+#     （npc-dialogue/smoke-test/replace-texture），行为面已由 golden CSX
+#     （28 生成器钉死）+ A3 双轮游戏级快照 parity 覆盖；补单测 = 独立后续项
+#     （需 dual_patch_utmt mock 逐条搭夹具，与本 commit 的接线防线目标正交）。
 # 新命令若暂缺测试，须连同理由登记于此（下一 commit 补测试即移除）。
-ALLOWLIST: dict[str, str] = {}
+ALLOWLIST: dict[str, str] = {
+    "md5": "逻辑内联 cli.py dispatch（无 cmd_* 函数）——表驱动 dispatch 收编",
+    "sandbox-restore": "逻辑内联 cli.py dispatch——同上",
+    "decompile-code": "读式诊断；golden 钉 _decompile_to_lines 链路",
+    "diff-snapshots": "verify 域；A3 双轮 parity 已实证行为",
+    "dump-sprites": "读式导出（UTMT dump）",
+    "export-sprite": "读式导出",
+    "export-texture": "读式导出",
+    "get-obj": "读式诊断",
+    "get-string": "读式（strg_get 逻辑经 cmd_strg_set 的 golden 间接覆盖）",
+    "list-codes": "读式列表",
+    "list-doors": "读式列表",
+    "list-game-bgs": "读式列表",
+    "list-sprites": "读式列表",
+    "list-strings": "读式列表",
+    "list-textures": "读式列表",
+    "npc-choice": "重游戏依赖（触发块+choice 链）；_build_npc_choice_block golden 钉死",
+    "npc-dialogue": "重游戏依赖；_build_npc_step_block golden 钉死 + A3 parity",
+    "preview-sprite": "读式诊断",
+    "replace-texture": "重游戏依赖（真实 UTMT 写纹理页）；A3 parity 实证",
+    "room-bg-info": "读式诊断",
+    "room-objects": "读式诊断",
+    "search-sctext": "读式搜索（_fail_if_no_match 退出码 3 已测）",
+    "search-sprite": "读式搜索",
+    "smoke-test": "重游戏依赖（按键驱动全链）——它本身就是验收工具",
+    "verify-code": "verify 域；cmd_cjk_font 五步管线的收尾步每轮实测",
+}
 
 
 def _actions() -> list[str]:
@@ -52,22 +87,60 @@ def _actions() -> list[str]:
 
 
 def _coverage_map() -> dict[str, list[str]]:
-    """action -> [零覆盖判定所需的实现函数名集合]（dispatch 分支体粗扫描）。"""
+    """action -> 其 dispatch 分支体内直接调用的 cmd_* 名（AST 精确界定）。
+
+    复核 P1-2 教训：80 行文本窗口跨分支渗漏造成假覆盖（邻居函数被测）。
+    AST 规则：If.test 含 action 名比较者 → 该 If 的 **body（含嵌套容器，
+    不含兄弟 elif/else 分支）** 内的 cmd_* 调用归属该 action。
+    """
+    import ast as _ast
     cli_src = (REPO / "scripts" / "deterline" / "cli.py").read_text(encoding="utf-8")
-    lines = cli_src.split("\n")
-    out = {}
-    for act in _actions():
-        start = None
-        for i, l in enumerate(lines):
-            if (re.search(rf'==\s*"{re.escape(act)}"', l)
-                    or re.search(rf'in \([^)]*"{re.escape(act)}"', l)):
-                start = i
-                break
-        if start is None:
-            continue
-        body = "\n".join(lines[start:min(start + 80, len(lines))])
-        out[act] = sorted(set(re.findall(r"\b(cmd_[a-z_]+)\b", body)))
-    return out
+    tree = _ast.parse(cli_src)
+    actions = set(_actions())
+    out: dict[str, set[str]] = {a: set() for a in actions}
+
+    def test_action_names(test_node):
+        names = set()
+        for cmp_node in _ast.walk(test_node):
+            if (isinstance(cmp_node, _ast.Compare) and cmp_node.ops
+                    and isinstance(cmp_node.ops[0], (_ast.Eq, _ast.In))):
+                for side in (cmp_node.left, *cmp_node.comparators):
+                    if isinstance(side, _ast.Constant) and isinstance(side.value, str):
+                        names.add(side.value)
+                    elif isinstance(side, _ast.Tuple):
+                        names.update(
+                            e.value for e in side.elts
+                            if isinstance(e, _ast.Constant) and isinstance(e.value, str))
+        return names & actions
+
+    def cmd_names_in(body):
+        names = set()
+        for stmt in body:
+            for node in _ast.walk(stmt):
+                if isinstance(node, _ast.Call) and isinstance(node.func, _ast.Attribute) \
+                        and node.func.attr.startswith("cmd_"):
+                    names.add(node.func.attr)
+                elif isinstance(node, _ast.Name) and node.id.startswith("cmd_"):
+                    names.add(node.id)
+        return names
+
+    def walk_stmts(nodes):
+        for stmt in nodes:
+            if isinstance(stmt, _ast.If):
+                for a in test_action_names(stmt.test):
+                    out[a] |= cmd_names_in(stmt.body)
+                walk_stmts(stmt.body)
+                walk_stmts(stmt.orelse)
+            elif isinstance(stmt, (_ast.FunctionDef, _ast.AsyncFunctionDef,
+                                   _ast.For, _ast.While, _ast.With,
+                                   _ast.Try)):
+                for attr in ("body", "orelse", "finalbody"):
+                    walk_stmts(getattr(stmt, attr, []))
+                for h in getattr(stmt, "handlers", []):
+                    walk_stmts(h.body)
+
+    walk_stmts(tree.body)
+    return {a: sorted(v) for a, v in out.items()}
 
 
 class TestDispatchCoverageRatchet(unittest.TestCase):
@@ -86,14 +159,19 @@ class TestDispatchCoverageRatchet(unittest.TestCase):
                          f"commands.json 有 action 无 dispatch 分支（冷路径）: {missing}")
 
     def test_zero_coverage_within_allowlist(self):
+        # 排除棘轮自身：ALLOWLIST 的理由文本提到 action 名会把自己算成"已覆盖"
         test_src = "\n".join(
-            f.read_text(encoding="utf-8") for f in (REPO / "tests").glob("test_*.py"))
+            f.read_text(encoding="utf-8") for f in (REPO / "tests").glob("test_*.py")
+            if f.name != "test_dispatch_coverage.py")
         zero = []
         for act, fns in _coverage_map().items():
             mentioned = act in test_src or any(f in test_src for f in fns)
             if not mentioned:
                 zero.append(act)
-        stale = [a for a in ALLOWLIST if a not in zero]
+        cmap = _coverage_map()
+        # 陈余判定只对"有实现函数"的 action 生效；内联型（无 cmd_*，如
+        # md5/sandbox-restore）结构上不可能有单元覆盖，字面子串提及不算数
+        stale = [a for a in ALLOWLIST if a not in zero and cmap.get(a)]
         self.assertEqual(stale, [],
                          f"ALLOWLIST 陈余（已覆盖，请移除条目）: {stale}")
         unlisted = [a for a in zero if a not in ALLOWLIST]
@@ -237,7 +315,7 @@ class TestCjkCheckSmoke(_SaveDirBase):
         buf = _io.StringIO()
         with _ctxlib.redirect_stdout(buf):
             ms.cmd_cjk_check("* 托丽尔你好，这里是中文测试。",
-                             Path(REPO) / "build" / "font_cjk" / "glyphs.json")
+                             Path(__file__).resolve().parent / "fixtures" / "glyphs_min.json")
         self.assertIn("覆盖完备", buf.getvalue())
 
     def test_missing_glyph_exit1(self):
@@ -247,7 +325,7 @@ class TestCjkCheckSmoke(_SaveDirBase):
         with self.assertRaises(SystemExit) as cm:
             with _ctxlib.redirect_stdout(_io.StringIO()):
                 ms.cmd_cjk_check("* 托丽尔你好𠀀",
-                                 Path(REPO) / "build" / "font_cjk" / "glyphs.json")
+                                 Path(__file__).resolve().parent / "fixtures" / "glyphs_min.json")
         self.assertEqual(cm.exception.code, 1)
 
     def test_missing_glyphs_table_exit2(self):

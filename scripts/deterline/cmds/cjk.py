@@ -447,7 +447,6 @@ def cmd_cjk_check(text: str, glyphs_json: Path | None = None,
     诚实边界：覆盖≠渲染——B4 仅 N=1 实证、canary UV 钳位未判定；
     本命令只回答"图集里有没有这个字形"，不回答"游戏画出来对不对"。
     """
-    from deterline import errors as _errors_mod  # noqa: F401 — 域内已有 errors 导入
 
     if text_file is not None:
         if not text_file.exists():
@@ -466,21 +465,21 @@ def cmd_cjk_check(text: str, glyphs_json: Path | None = None,
     glyphs = json.loads(gj.read_text(encoding="utf-8"))
     known = {g["code"] for g in glyphs if isinstance(g, dict) and "code" in g}
 
-    missing: dict[str, list[str]] = {}
+    missing: dict[str, str] = {}
     for ch in text:
         if ch in ("\n", "\r", "\t"):
             continue
         cp = ord(ch)
         if cp in known or cp < 128:
             continue
-        missing.setdefault(ch, []).append(f"U+{cp:04X}")
+        missing.setdefault(ch, f"U+{cp:04X}")
     if not missing:
         print(f"✓ 覆盖完备: {len(set(text))} 个不同字符全部在图集内（含 ASCII 直通）")
         return
     print(f"✗ 缺失 {len(missing)} 个字形（图集 {len(known)} 码点）:")
-    for ch, codes in sorted(missing.items()):
+    for ch, code_str in sorted(missing.items()):
         cp = ord(ch)
-        hint = ("GB2312 二级字 → 重建图集 --full" if 0x4E00 <= cp <= 0x9FA5
+        hint = ("CJK 统一表意文字 → 重建图集 --full 或换字" if 0x4E00 <= cp <= 0x9FFF
                 else "表外符号 → 替换字符或扩字形表")
-        print(f"  '{ch}' {codes[0]}  ({hint})")
+        print(f"  '{ch}' {code_str}  ({hint})")
     sys.exit(1)

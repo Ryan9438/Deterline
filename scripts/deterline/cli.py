@@ -784,6 +784,8 @@ def main():
             elif args.action == "cjk-check":
                 if args.text is None and args.value is None:
                     parser.error("--text 传文本 或 --value 传文本文件路径，二选一")
+                if args.text is not None and args.value is not None:
+                    parser.error("--text 与 --value 互斥（复核 P2-3：并给时此前静默 --value 胜）")
                 cjk.cmd_cjk_check(args.text,
                                   Path(args.glyphs) if args.glyphs else None,
                                   Path(args.value) if args.value else None)
