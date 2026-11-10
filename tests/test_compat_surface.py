@@ -5,7 +5,7 @@
 （SANDBOX_ACTIVE/SANDBOX_ORIGINAL/COMMIT_ACTIVE/NO_STEAM_SYNC）——步 1 把
 test_write_policy 的 patch/断言改指 deterline.state 后无测试再经 ms.* 引用，
 活提取集合 diff 如实报告；shim 的旗标 re-export 本体保留，其活绑定由
-test_o2_step1.test_flags_reexport_same_object 独立守护。步 6 复核补 room-list（+1=76）；步 7-10 复核后清偿 + 覆盖棘轮冒烟经 ms.* 引用 6 名（cmd_undo/cmd_reset_flags/cmd_create_system_info/cmd_experiment_list/cmd_experiment_restore/FLAG_CUSTOM_START），cjk-check 新命令 +1=88（2026-11-11 价值席裁决）。
+test_o2_step1.test_flags_reexport_same_object 独立守护。步 6 复核补 room-list（+1=76）；步 7-10 复核后清偿 + 覆盖棘轮冒烟经 ms.* 引用 6 名（cmd_undo/cmd_reset_flags/cmd_create_system_info/cmd_experiment_list/cmd_experiment_restore/FLAG_CUSTOM_START），cjk-check 新命令 +1=88、doctor 聚合体检 +1=89（2026-11-11 风险席备选项落地）。
 拆包后 modify_save.py 变 shim——本测试防止有人在 shim 上"清理"导出
 （shim 只能 import 与 re-export，见研讨会2/01 风险 #9）。
 
@@ -56,6 +56,7 @@ COMPAT_SURFACE = [
     "cmd_cjk_font",
     "cmd_cjk_check",
     "cmd_cjk_trigger",
+    "cmd_doctor",
     "cmd_code_append",
     "cmd_code_find_replace",
     "cmd_code_prepend",
@@ -139,7 +140,7 @@ class TestCompatSurface(unittest.TestCase):
 
     def test_surface_count_reported(self):
         # 面扩大是正常演进（新命令），缩小是事故；此断言让增减在 diff 里可见
-        self.assertGreaterEqual(len(COMPAT_SURFACE), 88,
+        self.assertGreaterEqual(len(COMPAT_SURFACE), 89,
                                 "兼容面缩水——若为有意清理，先更新本清单并归因")
 
 

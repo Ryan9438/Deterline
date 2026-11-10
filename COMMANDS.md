@@ -37,7 +37,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 ## 命令总表（全量 · 自动生成）
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 85 个命令 · 版本 2.3.2 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 86 个命令 · 版本 2.3.3 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -55,12 +55,16 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 | `room-list --value "雪镇"` | 搜索/列出房间（支持中文模糊搜索） | static |
 | `undo --value data_win` | 从 .bak 恢复最后一次写入（仅一步；--backup 指定时间戳版本） | static |
 | `list-backups --value data_win` | 列出所有备份（--value ini\|file0\|data_win） | static |
+| `doctor --file data_win` | 聚合体检（全只读零写盘）：rooms.json 健康 / 存档可解析 / 游戏文件 md5 与仓库基线比对 / 备份占盘 / 沙箱残留 / UTMT CLI 与 dotnet 可达 / CJK 字形表状态；退出码 全✓0/有✗1 | static |
 
 > ⚠️ `set`: HP/maxhp 进战斗会被按 LV 重算——永久固定用 set-derived
 > ⚠️ `set`: WEAPON/ARMOR 自动计算 AT/DF
 > ⚠️ `set`: HP/EXP/GOLD 等写 ini 会被警告（游戏只认 file0）
 > ⚠️ `set-derived`: 永久改写 game.ios、对所有存档生效；恢复用 undo --value data_win
 > ⚠️ `room-list`: 模糊名多匹配会报错并列出候选，须用唯一名
+> ⚠️ `doctor`: 零 UTMT 子进程——deep 验证仍走 verify-code/smoke-test 独立命令
+> ⚠️ `doctor`: 游戏文件 md5 ≠ 基线不一定是问题（实验态）；✗ 沙箱残留提醒确认后删除或 sandbox-restore
+> ⚠️ `doctor`: 备份占盘 .bak* 单个约 250MB，长期不用可清（undo/experiment-restore 依赖）
 
 ### 💬 对话文本编辑 — --file data_win，STRG 与 textdata_en 中央数据库（16457 行 / 158 万字符）
 

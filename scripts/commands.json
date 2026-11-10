@@ -9,7 +9,7 @@
     },
     "invariants": "action 集合必须与 modify_save.py --action choices 完全一致（test_docs_lint 校验）。新增命令流程：改 modify_save.py → 加本文件条目（含 golden test / doctor 项）→ python3 tools/gen_docs.py。"
   },
-  "version": "2.3.2",
+  "version": "2.3.3",
   "groups": [
     {
       "id": "save",
@@ -728,6 +728,18 @@
         "默认字形表 build/font_cjk/glyphs.json（4064 码点 = ASCII + GB2312 一级 + 全角标点 + 假名，full:false）",
         "缺失二级字 → font_cjk_build --full 重建；表外符号 → 换字符",
         "ASCII 直通判定（<128 恒覆盖——由原生字体承担）"
+      ]
+    },
+    {
+      "action": "doctor",
+      "group": "save",
+      "verify": "static",
+      "summary": "聚合体检（全只读零写盘）：rooms.json 健康 / 存档可解析 / 游戏文件 md5 与仓库基线比对 / 备份占盘 / 沙箱残留 / UTMT CLI 与 dotnet 可达 / CJK 字形表状态；退出码 全✓0/有✗1",
+      "example": "doctor --file data_win",
+      "notes": [
+        "零 UTMT 子进程——deep 验证仍走 verify-code/smoke-test 独立命令",
+        "游戏文件 md5 ≠ 基线不一定是问题（实验态）；✗ 沙箱残留提醒确认后删除或 sandbox-restore",
+        "备份占盘 .bak* 单个约 250MB，长期不用可清（undo/experiment-restore 依赖）"
       ]
     }
   ]

@@ -14,8 +14,8 @@ import sys
 from pathlib import Path
 
 from . import (config, errors, file0, inifile, paths, state, utmt)
-from .cmds import (cjk, code, dialogue, door, npc, room, save_cmds, sprite,
-                   verify)
+from .cmds import (cjk, code, dialogue, doctor, door, npc, room, save_cmds,
+                   sprite, verify)
 
 # gen_docs.authoritative_actions 的 import-first 契约（O1b/O2-step0）
 ACTION_CHOICES = ["get", "set", "list", "find", "reset-flags", "reset-all",
@@ -58,7 +58,7 @@ ACTION_CHOICES = ["get", "set", "list", "find", "reset-flags", "reset-all",
                                      "create-pit",
                                      "create-battle",
                                      "verify-nsid", "verify-instances", "verify-code", "smoke-test", "diff-snapshots", "set-derived",
-                                     "cjk-font", "cjk-trigger", "cjk-check", "md5"]
+                                     "cjk-font", "cjk-trigger", "cjk-check", "doctor", "md5"]
 
 
 def main():
@@ -394,7 +394,14 @@ def main():
     # Handle md5 before file-type checks (read-only; prints game data file hash).
     # Lets a report include the raw hash so "did the file actually change?" is
     # verifiable in one line.
-    if args.action == "md5":
+    elif args.action == "doctor":
+        sd = None
+        try:
+            sd = paths.find_save_dir(args.dir)
+        except FileNotFoundError as e:
+            print(f"  ✗ 存档目录定位 — {e}", file=sys.stderr)
+        doctor.cmd_doctor(sd, args.dir)
+    elif args.action == "md5":
         try:
             game_file = paths.find_game_data_file(args.dir)
         except FileNotFoundError as e:

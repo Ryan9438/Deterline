@@ -87,6 +87,8 @@ class TestFileMigrationChecklist(unittest.TestCase):
          'parents[3] / "tools" / "font_emb20_compose.py"'),
         ("cjk-check 默认字形表（cmds/cjk.py，包根解析 parents[3]=仓库根 build/）",
          'parents[3] / "build" / "font_cjk" / "glyphs.json"'),
+        ("doctor 包根单点（cmds/doctor.py，基线/字形表；rooms.json 复用 rooms_data 单点）",
+         'resolve().parents[3]  # doctor'),
     ]
 
     def test_file_usage_set_matches_checklist(self):

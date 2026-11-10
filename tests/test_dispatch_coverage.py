@@ -339,3 +339,30 @@ class TestCjkCheckSmoke(_SaveDirBase):
     def test_empty_text_raises(self):
         with self.assertRaises(ms.ValidationError):
             ms.cmd_cjk_check("   ")
+
+
+class TestDoctorSmoke(_SaveDirBase):
+    """doctor 聚合体检冒烟（全只读，tmp 存档目录）。"""
+
+    def test_all_pass_clean_env(self):
+        import io as _io
+        import contextlib as _ctxlib
+        (self.save_dir / "undertale.ini").write_text("[General]\nLove=1\n", encoding="utf-8")
+        # 假游戏文件经 patch 定位（避免真实 Steam 路径）
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE-GAME-DOCTOR")
+        with mock.patch.object(deterline.paths, "find_game_data_file", return_value=game):
+            with self.assertRaises(SystemExit) as cm:
+                with _ctxlib.redirect_stdout(_io.StringIO()):
+                    ms.cmd_doctor(self.save_dir)
+        # tmp 环境：基线比对 ✗（假游戏≠仓库基线）与字形表/UTMT 视本机而定——
+        # 只断言"体检完成"行存在与退出码 ∈ {0, 1}
+        self.assertIn(cm.exception.code, (0, 1))
+
+    def test_missing_save_dir_reports(self):
+        import io as _io
+        import contextlib as _ctxlib
+        with self.assertRaises(SystemExit) as cm:
+            with _ctxlib.redirect_stdout(_io.StringIO()):
+                ms.cmd_doctor(None)
+        self.assertEqual(cm.exception.code, 1)

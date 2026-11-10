@@ -17,7 +17,7 @@
   python install.py --help     查看完整帮助
 """
 
-__version__ = "2.3.2"
+__version__ = "2.3.3"
 
 import argparse
 import os

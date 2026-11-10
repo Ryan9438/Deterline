@@ -62,3 +62,17 @@
 
 - experiment 冒烟初版以 `DETERLINE_GAME_FILE` env 隔离，但 `find_game_data_file` 优先级 1（Steam 路径，本机存在）胜过优先级 3 env → 冒烟实际打真实 Steam 目录，**覆盖了两枚 Nov-8 旧同名快照**（`game.ios.snap.dbg` / `game.ios.snap.a3smoke`，内容替换为当前 game 内容，原状态不可恢复）；真实 `game.ios` 本体内容零变化（自拷贝，md5 `fc049850` 全程）。已改 patch `paths.find_game_data_file` 隔离并加"套件前后 Steam 目录 mtime 扫描 = NONE"证明。
 - 4 处死赋值清除（`saved_to_temp` ×2、`known` ×2，均为写而不读）。
+
+## v2.3.3 — 2026-11-11（doctor 聚合体检）
+
+### 新命令：`doctor`（风险席路线图 B1 项，O2 后收编条件兑现）
+
+- 全只读零写盘零 UTMT 子进程：rooms.json 健康 / 存档可解析 / 游戏文件 md5 与仓库基线比对 / 备份占盘盘点 / 沙箱残留提醒 / UTMT CLI + dotnet 可达 / CJK 字形表状态。
+- 退出码：全 ✓ 0 / 有 ✗ 1；`--dir` 定位失败降级为 ✗ 行不崩溃。
+- rooms.json 路径复用 rooms_data 单点（不新增模块路径位点）；仓库根经 `_ROOT` 单点。
+- 首次实机体检（真实用户数据，只读）：正确检出真实沙箱残留与 13 个 .bak 占盘 315MB。
+
+### 其余
+
+- `--text`/`--value` 互斥校验（cjk-check）；覆盖棘轮 ALLOWLIST 24 条带理由（2 条内联型）；死导入清除。
+- 236/236 测试绿；fresh-archive 自包含复验通过。
