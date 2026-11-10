@@ -24,6 +24,15 @@ STALE_PATTERNS = [
 ]
 
 
+def _read_version_source() -> str:
+    """O2-step0（地雷 #3）：版本号单点读取——拆包后 deterline/__init__.py 为真源，
+    单文件期回落 modify_save.py。"""
+    pkg_init = REPO / "scripts" / "deterline" / "__init__.py"
+    if pkg_init.exists():
+        return pkg_init.read_text(encoding="utf-8")
+    return (REPO / "scripts" / "modify_save.py").read_text(encoding="utf-8")
+
+
 def _read(p: Path) -> str:
     try:
         return p.read_text(encoding="utf-8")
@@ -33,8 +42,7 @@ def _read(p: Path) -> str:
 
 class TestVersionConsistency(unittest.TestCase):
     def test_all_versions_match_modify_save(self):
-        ver = re.search(r'__version__ = "([^"]+)"',
-                        _read(REPO / "scripts" / "modify_save.py")).group(1)
+        ver = re.search(r'__version__ = "([^"]+)"', _read_version_source()).group(1)
         for rel, pat in [
             ("run.py", r'__version__ = "([^"]+)"'),
             ("install.py", r'__version__ = "([^"]+)"'),
@@ -103,9 +111,7 @@ class TestGeneratedDocs(unittest.TestCase):
     def test_version_in_commands_json_matches_code(self):
         """commands.json 的 version 字段也是受管版本声明之一。"""
         import gen_docs
-        ver = re.search(r'__version__ = "([^"]+)"',
-                        (REPO / "scripts" / "modify_save.py").read_text(encoding="utf-8")
-                        ).group(1)
+        ver = re.search(r'__version__ = "([^"]+)"', _read_version_source()).group(1)
         self.assertEqual(gen_docs.load_data()["version"], ver,
                          "commands.json version 与 modify_save.py __version__ 不一致")
 

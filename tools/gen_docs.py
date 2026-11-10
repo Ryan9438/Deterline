@@ -43,7 +43,21 @@ def load_data() -> dict:
 
 
 def authoritative_actions() -> list:
-    """从 modify_save.py 提取 --action choices（权威命令集合）。"""
+    """提取 --action choices（权威命令集合）。
+
+    O2-step0（研讨会2/01 §1.4 地雷 #2）：拆包后优先 import deterline.cli 读
+    ACTION_CHOICES（对排版免疫）；单文件期走旧正则（fallback，对 modify_save.py
+    的特定排版敏感——拆包完成后可删）。
+    """
+    pkg_cli = SCRIPT.parent / "deterline" / "cli.py"
+    if pkg_cli.exists():
+        sys.path.insert(0, str(SCRIPT.parent))
+        import deterline.cli as cli_mod
+        actions = list(getattr(cli_mod, "ACTION_CHOICES"))
+        if len(set(actions)) != len(actions):
+            raise RuntimeError("deterline.cli ACTION_CHOICES 含重复项")
+        return actions
+    # fallback：单文件期正则提取
     src = SCRIPT.read_text(encoding="utf-8")
     m = re.search(r'choices=\[(.*?)\]\)\n    parser\.add_argument\("--key"', src, re.DOTALL)
     if not m:
