@@ -296,6 +296,34 @@ def _fail_if_no_match(lines: list[str], kind: str, query: str) -> None:
         print("      未找到目标——禁止编造名称或结果；请如实报告失败。", file=sys.stderr)
         sys.exit(NO_MATCH_EXIT_CODE)
 
+def _instances_check_snippet() -> str:
+    """Return a C# snippet that audits the in-scope `room` for invalid instance IDs.
+
+    Appended to the CSX of room-write commands (spawn/door/pit/battle) so that any
+    operation adding instances reports ID=0 / duplicate-ID problems immediately,
+    without an extra UTMT round-trip.  Only reports — never mutates.  The `room`
+    variable must be non-null at the point of insertion.
+    """
+    return r'''
+// --- instance ID audit (experiment 19: ID=0/duplicate breaks per-instance vars) ---
+int _chkZero = 0;
+int _chkDup = 0;
+var _chkSeen = new System.Collections.Generic.HashSet<uint>();
+foreach (var _chkG in room.GameObjects)
+{
+    if (_chkG.ObjectDefinition == null) continue;
+    if (_chkG.InstanceID == 0) { _chkZero++; }
+    else if (!_chkSeen.Add(_chkG.InstanceID)) { _chkDup++; }
+}
+if (_chkZero > 0 || _chkDup > 0)
+{
+    ScriptMessage("WARN_INSTANCES:zero=" + _chkZero + " dup=" + _chkDup + " (room=" + room.Name.Content + ")");
+    ScriptMessage("  提示: 实例 ID=0/重复会使 per-instance 变量表冲突(Create 写入不生效 → 崩溃/漏口)。");
+    ScriptMessage("  请运行: --action verify-instances --fix --file data_win");
+}
+'''
+
+
 def _room_id_by_name(game_file: Path, room_name: str) -> str:
     """按内部名解析房间数字 ID（resolve_room 只认数字/中文名，不认内部名）。"""
     esc = _csx_escape(room_name)
