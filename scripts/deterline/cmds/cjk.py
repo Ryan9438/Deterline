@@ -10,14 +10,14 @@ scripts/）——已登记 tests/test_o2_step0.py::TestFileMigrationChecklist。
 本域自带 _gml_escape/_csx_escape 定义（1:1 平移，域内裸调用绑定本地版——
 与父版"cjk 块后定义覆盖全局"的有效语义一致；utmt 版与 cjk 版 _csx_escape
 五 replace 语义等同，步 3 复核 20024 语料证明）。
-跨模块一律模块属性形式：utmt./verify./errors.
+跨模块一律模块属性形式：utmt./verify.
 """
 
 import subprocess
 import sys
 from pathlib import Path
 
-from .. import errors, utmt
+from .. import utmt
 from . import verify
 
 # typer → (spacing, writingxend)；spacing = writer 逐字推进常数（SCR_TEXTSETUP arg8）。

@@ -2,14 +2,14 @@
 
 npc 家族（dialogue/choice/guard-alarm）+ 构造器 + verify-nsid/verify-instances
 （方案归 npc 域）+ 共享助手。跨模块一律模块属性形式：
-utmt./code./dialogue./room./file0./rooms_data./paths./errors.
+utmt./code./dialogue./room./file0./rooms_data./errors.
 （cmds 域间引用 = 方案明文允许的显式模块属性形态）。
 """
 
 import sys
 from pathlib import Path
 
-from .. import errors, file0, paths, rooms_data, utmt
+from .. import errors, file0, rooms_data, utmt
 from . import code, dialogue, room
 
 def _query_npc_target(game_file: Path, obj_name: str) -> dict | None:

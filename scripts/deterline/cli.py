@@ -13,13 +13,12 @@ import os
 import sys
 from pathlib import Path
 
-from . import (config, errors, file0, inifile, paths, rooms_data, state,
-               utmt)
+from . import (config, errors, file0, inifile, paths, state, utmt)
 from .cmds import (cjk, code, dialogue, door, npc, room, save_cmds, sprite,
                    verify)
 
 # gen_docs.authoritative_actions 的 import-first 契约（O1b/O2-step0）
-ACTION_CHOICES =                         choices=["get", "set", "list", "find", "reset-flags", "reset-all",
+ACTION_CHOICES = ["get", "set", "list", "find", "reset-flags", "reset-all",
                                  "room-list", "create-system-info", "undo",
                                  "list-backups",
                                  "list-strings", "get-string", "set-string",

@@ -2,7 +2,7 @@
 
 smoke-test / diff-snapshots / verify-code / md5（_md5_file 在 utmt 脊柱）。
 Phase1 新命令域的正式边界。跨模块一律模块属性形式：
-utmt./state./dialogue./room./inifile./paths./errors.
+utmt./state./dialogue./room./inifile./errors.
 """
 
 import json
@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from .. import errors, inifile, paths, state, utmt
+from .. import errors, inifile, state, utmt
 from . import code, dialogue, npc, room
 
 _DIFF_SNAPSHOT_CSX = """

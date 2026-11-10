@@ -2,13 +2,13 @@
 
 1:1 平移不合并（方案修订 3：三胞胎合并留给 O3b 单独做，拆包 commit 禁语义手术）。
 CSX 模板常量随域整体平移。跨模块一律模块属性形式：
-utmt./code./rooms_data./paths./errors.
+utmt./code./rooms_data./errors.
 """
 
 import sys
 from pathlib import Path
 
-from .. import errors, paths, rooms_data, utmt
+from .. import errors, rooms_data, utmt
 from . import code
 
 DOOR_GOTO_BACK_SCRIPT = '''/// door_goto_back()
