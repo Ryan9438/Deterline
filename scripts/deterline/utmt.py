@@ -168,7 +168,6 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
             paths.backup_file(target)
 
         # Save to temp file first (workaround: .app bundle prevents direct File.Move)
-        saved_to_temp = False
         _before_write = _md5_file(target) if save else ""
         temp_output = None
         if save:
@@ -223,7 +222,6 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
                     _shutil.copy2(temp_output, str(steam_path))
                     steam_synced = True
             os.unlink(temp_output)
-            saved_to_temp = True
             # ── 写入回执：影响文件 + MD5 前后 + 退路（信任机制，研讨会共识）──
             try:
                 _after = _md5_file(Path(target))

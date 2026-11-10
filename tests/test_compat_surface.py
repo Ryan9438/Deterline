@@ -5,7 +5,7 @@
 （SANDBOX_ACTIVE/SANDBOX_ORIGINAL/COMMIT_ACTIVE/NO_STEAM_SYNC）——步 1 把
 test_write_policy 的 patch/断言改指 deterline.state 后无测试再经 ms.* 引用，
 活提取集合 diff 如实报告；shim 的旗标 re-export 本体保留，其活绑定由
-test_o2_step1.test_flags_reexport_same_object 独立守护。共 76 个）。
+test_o2_step1.test_flags_reexport_same_object 独立守护。步 6 复核补 room-list（+1=76）；步 7-10 复核后清偿 + 覆盖棘轮冒烟经 ms.* 引用 6 名（cmd_undo/cmd_reset_flags/cmd_create_system_info/cmd_experiment_list/cmd_experiment_restore/FLAG_CUSTOM_START），共 87 个）。
 拆包后 modify_save.py 变 shim——本测试防止有人在 shim 上"清理"导出
 （shim 只能 import 与 re-export，见研讨会2/01 风险 #9）。
 
@@ -52,6 +52,7 @@ COMPAT_SURFACE = [
     "build_set_room_bg_stmts",
     "cjk_wrap_text",
     "cmd_batch_textdata",
+    "cmd_undo",
     "cmd_cjk_font",
     "cmd_cjk_trigger",
     "cmd_code_append",
@@ -63,11 +64,16 @@ COMPAT_SURFACE = [
     "cmd_create_door",
     "cmd_create_pit",
     "cmd_create_script",
+    "cmd_create_system_info",
+    "cmd_experiment_list",
+    "cmd_experiment_restore",
     "cmd_file0_set",
     "cmd_gml_bg",
     "cmd_guard_npc_alarm",
+    "cmd_experiment_snapshot",
     "cmd_guided_add_dialogue",
     "cmd_handler_extract",
+    "cmd_list_backups",
     "cmd_ini_set",
     "cmd_obj_set_sprite",
     "cmd_remove_door",
@@ -87,6 +93,10 @@ COMPAT_SURFACE = [
     "cmd_strg_replace",
     "cmd_strg_search",
     "cmd_strg_set",
+    "cmd_quest_init",
+    "cmd_quest_status",
+    "cmd_reset_all",
+    "cmd_reset_flags",
     "cmd_textdata_add",
     "cmd_textdata_delete",
     "cmd_textdata_search",
@@ -94,6 +104,7 @@ COMPAT_SURFACE = [
     "cmd_verify_instances",
     "cmd_verify_nsid",
     "derived_stat_value",
+    "FLAG_CUSTOM_START",
     "parse_ini_value",
     "cmd_room_list",
     "resolve_room",
@@ -127,7 +138,7 @@ class TestCompatSurface(unittest.TestCase):
 
     def test_surface_count_reported(self):
         # 面扩大是正常演进（新命令），缩小是事故；此断言让增减在 diff 里可见
-        self.assertGreaterEqual(len(COMPAT_SURFACE), 76,
+        self.assertGreaterEqual(len(COMPAT_SURFACE), 87,
                                 "兼容面缩水——若为有意清理，先更新本清单并归因")
 
 

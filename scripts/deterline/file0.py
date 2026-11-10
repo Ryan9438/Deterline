@@ -322,7 +322,6 @@ def cmd_file0_get(save_dir: Path, key: str) -> None:
 
     idx = _resolve_file0_key(key)
     if idx is None:
-        known = ", ".join(sorted(_ALL_FILE0_FIELDS.keys(), key=lambda k: _ALL_FILE0_FIELDS[k]))
         raise errors.ValidationError(f"未知字段: '{key}'")
 
     if not (0 <= idx < len(numbers)):
@@ -368,7 +367,6 @@ def cmd_file0_set(save_dir: Path, key: str, value: str,
 
     idx = _resolve_file0_key(key)
     if idx is None:
-        known = ", ".join(sorted(_ALL_FILE0_FIELDS.keys(), key=lambda k: _ALL_FILE0_FIELDS[k]))
         raise errors.ValidationError(f"未知字段: '{key}'")
 
     if not (0 <= idx < len(numbers)):

@@ -218,11 +218,13 @@ def cmd_reset_all(save_dir: Path) -> None:
 
     file0._write_file0(path, name, nums)
 
-    # Update INI
+    # Update INI（changes_ini 须在 try 前绑定：ini 缺失时 _read_ini 抛
+    # FileNotFoundError，原实现 except 后引用未定义变量 UnboundLocalError
+    # ——真实存档目录恒有 ini 故从未触发；tmp 冒烟 2026-11-11 捕获）
+    changes_ini = []
     try:
         ini_path = save_dir / "undertale.ini"
         cp = inifile._read_ini(ini_path)
-        changes_ini = []
         if cp.has_section("Flowey"):
             for key in cp.options("Flowey"):
                 cp.set("Flowey", key, inifile.format_ini_value("0"))
