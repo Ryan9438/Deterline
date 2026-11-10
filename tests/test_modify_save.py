@@ -13,6 +13,9 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+import deterline.cmds.code as dcode
+import deterline.file0 as dfile0  # O2 步 5：patch 点随域迁移（mock 静默失效防线）
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _o2_patch import dual_patch_utmt  # O2 步 3：双路径 patch
@@ -357,11 +360,11 @@ class TestDerivedStats(unittest.TestCase):
             "gml_Object_obj_battlecontroller_Create_0": "global.maxhp = 16 + (global.lv * 4);",
             "gml_Script_scr_levelup": "global.maxhp = 16 + (global.lv * 4);",
         }
-        with mock.patch.object(ms, "cmd_file0_set",
+        with mock.patch.object(dfile0, "cmd_file0_set",
                                lambda sd, k, v, **kw: calls["file0"].append((k, v))), \
-             mock.patch.object(ms, "_get_decompiled_code",
+             mock.patch.object(dcode, "_get_decompiled_code",
                                lambda gf, name: code_map.get(name)), \
-             mock.patch.object(ms, "cmd_code_replace",
+             mock.patch.object(dcode, "cmd_code_replace",
                                lambda gf, name, code: calls["replace"].append((name, code))):
             ms.cmd_set_derived(Path("."), Path("game.ios"), "HP", "50")
         self.assertEqual(calls["file0"], [("MAXHP", "50")])
@@ -378,8 +381,8 @@ class TestDerivedStats(unittest.TestCase):
             ms.cmd_set_derived(Path("."), Path("game.ios"), "HP", "abc")
 
     def test_set_derived_raises_when_no_scripts_found(self):
-        with mock.patch.object(ms, "cmd_file0_set", lambda *a, **k: None), \
-             mock.patch.object(ms, "_get_decompiled_code", lambda *a, **k: None):
+        with mock.patch.object(dfile0, "cmd_file0_set", lambda *a, **k: None), \
+             mock.patch.object(dcode, "_get_decompiled_code", lambda *a, **k: None):
             with self.assertRaises(RuntimeError):
                 ms.cmd_set_derived(Path("."), Path("game.ios"), "HP", "50")
 

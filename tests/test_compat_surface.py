@@ -35,7 +35,6 @@ COMPAT_SURFACE = [
     "_csx_escape",
     "_csx_verbatim_escape",
     "_effective_game_file",
-    "_get_decompiled_code",
     "_gml_escape",
     "_instances_check_snippet",
     "_load_gml_value",
@@ -127,7 +126,7 @@ class TestCompatSurface(unittest.TestCase):
 
     def test_surface_count_reported(self):
         # 面扩大是正常演进（新命令），缩小是事故；此断言让增减在 diff 里可见
-        self.assertGreaterEqual(len(COMPAT_SURFACE), 76,
+        self.assertGreaterEqual(len(COMPAT_SURFACE), 75,
                                 "兼容面缩水——若为有意清理，先更新本清单并归因")
 
 
