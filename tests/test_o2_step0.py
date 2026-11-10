@@ -65,6 +65,8 @@ class TestFileMigrationChecklist(unittest.TestCase):
 
     EXPECTED = [
         # (描述, 代码片段)
+        ("包引导自举（O2 步 1 复核 P1-1：-I/-P/-m 调用形态保持）",
+         'str(Path(__file__).resolve().parent)'),
         ("rooms.json 加载（rooms_data 域迁移项）", 'parent / "rooms.json"'),
         ("rooms.json 写入（rooms_data 域迁移项）", 'parent / "rooms.json"'),
         ("cjk 图集工具路径（cjk 域迁移项，S6 新增）",

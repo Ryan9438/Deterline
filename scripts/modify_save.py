@@ -28,6 +28,14 @@ try:
 except ImportError:
     _HAS_BG_GENERATOR = False
 
+# 包引导（O2 步 1，复核 P1-1）：deterline 与本文件同层（scripts/）。
+# `python3 scripts/modify_save.py` 的 sys.path[0] 天然是本目录，但 -I / -P /
+# `python3 -m scripts.modify_save` 等调用形态不保证——显式自举保持父版
+# 全部调用形态可用（复核席实测父版三形态 exit 0）。
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
 # ============================================================
 # O2 拆包（研讨会2/01 §2.2 步 1）：叶子域迁入 deterline/ 包
 # （errors/config/state/paths）；本文件保留命令实现与 dispatch，
@@ -6237,7 +6245,7 @@ def cmd_texture_replace(game_file: Path, texture_name: str, png_path: str) -> No
     cmd = ["dotnet", cli, "replace", str(target), "-t", f"{texture_name}={png_path}", "-o", str(target)]
     subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=True)
     _after = _md5_file(target)
-    _scope = "仅沙箱副本" if state.SANDBOX_ACTIVE else "真实文件（目标即 Steam 路径，无需同步)"
+    _scope = "仅沙箱副本" if state.SANDBOX_ACTIVE else "真实文件（目标即 Steam 路径，无需同步）"
     print(f"📝 写入回执: {target}")
     print(f"   MD5: {_before[:12]}… → {_after[:12]}… | 范围: {_scope}")
     if state.SANDBOX_ACTIVE:

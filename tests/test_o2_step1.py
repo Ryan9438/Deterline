@@ -66,12 +66,14 @@ class TestFlagAccessViaStateOnly(unittest.TestCase):
                     offenders.append(f"{rel}:{node.lineno}: 裸引用 {node.id}")
                 elif (isinstance(node, ast.Attribute) and node.attr in FLAGS
                       and isinstance(node.value, ast.Name)
-                      and node.value.id not in ("state", "ms")):
-                    # state.<旗标> 合法；ms.<旗标> 只允许出现在 modify_save.py 的
-                    # re-export 语义里（而 ast.Name 已挡裸引用，此处挡
-                    # `something_else.FLAG` 形态的意外访问）
+                      and not (node.value.id == "state"
+                               or (node.value.id == "ms"
+                                   and f.name == "modify_save.py"))):
+                    # state.<旗标> 合法；ms.<旗标> 只允许出现在 modify_save.py
+                    # （复核 P2-3：按文件白名单放行，deterline/** 内一律禁止——
+                    # 防止包内出现 ms.* 读写而不报警）
                     offenders.append(f"{rel}:{node.lineno}: "
-                                     f"{node.value.id}.{node.attr}（非 state/ms 前缀）")
+                                     f"{node.value.id}.{node.attr}（非 state 前缀/ms shim）")
         self.assertEqual(
             offenders, [],
             "旗标纪律违规（from-import/global/裸引用 = stale-read 陷阱，"
@@ -81,6 +83,25 @@ class TestFlagAccessViaStateOnly(unittest.TestCase):
     def test_state_module_owns_all_flags(self):
         for name in sorted(FLAGS):
             self.assertTrue(hasattr(state, name), f"state.py 缺旗标 {name}")
+
+    def test_tests_never_touch_flags_via_ms(self):
+        """复核 P2-5：tests/ 不得出现 ms.<旗标>——旗标单点化后 patch ms.* 是
+        静默失效的假保护（兼容面提取器还会把它"合法化"进清单）。"""
+        offenders = []
+        pat = None
+        import re as _re
+        pat = _re.compile(
+            r"(?<![A-Za-z])ms\.(" + "|".join(sorted(FLAGS)) + r")\b")
+        for f in (Path(__file__).resolve().parent).glob("test_*.py"):
+            for i, l in enumerate(f.read_text(encoding="utf-8").split("\n"), 1):
+                m = pat.search(l)
+                if m:
+                    offenders.append(f"{f.name}:{i}: {m.group(0)}")
+        self.assertEqual(
+            offenders, [],
+            "tests/ 出现 ms.<旗标> 引用——patch/断言必须指向 deterline.state "
+            "（canonical 单点），ms 侧是快照 re-export，写了不生效：\n"
+            + "\n".join(offenders))
 
 
 class TestPackageImportDiscipline(unittest.TestCase):
@@ -125,6 +146,31 @@ class TestShimReexportsAreLiveBindings(unittest.TestCase):
                      "NO_STEAM_SYNC", "AUTO_SNAPSHOT", "ALLOW_CJK"):
             self.assertIs(getattr(ms, name), getattr(state, name),
                           f"ms.{name} 与 state.{name} 不同一——shim 出现第二真相源")
+
+    def test_ms_flags_come_from_import_not_literal(self):
+        """复核 P2-2：assertIs 对 False/None 单例恒真，挡不住 shim 手写
+        `SANDBOX_ACTIVE = False` 字面量第二真相源。AST 断言：ms 的 7 个旗标
+        名必须全部来自 `from deterline.state import ...` 别名，且模块级不得
+        有对旗标的赋值节点。"""
+        tree = ast.parse((SCRIPTS / "modify_save.py").read_text(encoding="utf-8"))
+        imported = set()
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.ImportFrom)
+                    and (node.module or "").endswith("deterline.state")
+                    and node.level == 0):
+                imported.update(a.name for a in node.names)
+        # 期望 re-export 集合 = 兼容面 6 旗标；_UTMT_CLI_PATH 无兼容消费者
+        # （ms 内一律 state._UTMT_CLI_PATH），不在 re-export 集合
+        required = FLAGS - {"_UTMT_CLI_PATH"}
+        missing = required - imported
+        self.assertEqual(missing, set(),
+                         f"ms 未从 deterline.state 导入旗标: {sorted(missing)}——"
+                         f"旗标只能经 re-export，不得手写第二真相源")
+        assigns = [ast.unparse(n.targets[0]) for n in tree.body
+                   if isinstance(n, ast.Assign)
+                   and any(isinstance(t, ast.Name) and t.id in FLAGS for t in n.targets)]
+        self.assertEqual(assigns, [],
+                         f"ms 模块级出现旗标赋值（字面量第二真相源）: {assigns}")
 
     def test_leaves_reexport_same_object(self):
         for mod, names in (
