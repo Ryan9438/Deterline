@@ -27,6 +27,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import modify_save as ms
 
+# O2 步 1（研讨会2/01 修订 1）：旗标单点迁 deterline/state.py，patch/断言
+# 必须指向 canonical 位置——patch ms.* 的快照 re-export 不再影响行为读写。
+from deterline import state
+
 
 class WritePolicyTestBase(unittest.TestCase):
     """公用夹具：真实临时 game.ios（_effective_game_file 会复制它到 .sandbox）。"""
@@ -41,12 +45,13 @@ class WritePolicyTestBase(unittest.TestCase):
 
     def _patched_flags(self, sandbox=False, commit=False, no_steam_sync=False,
                        sandbox_original=None):
-        """同时 patch 四个全局旗标，退出时自动复原（防污染其他测试）。"""
+        """同时 patch 四个全局旗标（canonical 位置 deterline.state），
+        退出时自动复原（防污染其他测试）。"""
         return [
-            mock.patch.object(ms, "SANDBOX_ACTIVE", sandbox),
-            mock.patch.object(ms, "COMMIT_ACTIVE", commit),
-            mock.patch.object(ms, "NO_STEAM_SYNC", no_steam_sync),
-            mock.patch.object(ms, "SANDBOX_ORIGINAL", sandbox_original),
+            mock.patch.object(state, "SANDBOX_ACTIVE", sandbox),
+            mock.patch.object(state, "COMMIT_ACTIVE", commit),
+            mock.patch.object(state, "NO_STEAM_SYNC", no_steam_sync),
+            mock.patch.object(state, "SANDBOX_ORIGINAL", sandbox_original),
         ]
 
 
@@ -61,7 +66,7 @@ class TestResolveWriteTarget(WritePolicyTestBase):
         target = ms._resolve_write_target(self.game_file)
         self.assertEqual(target, self.sandbox_path,
                          "默认写目标必须是 *.sandbox 副本（v2 写入安全）")
-        self.assertTrue(ms.SANDBOX_ACTIVE,
+        self.assertTrue(state.SANDBOX_ACTIVE,
                         "首次写操作应自动激活沙箱（默认沙箱策略）")
         self.assertTrue(self.sandbox_path.exists(),
                         "激活沙箱时应创建 *.sandbox 副本")
@@ -77,7 +82,7 @@ class TestResolveWriteTarget(WritePolicyTestBase):
         target = ms._resolve_write_target(self.game_file)
         self.assertEqual(target, self.game_file,
                          "COMMIT_ACTIVE 时写目标必须是真实文件")
-        self.assertFalse(ms.SANDBOX_ACTIVE,
+        self.assertFalse(state.SANDBOX_ACTIVE,
                          "--commit 不得激活沙箱（否则会静默改写目标）")
         self.assertFalse(self.sandbox_path.exists(),
                          "--commit 不得创建 *.sandbox 副本")
@@ -91,7 +96,7 @@ class TestResolveWriteTarget(WritePolicyTestBase):
         target = ms._resolve_write_target(self.game_file)
         self.assertEqual(target, self.game_file,
                          "NO_STEAM_SYNC + COMMIT 时写目标仍是真实文件")
-        self.assertFalse(ms.SANDBOX_ACTIVE)
+        self.assertFalse(state.SANDBOX_ACTIVE)
 
     def test_sandbox_active_wins_over_commit(self):
         """沙箱已激活时，即使 --commit 在场，写目标仍是沙箱副本（防泄漏）。"""
@@ -138,7 +143,7 @@ class TestEffectiveGameFile(WritePolicyTestBase):
             p.start()
             self.addCleanup(p.stop)
         ms._effective_game_file(self.game_file)
-        self.assertEqual(ms.SANDBOX_ORIGINAL, self.game_file,
+        self.assertEqual(state.SANDBOX_ORIGINAL, self.game_file,
                          "SANDBOX_ORIGINAL 应记录沙箱源文件")
 
     def test_active_redirect_is_independent_of_save_flag(self):

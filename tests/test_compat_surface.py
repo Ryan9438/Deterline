@@ -1,7 +1,11 @@
 """O2-step0 A8（研讨会2/01 §2.4）：modify_save.py 兼容面显式测试。
 
-测试套件实际引用的 ms.* 名字钉成显式清单（2026-11-10 复核席修订：79 个——
-含 patch.object/getattr 字符串形式引用与 test_o2_step0 的 4 个新名）。
+测试套件实际引用的 ms.* 名字钉成显式清单（2026-11-11 O2 步 1：+1 "state"——
+旗标单点 canonical 模块句柄，test_o2_step1 的活绑定校验需要；−4 旗标名
+（SANDBOX_ACTIVE/SANDBOX_ORIGINAL/COMMIT_ACTIVE/NO_STEAM_SYNC）——步 1 把
+test_write_policy 的 patch/断言改指 deterline.state 后无测试再经 ms.* 引用，
+活提取集合 diff 如实报告；shim 的旗标 re-export 本体保留，其活绑定由
+test_o2_step1.test_flags_reexport_same_object 独立守护。共 76 个）。
 拆包后 modify_save.py 变 shim——本测试防止有人在 shim 上"清理"导出
 （shim 只能 import 与 re-export，见研讨会2/01 风险 #9）。
 
@@ -19,13 +23,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import modify_save as ms
 
 COMPAT_SURFACE = [
-    "COMMIT_ACTIVE",
     "FILE0_FIELDS",
     "ITEMS",
-    "NO_STEAM_SYNC",
     "NotFoundError",
-    "SANDBOX_ACTIVE",
-    "SANDBOX_ORIGINAL",
     "ValidationError",
     "_build_cjk_pass1_csx",
     "_build_cjk_pass2_csx",
@@ -97,6 +97,7 @@ COMPAT_SURFACE = [
     "derived_stat_value",
     "parse_ini_value",
     "resolve_room",
+    "state",
     "validate_flag_index",
 ]
 
@@ -126,7 +127,7 @@ class TestCompatSurface(unittest.TestCase):
 
     def test_surface_count_reported(self):
         # 面扩大是正常演进（新命令），缩小是事故；此断言让增减在 diff 里可见
-        self.assertGreaterEqual(len(COMPAT_SURFACE), 79,
+        self.assertGreaterEqual(len(COMPAT_SURFACE), 76,
                                 "兼容面缩水——若为有意清理，先更新本清单并归因")
 
 

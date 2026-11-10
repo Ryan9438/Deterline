@@ -29,57 +29,26 @@ except ImportError:
     _HAS_BG_GENERATOR = False
 
 # ============================================================
-# Constants
+# O2 拆包（研讨会2/01 §2.2 步 1）：叶子域迁入 deterline/ 包
+# （errors/config/state/paths）；本文件保留命令实现与 dispatch，
+# 并 re-export 兼容面（tests 的 ms.* 引用与 patch 点，A8）。
+# 旗标读写纪律：一律 state.X 模块属性形式（test_o2_step1 AST 扫描强制）。
 # ============================================================
-
-FLAG_INDEX_MAX = 511
-FLAG_CUSTOM_START = 510
-FLAG_CUSTOM_END = 511
-
-FACE_CHOICES: dict[int, str] = {
-    0: "无头像",
-    1: "Toriel", 2: "Flowey", 3: "Sans",
-    4: "Papyrus", 5: "Undyne", 6: "Alphys",
-    7: "Asgore", 8: "Mettaton", 9: "Asriel",
-}
-
-SANS_EMOTIONS: dict[int, str] = {
-    0: "普通", 1: "轻笑", 2: "眨眼", 3: "慢眨眼", 4: "无眼",
-}
-
-DISTANCE_TRIGGER = 50
-QUEST_STATE_INIT = 0
-
-ROOM_BG_WARNING = (
-    "提示: 背景渲染分三类，先诊断再改：",
-    "  A 纯 Tile 房: 房间数据 8 层全 Enabled=false，渲染器跳过背景，改房间数据无效",
-    "  B 房间数据驱动: 部分层 Enabled=true 且无 obj_backgrounder_*，房间数据即渲染来源",
-    "  C 对象驱动: 有 obj_backgrounder_* 对象，运行时覆盖房间数据",
-    "  诊断: `room-bg-info --value <房间> --file data_win`",
-    "  遮挡: 高 slot 层画在低 slot 之上，只改低层会被盖住（用 gml-bg --hide-above）",
-)
+from deterline import state
+from deterline.errors import DeterlineError, ValidationError, NotFoundError  # noqa: F401 (兼容 re-export)
+from deterline.config import (FLAG_INDEX_MAX, FLAG_CUSTOM_START, FLAG_CUSTOM_END,  # noqa: F401
+                              FACE_CHOICES, SANS_EMOTIONS, DISTANCE_TRIGGER,
+                              QUEST_STATE_INIT, ROOM_BG_WARNING)
 
 # ============================================================
-# Custom Exceptions
+# Sandbox mode（旗标已迁 deterline/state.py，O2 步 1；本文件保留 _md5_file）
 # ============================================================
 
-class DeterlineError(Exception):
-    """Base exception for all Deterline errors."""
-
-class ValidationError(DeterlineError):
-    """Invalid argument or parameter."""
-
-class NotFoundError(DeterlineError):
-    """File, room, or object not found."""
-
-# ============================================================
-# Sandbox mode
-# ============================================================
-
-SANDBOX_ACTIVE = False
-SANDBOX_ORIGINAL: Path | None = None
-COMMIT_ACTIVE = False     # V2: --commit 时为 True（写真实文件 + Steam 同步）
-NO_STEAM_SYNC = False     # V2: --no-steam-sync 时为 True（即使 --commit 也不同步 Steam）
+# 兼容 re-export（hasattr 兼容面，A8）：可变旗标的**行为读写**不走这里的
+# 快照绑定，一律 state.X —— 否则 state 侧写入与本副本读数静默分叉
+# （stale-read 陷阱；test_o2_step1 以 AST 扫描强制）。
+from deterline.state import (SANDBOX_ACTIVE, SANDBOX_ORIGINAL, COMMIT_ACTIVE,  # noqa: F401
+                             NO_STEAM_SYNC, AUTO_SNAPSHOT, ALLOW_CJK)
 
 
 def _md5_file(path: Path) -> str:
@@ -89,127 +58,28 @@ def _md5_file(path: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
-AUTO_SNAPSHOT = False
 
 # ============================================================
-# Path Detection
+# Path Detection（已迁 deterline/paths.py，O2 步 1；此处 re-export 兼容面）
 # ============================================================
 
-MACOS_PATHS = [
-    "~/Library/Application Support/com.tobyfox.undertale",
-    "~/Library/Application Support/UNDERTALE",
-]
-
-WINDOWS_PATH = "%LOCALAPPDATA%/UNDERTALE"
-
-
-def find_save_dir(override: str | None = None) -> Path:
-    if override:
-        p = Path(override).expanduser()
-        if p.is_dir():
-            return p
-        raise FileNotFoundError(f"存档目录不存在: {override}")
-
-    for p_str in MACOS_PATHS:
-        p = Path(p_str).expanduser()
-        if p.is_dir():
-            return p
-
-    win_path = os.path.expandvars(WINDOWS_PATH)
-    if win_path != WINDOWS_PATH:
-        p = Path(win_path)
-        if p.is_dir():
-            return p
-
-    raise FileNotFoundError(
-        "未找到 UNDERTALE 存档目录。使用 --dir 手动指定。\n"
-        "  macOS: ~/Library/Application Support/com.tobyfox.undertale/\n"
-        "  Windows: %LOCALAPPDATA%\\UNDERTALE\\"
-    )
-
-
-def find_game_data_file(override: str | None = None) -> Path:
-    """Locate game.ios or data.win (for dialogue editing)."""
-    if override:
-        p = Path(override).expanduser()
-        if p.exists():
-            return p
-        raise FileNotFoundError(f"游戏数据文件不存在: {override}")
-    # Priority 1: Steam app bundle (game reads from here on Steam launch)
-    p = Path("~/Library/Application Support/Steam/steamapps/common/"
-             "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
-    if p.exists():
-        return p
-    # Priority 2: data.win in Steam bundle
-    p2 = p.with_name("data.win")
-    if p2.exists():
-        return p2
-    # Priority 3: configurable fallback via DETERLINE_GAME_FILE env var
-    env_path = os.environ.get("DETERLINE_GAME_FILE", "")
-    if env_path:
-        p3 = Path(env_path).expanduser()
-        if p3.exists():
-            return p3
-    raise FileNotFoundError(
-        "未找到 UNDERTALE 游戏数据文件 (game.ios/data.win)。\n"
-        "  macOS 默认: ~/Library/Application Support/Steam/.../Resources/game.ios\n"
-        "  你也可以用 --dir 手动指定文件路径。"
-    )
-
-
-def backup_file(path: Path) -> None:
-    import time
-    bak = path.with_suffix(path.suffix + ".bak")
-    try:
-        shutil.copy2(str(path), str(bak))
-    except OSError as e:
-        print(f"警告: 备份失败 ({e})", file=sys.stderr)
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    ts_bak = path.with_suffix(path.suffix + f".bak.{ts}")
-    try:
-        shutil.copy2(str(path), str(ts_bak))
-    except OSError as e:
-        print(f"警告: 时间戳备份失败 ({e})", file=sys.stderr)
-
-
-def list_backups(path: Path) -> list[dict[str, str]]:
-    """List all backup files for a given path, sorted newest first."""
-    import time
-    pattern = f"{path.name}.bak*"
-    backups = []
-    for p in sorted(path.parent.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True):
-        size = p.stat().st_size
-        mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(p.stat().st_mtime))
-        label = p.name
-        ts_part = label.removeprefix(f"{path.name}.bak")
-        if ts_part.startswith("."):
-            ts_part = ts_part[1:]
-        backups.append({
-            "path": str(p),
-            "label": label,
-            "time": mtime,
-            "size": size,
-            "timestamp": ts_part,
-        })
-    return backups
+from deterline.paths import (find_save_dir, find_game_data_file,  # noqa: F401
+                             backup_file, list_backups)
 
 
 # ============================================================
 # UTMT CLI Integration (UndertaleModTool)
+# （_UTMT_CLI_PATH 缓存旗标已迁 deterline/state.py，O2 步 1）
 # ============================================================
-
-_UTMT_CLI_PATH: str | None = None
-
 
 def _find_utmt_cli() -> str:
     """Locate UndertaleModCli.dll."""
-    global _UTMT_CLI_PATH
-    if _UTMT_CLI_PATH:
-        return _UTMT_CLI_PATH
+    if state._UTMT_CLI_PATH:
+        return state._UTMT_CLI_PATH
 
     env_path = os.environ.get("UTMT_CLI")
     if env_path and Path(env_path).exists():
-        _UTMT_CLI_PATH = env_path
+        state._UTMT_CLI_PATH = env_path
         return env_path
 
     candidates = [
@@ -220,7 +90,7 @@ def _find_utmt_cli() -> str:
     ]
     for c in candidates:
         if c.exists():
-            _UTMT_CLI_PATH = str(c)
+            state._UTMT_CLI_PATH = str(c)
             return str(c)
 
     raise FileNotFoundError(
@@ -247,9 +117,6 @@ def validate_flag_index(idx: int) -> None:
         print(f"警告: global.flag[{idx}] 超出有效范围 (0-511)，游戏可能崩溃", file=sys.stderr)
 
 
-ALLOW_CJK = False   # C3a: --allow-cjk 时为 True（放行 CJK，配合中文字体注入 C3b）
-
-
 def _validate_ascii_text(text: str, label: str = "文本") -> None:
     """校验对话文本字符集。默认拒绝非 ASCII（英文版位图字体无 CJK glyph，显示空白）。
 
@@ -263,7 +130,7 @@ def _validate_ascii_text(text: str, label: str = "文本") -> None:
     ctx_end = min(len(text), non_ascii[0][0] + 10)
     ctx = text[ctx_start:ctx_end]
     chars = " ".join(f"{ch}(U+{ord(ch):04X})" for _, ch in non_ascii[:8])
-    if ALLOW_CJK:
+    if state.ALLOW_CJK:
         print(f"⚠️ {label} 含 {len(non_ascii)} 个非 ASCII 字符: {chars}", file=sys.stderr)
         print("   若游戏已注入中文字体（cjk-font 页内重排栈），这些字符可正常显示；", file=sys.stderr)
         print("   对话触发块请用 cjk-trigger（自动全形态+预折行）。", file=sys.stderr)
@@ -293,10 +160,9 @@ def _effective_game_file(game_file: Path) -> Path:
     沙箱对**所有**命令生效（含只读）——否则导出/反编译等读取操作会看到原文件、
     看不到沙箱里刚写入的内容（曾导致 colorize-sprite --sandbox 必然失败）。
     """
-    global SANDBOX_ORIGINAL
-    if SANDBOX_ACTIVE:
-        if SANDBOX_ORIGINAL is None:
-            SANDBOX_ORIGINAL = game_file
+    if state.SANDBOX_ACTIVE:
+        if state.SANDBOX_ORIGINAL is None:
+            state.SANDBOX_ORIGINAL = game_file
         sandbox_path = game_file.with_suffix(game_file.suffix + ".sandbox")
         if not sandbox_path.exists():
             shutil.copy2(str(game_file), str(sandbox_path))
@@ -308,9 +174,8 @@ def _effective_game_file(game_file: Path) -> Path:
 def _resolve_write_target(game_file: Path) -> Path:
     """V2 写入策略统一入口：写操作（无论走 _run_utmt 还是子进程）默认落沙箱
     副本，--commit 才写真实文件。返回实际应写入的路径。"""
-    global SANDBOX_ACTIVE
-    if not SANDBOX_ACTIVE and not COMMIT_ACTIVE:
-        SANDBOX_ACTIVE = True
+    if not state.SANDBOX_ACTIVE and not state.COMMIT_ACTIVE:
+        state.SANDBOX_ACTIVE = True
         print("\U0001F7E1 默认沙箱 (v2 写入安全): 本次写入仅落在 *.sandbox 副本，真实文件未动。", file=sys.stderr)
         print("   确认无误后: 加 --commit 直写真实文件(+Steam 同步)，或 sandbox-restore 应用沙箱。", file=sys.stderr)
     return _effective_game_file(game_file)
@@ -323,10 +188,9 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
     If save=False, the script runs as read-only (no output file).
     In sandbox mode, operates on game_file.sandbox instead.
     """
-    global SANDBOX_ACTIVE, SANDBOX_ORIGINAL, AUTO_SNAPSHOT, COMMIT_ACTIVE, NO_STEAM_SYNC
     cli = _find_utmt_cli()
 
-    if save and AUTO_SNAPSHOT and not SANDBOX_ACTIVE:
+    if save and state.AUTO_SNAPSHOT and not state.SANDBOX_ACTIVE:
         ts = time.strftime("%Y%m%d_%H%M%S")
         snap_path = game_file.with_name(f"game.ios.snap.auto_{ts}")
         shutil.copy2(str(game_file), str(snap_path))
@@ -336,14 +200,14 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
     if save:
         target = _resolve_write_target(game_file)
     else:
-        target = _effective_game_file(game_file) if SANDBOX_ACTIVE else game_file
+        target = _effective_game_file(game_file) if state.SANDBOX_ACTIVE else game_file
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csx", delete=False, encoding="utf-8") as f:
         f.write(csx_code)
         csx_path = f.name
 
     try:
-        if save and not SANDBOX_ACTIVE:
+        if save and not state.SANDBOX_ACTIVE:
             backup_file(target)
 
         # Save to temp file first (workaround: .app bundle prevents direct File.Move)
@@ -394,9 +258,9 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
             steam_path = Path("~/Library/Application Support/Steam/steamapps/common/"
                              "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
             steam_synced = False
-            if (not SANDBOX_ACTIVE and steam_path.exists()
+            if (not state.SANDBOX_ACTIVE and steam_path.exists()
                     and str(steam_path.resolve()) != str(Path(target).resolve())):
-                if NO_STEAM_SYNC:
+                if state.NO_STEAM_SYNC:
                     print("\U0001F6D1 --no-steam-sync: 已跳过 Steam 同步（真实文件已更新，Steam 内需手动同步）", file=sys.stderr)
                 else:
                     _shutil.copy2(temp_output, str(steam_path))
@@ -408,17 +272,17 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
                 _after = _md5_file(Path(target))
             except OSError:
                 _after = "?"
-            if SANDBOX_ACTIVE:
+            if state.SANDBOX_ACTIVE:
                 _scope = "仅沙箱副本"
             elif steam_synced:
                 _scope = "真实文件 + Steam 同步"
-            elif NO_STEAM_SYNC:
+            elif state.NO_STEAM_SYNC:
                 _scope = "真实文件（--no-steam-sync，未同步 Steam）"
             else:
                 _scope = "真实文件（目标即 Steam 路径，无需同步）"
             print(f"\U0001F4DD 写入回执: {target}")
             print(f"   MD5: {_before_write[:12]}… → {_after[:12]}… | 范围: {_scope}")
-            if SANDBOX_ACTIVE:
+            if state.SANDBOX_ACTIVE:
                 print("   应用: --commit 直写 或 sandbox-restore；放弃: 直接删除 *.sandbox")
             else:
                 print("   退路: undo --value data_win / list-backups / experiment-restore")
@@ -3276,7 +3140,6 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
     """
     import time as _time
     import subprocess as _sp
-    global COMMIT_ACTIVE
 
     ts = _time.strftime("%Y%m%d_%H%M%S")
     marker_name = "zcode_smoke_marker.txt"
@@ -3310,7 +3173,7 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
     passed = False
     marker_content = ""
     try:
-        COMMIT_ACTIVE = True
+        state.COMMIT_ACTIVE = True
         cmd_textdata_add(game_file, text_key, f"* SMOKE OK {ts}/%%")
         new_id = _spawn_obj_internal(game_file, room_name, obj_name, x, y, quiet=True)
         if new_id is None:
@@ -3386,7 +3249,7 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
                     break
     finally:
         # ── 5. 全量恢复（任何路径：PASS/FAIL/异常 都恢复）──
-        COMMIT_ACTIVE = False
+        state.COMMIT_ACTIVE = False
         _sp.run(["pkill", "-x", "Mac_Runner"], capture_output=True)
         _time.sleep(2)
         shutil.copy2(str(b_game), str(game_file))
@@ -6369,15 +6232,15 @@ def cmd_texture_replace(game_file: Path, texture_name: str, png_path: str) -> No
     cli = _find_utmt_cli()
     target = _resolve_write_target(game_file)
     _before = _md5_file(target)
-    if not SANDBOX_ACTIVE:
+    if not state.SANDBOX_ACTIVE:
         backup_file(target)
     cmd = ["dotnet", cli, "replace", str(target), "-t", f"{texture_name}={png_path}", "-o", str(target)]
     subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=True)
     _after = _md5_file(target)
-    _scope = "仅沙箱副本" if SANDBOX_ACTIVE else "真实文件（目标即 Steam 路径，无需同步）"
+    _scope = "仅沙箱副本" if state.SANDBOX_ACTIVE else "真实文件（目标即 Steam 路径，无需同步)"
     print(f"📝 写入回执: {target}")
     print(f"   MD5: {_before[:12]}… → {_after[:12]}… | 范围: {_scope}")
-    if SANDBOX_ACTIVE:
+    if state.SANDBOX_ACTIVE:
         print("   应用: --commit 直写 或 sandbox-restore；放弃: 直接删除 *.sandbox")
     else:
         print("   退路: undo --value data_win / list-backups")
@@ -7266,20 +7129,15 @@ def main():
         print("错误: --sandbox 与 --commit 互斥（沙箱=彩排，commit=直写，二选一）", file=sys.stderr)
         sys.exit(2)
     if args.sandbox:
-        global SANDBOX_ACTIVE
-        SANDBOX_ACTIVE = True
+        state.SANDBOX_ACTIVE = True
     if args.commit:
-        global COMMIT_ACTIVE
-        COMMIT_ACTIVE = True
+        state.COMMIT_ACTIVE = True
     if getattr(args, "no_steam_sync", False):
-        global NO_STEAM_SYNC
-        NO_STEAM_SYNC = True
+        state.NO_STEAM_SYNC = True
     if getattr(args, "allow_cjk", False):
-        global ALLOW_CJK
-        ALLOW_CJK = True
+        state.ALLOW_CJK = True
     if args.auto_snapshot:
-        global AUTO_SNAPSHOT
-        AUTO_SNAPSHOT = True
+        state.AUTO_SNAPSHOT = True
 
     # Handle sandbox-restore before file-type checks
     if args.action == "sandbox-restore":
@@ -7335,7 +7193,7 @@ def main():
             print(f"错误: {e}", file=sys.stderr)
             sys.exit(1)
 
-        if SANDBOX_ACTIVE:
+        if state.SANDBOX_ACTIVE:
             sandbox_path = game_file.with_suffix(game_file.suffix + ".sandbox")
             print(f"🔒 沙箱模式: 所有操作作用于 {sandbox_path.name}", file=sys.stderr)
 

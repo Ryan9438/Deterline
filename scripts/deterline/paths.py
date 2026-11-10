@@ -1,0 +1,108 @@
+"""存档目录 / 游戏数据文件定位 + 备份（O2 步 1：从 modify_save.py L94-196 1:1 平移）。
+
+本模块无旗标依赖（backup_file 不读 AUTO_SNAPSHOT——自动快照判定在 _run_utmt）。
+跨模块引用一律模块属性形式：`paths.find_game_data_file(...)`。
+"""
+
+import os
+import shutil
+import sys
+from pathlib import Path
+
+MACOS_PATHS = [
+    "~/Library/Application Support/com.tobyfox.undertale",
+    "~/Library/Application Support/UNDERTALE",
+]
+
+WINDOWS_PATH = "%LOCALAPPDATA%/UNDERTALE"
+
+
+def find_save_dir(override: str | None = None) -> Path:
+    if override:
+        p = Path(override).expanduser()
+        if p.is_dir():
+            return p
+        raise FileNotFoundError(f"存档目录不存在: {override}")
+
+    for p_str in MACOS_PATHS:
+        p = Path(p_str).expanduser()
+        if p.is_dir():
+            return p
+
+    win_path = os.path.expandvars(WINDOWS_PATH)
+    if win_path != WINDOWS_PATH:
+        p = Path(win_path)
+        if p.is_dir():
+            return p
+
+    raise FileNotFoundError(
+        "未找到 UNDERTALE 存档目录。使用 --dir 手动指定。\n"
+        "  macOS: ~/Library/Application Support/com.tobyfox.undertale/\n"
+        "  Windows: %LOCALAPPDATA%\\UNDERTALE\\"
+    )
+
+
+def find_game_data_file(override: str | None = None) -> Path:
+    """Locate game.ios or data.win (for dialogue editing)."""
+    if override:
+        p = Path(override).expanduser()
+        if p.exists():
+            return p
+        raise FileNotFoundError(f"游戏数据文件不存在: {override}")
+    # Priority 1: Steam app bundle (game reads from here on Steam launch)
+    p = Path("~/Library/Application Support/Steam/steamapps/common/"
+             "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
+    if p.exists():
+        return p
+    # Priority 2: data.win in Steam bundle
+    p2 = p.with_name("data.win")
+    if p2.exists():
+        return p2
+    # Priority 3: configurable fallback via DETERLINE_GAME_FILE env var
+    env_path = os.environ.get("DETERLINE_GAME_FILE", "")
+    if env_path:
+        p3 = Path(env_path).expanduser()
+        if p3.exists():
+            return p3
+    raise FileNotFoundError(
+        "未找到 UNDERTALE 游戏数据文件 (game.ios/data.win)。\n"
+        "  macOS 默认: ~/Library/Application Support/Steam/.../Resources/game.ios\n"
+        "  你也可以用 --dir 手动指定文件路径。"
+    )
+
+
+def backup_file(path: Path) -> None:
+    import time
+    bak = path.with_suffix(path.suffix + ".bak")
+    try:
+        shutil.copy2(str(path), str(bak))
+    except OSError as e:
+        print(f"警告: 备份失败 ({e})", file=sys.stderr)
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    ts_bak = path.with_suffix(path.suffix + f".bak.{ts}")
+    try:
+        shutil.copy2(str(path), str(ts_bak))
+    except OSError as e:
+        print(f"警告: 时间戳备份失败 ({e})", file=sys.stderr)
+
+
+def list_backups(path: Path) -> list[dict[str, str]]:
+    """List all backup files for a given path, sorted newest first."""
+    import time
+    pattern = f"{path.name}.bak*"
+    backups = []
+    for p in sorted(path.parent.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True):
+        size = p.stat().st_size
+        mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(p.stat().st_mtime))
+        label = p.name
+        ts_part = label.removeprefix(f"{path.name}.bak")
+        if ts_part.startswith("."):
+            ts_part = ts_part[1:]
+        backups.append({
+            "path": str(p),
+            "label": label,
+            "time": mtime,
+            "size": size,
+            "timestamp": ts_part,
+        })
+    return backups
