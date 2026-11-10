@@ -95,6 +95,7 @@ COMPAT_SURFACE = [
     "cmd_verify_nsid",
     "derived_stat_value",
     "parse_ini_value",
+    "cmd_room_list",
     "resolve_room",
     "state",
     "validate_flag_index",
@@ -126,7 +127,7 @@ class TestCompatSurface(unittest.TestCase):
 
     def test_surface_count_reported(self):
         # 面扩大是正常演进（新命令），缩小是事故；此断言让增减在 diff 里可见
-        self.assertGreaterEqual(len(COMPAT_SURFACE), 75,
+        self.assertGreaterEqual(len(COMPAT_SURFACE), 76,
                                 "兼容面缩水——若为有意清理，先更新本清单并归因")
 
 

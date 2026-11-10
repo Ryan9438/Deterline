@@ -5,9 +5,7 @@ room-list。跨模块一律模块属性形式：utmt./rooms_data./config./errors
 （cmd_gml_bg 的收尾经 cmds.code.cmd_code_append——cmds 域间显式模块属性引用）。
 """
 
-import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -1138,7 +1136,7 @@ ScriptMessage("HASBG:" + hasBgObj);
 
 def cmd_room_list(args_filter: str = "") -> None:
     rooms_data._load_rooms()
-    items = sorted(rooms_data.rooms_data.ROOMS.items(), key=lambda x: int(x[0]))
+    items = sorted(rooms_data.ROOMS.items(), key=lambda x: int(x[0]))
     for rid, name in items:
         if args_filter:
             if args_filter.lower() in name.lower():

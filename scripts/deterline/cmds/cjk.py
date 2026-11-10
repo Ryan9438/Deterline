@@ -4,7 +4,7 @@ CJK_TYPER_TABLE + pass1/pass2 CSX 模板（raw 三引号原样）+ cmd_cjk_font 
 折行 util + 触发块生成器/cmd（B4 实证栈）。
 
 模块路径修正（方案风险 #3 缓解）：tools/ 引用由原 `parent.parent`（单文件期
-scripts/ 直下）改为包根解析 `parents[2]`（scripts/deterline/cmds/cjk.py →
+scripts/ 直下）改为包根解析 `parents[3]`（scripts/deterline/cmds/cjk.py → 仓库根，
 scripts/）——已登记 tests/test_o2_step0.py::TestFileMigrationChecklist。
 
 本域自带 _gml_escape/_csx_escape 定义（1:1 平移，域内裸调用绑定本地版——
@@ -220,7 +220,7 @@ def cmd_cjk_font(game_file: Path, build_dir: Path,
             raise RuntimeError(f"pass1 失败（未注入任何内容）：\\n{out}")
 
     # 3) 共享图集构建（in-page 模式，纯 Python，确定性）
-    atlas_tool = Path(__file__).resolve().parents[2] / "tools" / "font_cjk_atlas.py"
+    atlas_tool = Path(__file__).resolve().parents[3] / "tools" / "font_cjk_atlas.py"
     r = subprocess.run(
         [sys.executable, str(atlas_tool),
          "--build-dir", str(build_dir), "--pass1-dir", str(work_dir),
@@ -231,7 +231,7 @@ def cmd_cjk_font(game_file: Path, build_dir: Path,
     print(r.stdout.strip())
 
     # 4) emb20 象限合成（像素 diff 自证；越界变化 → 硬失败）
-    compose_tool = Path(__file__).resolve().parents[2] / "tools" / "font_emb20_compose.py"
+    compose_tool = Path(__file__).resolve().parents[3] / "tools" / "font_emb20_compose.py"
     r = subprocess.run(
         [sys.executable, str(compose_tool),
          "--emb20", str(work_dir / "emb20_page.png"),

@@ -224,6 +224,37 @@ class TestShimReexportsAreLiveBindings(unittest.TestCase):
     def test_ms_state_attribute_is_canonical_module(self):
         self.assertIs(ms.state, state)
 
+    def test_no_double_qualified_module_refs(self):
+        """步 6 复核 P1-1：过限定（rooms_data.rooms_data.ROOMS）——1:1 校验器
+        对旧侧已带前缀的行存在对称剥离盲区，此处以静态扫描兜底。"""
+        import re as _re
+        mods = ("state", "errors", "config", "paths", "utmt", "rooms_data",
+                "inifile", "file0", "save_cmds", "dialogue", "code", "room",
+                "npc", "door", "sprite", "verify", "cjk")
+        pat = _re.compile(r"\b(" + "|".join(mods) + r")\s*\.\s*(" + "|".join(mods) + r")\b")
+        offenders = []
+        for f in _iter_package_files():
+            rel = f.relative_to(REPO)
+            for i, l in enumerate(f.read_text(encoding="utf-8").split("\n"), 1):
+                m = pat.search(l)
+                if m and "#" not in l.split(m.group(0))[0]:
+                    offenders.append(f"{rel}:{i}: {m.group(0)}")
+        self.assertEqual(offenders, [],
+                         "过限定模块引用（双重前缀，运行时 AttributeError）：\n"
+                         + "\n".join(offenders))
+
+    def test_room_list_runs(self):
+        """步 6 复核 P1-1(c)：room-list 零测试覆盖曾让 P0 双重前缀漏网（无
+        UTMT 依赖，纯 rooms_data 域）——补最小冒烟。"""
+        import io as _io
+        import contextlib as _ctxlib
+        buf = _io.StringIO()
+        with _ctxlib.redirect_stdout(buf):
+            ms.cmd_room_list("")  # noqa: 无法 import 前的防御——ms 兼容面即测点
+        out = buf.getvalue()
+        self.assertIn("房间", out)
+        self.assertGreater(len(out.strip().splitlines()), 10, "244 房间列表应输出多行")
+
     def test_shim_is_import_only(self):
         """O2 步 10 终态守卫（风险 #9）：shim 顶层只许 import/re-export +
         包引导 If + __main__ 守卫——零 def/class/赋值逻辑。"""
