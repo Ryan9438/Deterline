@@ -60,15 +60,22 @@ class TestFileMigrationChecklist(unittest.TestCase):
     """风险 #3：__file__ 相对路径在拆包后层级 +1 全部指向错误路径。
 
     本警戒线登记当前全部 __file__ 使用点（按内容匹配，不按行号——搬运自由，
-    集合变化必须显式更新 EXPECTED 并归因）。
+    集合变化必须显式更新 EXPECTED 并归因）。扫描范围 = modify_save.py +
+    deterline/**/*.py（O2 步 2 起与 shape lint 同款发现式收集）。
+
+    归因记录：
+    - O2 步 1 复核 P1-1：包引导自举 sys.path 一处（modify_save.py）。
+    - O2 步 2：rooms.json 两处（加载/写入）随 rooms_data.py 迁入包内，按方案
+      风险 #3 缓解统一为包根解析 parents[1]，并合并为单点 _rooms_json_path()
+      （原两处重复字面量 → 一处）。
     """
 
     EXPECTED = [
         # (描述, 代码片段)
         ("包引导自举（O2 步 1 复核 P1-1：-I/-P/-m 调用形态保持）",
          'str(Path(__file__).resolve().parent)'),
-        ("rooms.json 加载（rooms_data 域迁移项）", 'parent / "rooms.json"'),
-        ("rooms.json 写入（rooms_data 域迁移项）", 'parent / "rooms.json"'),
+        ("rooms.json 路径单点（rooms_data.py，O2 步 2 包根解析）",
+         'parents[1] / "rooms.json"'),
         ("cjk 图集工具路径（cjk 域迁移项，S6 新增）",
          'parent.parent / "tools" / "font_cjk_atlas.py"'),
         ("cjk 合成工具路径（cjk 域迁移项，S6 新增）",
@@ -76,8 +83,17 @@ class TestFileMigrationChecklist(unittest.TestCase):
     ]
 
     def test_file_usage_set_matches_checklist(self):
-        src = (REPO / "scripts" / "modify_save.py").read_text(encoding="utf-8")
-        found = [l.strip() for l in src.split("\n") if "__file__" in l]
+        files = [(REPO / "scripts" / "modify_save.py")]
+        pkg = REPO / "scripts" / "deterline"
+        if pkg.is_dir():
+            files.extend(sorted(pkg.glob("**/*.py")))
+        found = []
+        for f in files:
+            if not f.exists() or "__pycache__" in f.parts:
+                continue
+            for l in f.read_text(encoding="utf-8").split("\n"):
+                if "__file__" in l:
+                    found.append(f"{f.relative_to(REPO)}: {l.strip()}")
         # 每个登记项必须能在源码中找到对应 __file__ 行
         remaining = list(found)
         for desc, frag in self.EXPECTED:
