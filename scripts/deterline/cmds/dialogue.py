@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-from .. import config, errors, file0, rooms_data, utmt
+from .. import config, errors, file0, rooms_data, transactions, utmt
 
 def cmd_strg_list(game_file: Path, limit: int, offset: int, hex_mode: bool) -> None:
     if offset == 0:
@@ -421,13 +421,15 @@ def cmd_quest_init(save_dir: Path, flag_idx: int = config.FLAG_CUSTOM_START) -> 
     f0 = save_dir / "file0"
     if not f0.exists():
         raise errors.NotFoundError(f"file0 不存在: {f0}")
+    baseline = transactions.fingerprint(f0)
     name, nums = file0._parse_file0(f0)
     file0_idx = 29 + flag_idx
     if file0_idx >= len(nums):
         raise errors.ValidationError(f"flag[{flag_idx}] 越界")
     old = nums[file0_idx]
     nums[file0_idx] = 0
-    file0._write_file0(f0, name, nums)
+    transactions.write_many({f0: file0._serialize_file0(name, nums)},
+                            baselines={f0: baseline})
     print(f"✓ flag[{flag_idx}]: {old} → 0 (已重置为初始状态)")
 
 

@@ -7,36 +7,37 @@ experiment-*。跨模块一律模块属性形式：errors./paths./inifile./file0
 
 import os
 import random
-import shutil
 import sys
 import time
 from pathlib import Path
 
-from .. import errors, file0, inifile, paths
+from .. import errors, file0, inifile, paths, state, transactions
 
 # ============================================================
 # Undo: restore from .bak
 # ============================================================
 
-def cmd_undo(save_dir: Path, target: str, backup_ts: str | None = None,
-             dir_override: str | None = None) -> None:
-    files: dict[str, Path] = {
-        "ini": save_dir / "undertale.ini",
-        "file0": save_dir / "file0",
-    }
-    key = target.lower()
-    if key in ("data_win", "game", "game.ios"):
-        try:
-            game_file = paths.find_game_data_file(dir_override)
-        except FileNotFoundError as e:
-            raise errors.NotFoundError(str(e))
-        orig = game_file
-    elif key in files:
-        orig = files[key]
-    else:
-        raise errors.ValidationError(f"未知文件: '{target}'")
+GAME_BACKUP_KEYS = {"data_win", "game", "game.ios"}
 
-    if backup_ts:
+
+def _backup_target(save_dir: Path | None, key: str, dir_override: str | None) -> Path:
+    if key in GAME_BACKUP_KEYS:
+        return paths.find_game_data_file(dir_override)
+    filenames = {"ini": "undertale.ini", "file0": "file0"}
+    if key not in filenames:
+        raise errors.ValidationError(f"未知文件: '{key}'")
+    directory = save_dir if save_dir is not None else paths.find_save_dir(dir_override)
+    return directory / filenames[key]
+
+
+def cmd_undo(save_dir: Path | None, target: str, backup_ts: str | None = None,
+             dir_override: str | None = None) -> None:
+    key = target.lower()
+    orig = _backup_target(save_dir, key, dir_override)
+    if backup_ts and backup_ts != "bak":
+        backup_ts = backup_ts.removeprefix("bak.")
+        if not backup_ts or Path(backup_ts).name != backup_ts or "\\" in backup_ts:
+            raise errors.ValidationError("无效的备份标签")
         bak = orig.with_suffix(orig.suffix + f".bak.{backup_ts}")
     else:
         bak = orig.with_suffix(orig.suffix + ".bak")
@@ -48,29 +49,14 @@ def cmd_undo(save_dir: Path, target: str, backup_ts: str | None = None,
             print(f"  {b['label']}  ({b['time']}, {b['size']} bytes)")
         return
 
-    shutil.copy2(str(bak), str(orig))
-    label = f"{key} ({bak.name})" if key in ("data_win", "game", "game.ios") else key
+    transactions.write_one(orig, bak)
+    label = f"{key} ({bak.name})" if key in GAME_BACKUP_KEYS else key
     print(f"✓ {label} 已从备份恢复: {bak} → {orig}")
 
 
-def cmd_list_backups(save_dir: Path, target: str,
+def cmd_list_backups(save_dir: Path | None, target: str,
                      dir_override: str | None = None) -> None:
-    files: dict[str, Path] = {
-        "ini": save_dir / "undertale.ini",
-        "file0": save_dir / "file0",
-    }
-    key = target.lower()
-    if key in ("data_win", "game", "game.ios"):
-        try:
-            game_file = paths.find_game_data_file(dir_override)
-        except FileNotFoundError as e:
-            raise errors.NotFoundError(str(e))
-        orig = game_file
-    elif key in files:
-        orig = files[key]
-    else:
-        raise errors.ValidationError(f"未知文件: '{target}'")
-
+    orig = _backup_target(save_dir, target.lower(), dir_override)
     backups = paths.list_backups(orig)
     if not backups:
         print(f"没有找到 '{target}' 的备份文件")
@@ -88,6 +74,7 @@ def cmd_list_backups(save_dir: Path, target: str,
 
 def cmd_reset_flags(save_dir: Path) -> None:
     path = save_dir / "undertale.ini"
+    baselines = {path: transactions.fingerprint(path)}
     cp = inifile._read_ini(path)
     changes = []
 
@@ -108,28 +95,25 @@ def cmd_reset_flags(save_dir: Path) -> None:
         cp.set("General", "fun", inifile.format_ini_value(str(new_fun)))
         changes.append(f"[General] fun: {inifile.parse_ini_value(old)} → {new_fun}")
 
+    edits = {path: inifile._serialize_ini(cp)} if changes else {}
+    f0 = save_dir / "file0"
+    old_kills = 0
+    if f0.exists():
+        baselines[f0] = transactions.fingerprint(f0)
+        name, nums = file0._parse_file0(f0)
+        if len(nums) > 10 and nums[10] != 0:
+            old_kills = nums[10]
+            nums[10] = 0
+            edits[f0] = file0._serialize_file0(name, nums)
+    transactions.write_many(edits, baselines=baselines)
     if changes:
-        inifile._write_ini(path, cp)
         print("INI 已重置以下屠杀线标志:")
-        for c in changes:
-            print(f"  • {c}")
+        for change in changes:
+            print(f"  • {change}")
     else:
         print("INI: 未发现需要重置的标志。")
-
-    # 同时清理 file0 中的 Kills
-    try:
-        f0 = save_dir / "file0"
-        if f0.exists():
-            name, nums = file0._parse_file0(f0)
-            if len(nums) > 10 and nums[10] != 0:
-                old_k = nums[10]
-                nums[10] = 0
-                file0._write_file0(f0, name, nums)
-                print(f"  • file0 Kills: {old_k} → 0 (已同步)")
-            else:
-                print("file0 Kills 已经是 0。")
-    except Exception as e:
-        print(f"file0 同步失败: {e}", file=sys.stderr)
+    if old_kills:
+        print(f"  • file0 Kills: {old_kills} → 0 (已同步)")
 
 
 # ============================================================
@@ -142,6 +126,7 @@ def cmd_reset_all(save_dir: Path) -> None:
     path = save_dir / "file0"
     if not path.exists():
         raise errors.NotFoundError(f"file0 不存在: {path}")
+    baselines = {path: transactions.fingerprint(path)}
     name, nums = file0._parse_file0(path)
     changes = []
 
@@ -216,37 +201,29 @@ def cmd_reset_all(save_dir: Path) -> None:
             if old != set_val:
                 changes.append(f"flag[{flag_idx}]: {old} → {set_val}")
 
-    file0._write_file0(path, name, nums)
-
-    # Update INI（changes_ini 须在 try 前绑定：ini 缺失时 _read_ini 抛
-    # FileNotFoundError，原实现 except 后引用未定义变量 UnboundLocalError
-    # ——真实存档目录恒有 ini 故从未触发；tmp 冒烟 2026-11-11 捕获）
-    changes_ini = []
-    try:
-        ini_path = save_dir / "undertale.ini"
+    edits = {path: file0._serialize_file0(name, nums)}
+    ini_path = save_dir / "undertale.ini"
+    changes_ini = 0
+    if ini_path.exists():
+        baselines[ini_path] = transactions.fingerprint(ini_path)
         cp = inifile._read_ini(ini_path)
         if cp.has_section("Flowey"):
             for key in cp.options("Flowey"):
                 cp.set("Flowey", key, inifile.format_ini_value("0"))
-                changes_ini.append(f"[Flowey] {key} → 0")
-        if cp.has_option("General", "Kills"):
-            old = cp.get("General", "Kills")
-            cp.set("General", "Kills", inifile.format_ini_value("0"))
-            changes_ini.append(f"[General] Kills → {inifile.parse_ini_value(old)}")
-        if cp.has_option("General", "Love"):
-            old = cp.get("General", "Love")
-            cp.set("General", "Love", inifile.format_ini_value("1"))
-            changes_ini.append(f"[General] Love → {inifile.parse_ini_value(old)}")
+                changes_ini += 1
+        for key, value in (("Kills", "0"), ("Love", "1")):
+            if cp.has_option("General", key):
+                cp.set("General", key, inifile.format_ini_value(value))
+                changes_ini += 1
         if changes_ini:
-            inifile._write_ini(ini_path, cp)
-    except Exception:
-        pass
+            edits[ini_path] = inifile._serialize_ini(cp)
+    transactions.write_many(edits, baselines=baselines)
 
     print(f"✓ 已重置 {len(changes)} 项 file0 数据:")
     for c in changes:
         print(f"  • {c}")
     if changes_ini:
-        print(f"✓ INI 已重置 {len(changes_ini)} 项")
+        print(f"✓ INI 已重置 {changes_ini} 项")
     print("  保留: flag[36]=1 (和平记忆), flag[510/511]=0 (自定义事件)")
 
 
@@ -264,7 +241,7 @@ def cmd_create_system_info(save_dir: Path, value: str) -> None:
     if path.exists():
         print(f"'{fname}' 已存在。")
         return
-    path.touch()
+    transactions.write_one(path, b"")
     print(f"✓ 已创建 {fname}  ({'世界已删除' if value == '962' else '已向 Chara 献出灵魂'})")
 
 
@@ -277,19 +254,15 @@ def cmd_experiment_snapshot(save_dir: Path, tag: str | None = None) -> None:
     game_file = paths.find_game_data_file()
     ts = time.strftime("%Y%m%d_%H%M%S")
     label = tag or f"exp_{ts}"
-    # Snapshot game.ios
+    _validate_snapshot_tag(label)
     snap_game = game_file.with_name(f"game.ios.snap.{label}")
-    shutil.copy2(str(game_file), str(snap_game))
-    # Snapshot file0
     f0 = save_dir / "file0"
-    if f0.exists():
-        snap_f0 = save_dir / f"file0.snap.{label}"
-        shutil.copy2(str(f0), str(snap_f0))
-    # Snapshot ini
     ini = save_dir / "undertale.ini"
-    if ini.exists():
-        snap_ini = save_dir / f"undertale.ini.snap.{label}"
-        shutil.copy2(str(ini), str(snap_ini))
+    edits = {snap_game: game_file}
+    for source in (f0, ini):
+        if source.is_file():
+            edits[source.with_name(f"{source.name}.snap.{label}")] = source
+    transactions.write_many(edits)
     print(f"✓ 实验快照已创建: {label}")
     print(f"  game.ios → game.ios.snap.{label}")
     if f0.exists():
@@ -312,15 +285,21 @@ def cmd_experiment_list(save_dir: Path | None = None) -> None:
         mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(p.stat().st_mtime))
         size = p.stat().st_size
         # Check if corresponding file0 snapshot exists
-        f0_snap = parent / f"file0.snap.{label}"
+        f0_snap = (save_dir or parent) / f"file0.snap.{label}"
         f0_info = " + file0" if f0_snap.exists() else ""
         print(f"  [{label}] {mtime} ({size} bytes){f0_info}")
+
+
+def _validate_snapshot_tag(tag: str) -> None:
+    if not tag or any(char in tag for char in "/\\*?[]"):
+        raise errors.ValidationError("快照标签不能包含路径分隔符或通配符")
 
 
 def cmd_experiment_restore(save_dir: Path, tag: str) -> None:
     """Restore game.ios and file0 from a named experiment snapshot."""
     game_file = paths.find_game_data_file()
     parent = game_file.parent
+    _validate_snapshot_tag(tag)
     snap_game = parent / f"game.ios.snap.{tag}"
     if not snap_game.exists():
         # Try fuzzy match
@@ -332,29 +311,19 @@ def cmd_experiment_restore(save_dir: Path, tag: str) -> None:
         snap_game = snaps[-1]
         tag = str(snap_game.name).removeprefix("game.ios.snap.")
         print(f"模糊匹配: {tag}")
-    # Restore game.ios (use temp file to bypass .app bundle protection)
-    import tempfile as _tf
-    _tmp = _tf.NamedTemporaryFile(suffix=".ios", delete=False).name
-    shutil.copy2(str(snap_game), _tmp)
-    shutil.copy2(_tmp, str(game_file))
-    # Sync to configurable fallback copy if it exists (DETERLINE_GAME_FILE)
+    edits = {game_file.resolve(): snap_game}
     env_game = os.environ.get("DETERLINE_GAME_FILE", "")
-    if env_game:
-        desktop_game = Path(env_game).expanduser()
-        if desktop_game.exists() and str(desktop_game.resolve()) != str(game_file.resolve()):
-            shutil.copy2(_tmp, str(desktop_game))
-    os.unlink(_tmp)
-    print(f"✓ 已恢复 game.ios ← game.ios.snap.{tag}")
-    # Restore file0 if exists
-    f0 = save_dir / "file0"
-    snap_f0 = parent / f"file0.snap.{tag}"
-    if snap_f0.exists() and f0.exists():
-        shutil.copy2(str(snap_f0), str(f0))
-        print(f"✓ 已恢复 file0 ← file0.snap.{tag}")
-    # Restore ini if exists
-    ini = save_dir / "undertale.ini"
-    snap_ini = parent / f"undertale.ini.snap.{tag}"
-    if snap_ini.exists() and ini.exists():
-        shutil.copy2(str(snap_ini), str(ini))
-        print(f"✓ 已恢复 undertale.ini ← undertale.ini.snap.{tag}")
+    if env_game and not state.NO_STEAM_SYNC:
+        fallback = Path(env_game).expanduser()
+        if fallback.is_file():
+            edits[fallback.resolve()] = snap_game
+    for name in ("file0", "undertale.ini"):
+        for directory in dict.fromkeys((save_dir, parent)):
+            snapshot = directory / f"{name}.snap.{tag}"
+            if snapshot.is_file():
+                edits[save_dir / name] = snapshot
+                break
+    transactions.write_many(edits)
+    for target, source in edits.items():
+        print(f"✓ 已恢复 {target} ← {source.name}")
     print("完成。请重启游戏。")

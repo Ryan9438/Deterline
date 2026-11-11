@@ -37,7 +37,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 ## 命令总表（全量 · 自动生成）
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 86 个命令 · 版本 2.3.3 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 86 个命令 · 版本 2.4.0 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -63,7 +63,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 > ⚠️ `set-derived`: 永久改写 game.ios、对所有存档生效；恢复用 undo --value data_win
 > ⚠️ `room-list`: 模糊名多匹配会报错并列出候选，须用唯一名
 > ⚠️ `doctor`: 零 UTMT 子进程——deep 验证仍走 verify-code/smoke-test 独立命令
-> ⚠️ `doctor`: 游戏文件 md5 ≠ 基线不一定是问题（实验态）；✗ 沙箱残留提醒确认后删除或 sandbox-restore
+> ⚠️ `doctor`: 游戏文件 md5 ≠ 基线不一定是问题（实验态）；列出实验工作区数量
 > ⚠️ `doctor`: 备份占盘 .bak* 单个约 250MB，长期不用可清（undo/experiment-restore 依赖）
 
 ### 💬 对话文本编辑 — --file data_win，STRG 与 textdata_en 中央数据库（16457 行 / 158 万字符）
@@ -202,7 +202,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 | `verify-code --key "gml_Object_obj_cactus_Step_1"` | 字节级体检指定代码条目：反汇编指纹 + 变量读写普查 + 往返稳定性（WARN/不稳定退出码 1；--asm 输出完整反汇编） | sandbox |
 | `smoke-test --value room_torielroom --key obj_cactus` | 游戏内冒烟测试：注入扁平触发块 + 标记文件 → steam 启动 → 断言 → 自动恢复原文件（FAIL 退出码 1；--keys osascript 需辅助功能权限） | in-game |
 | `diff-snapshots --key baseline.ios --value after.ios` | 两份 game.ios 结构化差异报告（LastObj/实例/代码条目/字符串计数/自定义变量——实验隔离与泄漏取证） | sandbox |
-| `sandbox-restore` | 将沙箱副本应用回原文件（⚠️ 覆盖原文件） | sandbox |
+| `sandbox-restore` | 校验基线并备份后，将实验工作区应用回原文件 | sandbox |
 | `md5` | 打印 game.ios MD5（一行校验"是否真的改过"） | static |
 | `experiment-snapshot --value "test1"` | 创建命名实验快照（game.ios + file0） | static |
 | `experiment-list` | 列出全部实验快照 | static |

@@ -52,7 +52,7 @@ ASCII, ascii, 英文, 中文限制, 字体
 
 ## 技能版本
 
-2.3.3
+2.4.0
 
 ## 适用平台
 
@@ -129,7 +129,7 @@ deterline/
 └── scripts/
     ├── modify_save.py    ← 兼容 shim（纯 re-export；实现已拆入 deterline/）
     ├── deterline/        ← 实现包（O2 拆包，v2.3.1）
-    │   ├── cli.py        ← argparse 入口 + 85 分支 dispatch（ACTION_CHOICES）
+    │   ├── cli.py        ← argparse 入口（命令注册表在 command_handlers.py）
     │   ├── errors.py / config.py / state.py / paths.py
     │   │                 ← 叶子层（异常 / 常量表 / 运行旗标单点 / 路径定位）
     │   ├── utmt.py       ← UTMT CLI 脊柱（_run_utmt / 沙箱重定向 / V2 写入策略）
@@ -146,7 +146,7 @@ deterline/
 ## 命令总览
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 86 个命令 · 版本 2.3.3 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 86 个命令 · 版本 2.4.0 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -172,7 +172,7 @@ deterline/
 > ⚠️ `set-derived`: 永久改写 game.ios、对所有存档生效；恢复用 undo --value data_win
 > ⚠️ `room-list`: 模糊名多匹配会报错并列出候选，须用唯一名
 > ⚠️ `doctor`: 零 UTMT 子进程——deep 验证仍走 verify-code/smoke-test 独立命令
-> ⚠️ `doctor`: 游戏文件 md5 ≠ 基线不一定是问题（实验态）；✗ 沙箱残留提醒确认后删除或 sandbox-restore
+> ⚠️ `doctor`: 游戏文件 md5 ≠ 基线不一定是问题（实验态）；列出实验工作区数量
 > ⚠️ `doctor`: 备份占盘 .bak* 单个约 250MB，长期不用可清（undo/experiment-restore 依赖）
 
 ### 💬 对话文本编辑 — --file data_win，STRG 与 textdata_en 中央数据库（16457 行 / 158 万字符）
@@ -311,7 +311,7 @@ deterline/
 | `verify-code --key "gml_Object_obj_cactus_Step_1"` | 字节级体检指定代码条目：反汇编指纹 + 变量读写普查 + 往返稳定性（WARN/不稳定退出码 1；--asm 输出完整反汇编） | sandbox |
 | `smoke-test --value room_torielroom --key obj_cactus` | 游戏内冒烟测试：注入扁平触发块 + 标记文件 → steam 启动 → 断言 → 自动恢复原文件（FAIL 退出码 1；--keys osascript 需辅助功能权限） | in-game |
 | `diff-snapshots --key baseline.ios --value after.ios` | 两份 game.ios 结构化差异报告（LastObj/实例/代码条目/字符串计数/自定义变量——实验隔离与泄漏取证） | sandbox |
-| `sandbox-restore` | 将沙箱副本应用回原文件（⚠️ 覆盖原文件） | sandbox |
+| `sandbox-restore` | 校验基线并备份后，将实验工作区应用回原文件 | sandbox |
 | `md5` | 打印 game.ios MD5（一行校验"是否真的改过"） | static |
 | `experiment-snapshot --value "test1"` | 创建命名实验快照（game.ios + file0） | static |
 | `experiment-list` | 列出全部实验快照 | static |
@@ -390,7 +390,7 @@ export-sprite --key "spr_sans_d" --value "sans.png" --frame 0
   → (用 PIL / Photoshop / Aseprite 编辑 PNG)
 replace-sprite --key "spr_sans_d" --value "sans_edit.png" --frame 0 --sandbox
   → 进游戏验证
-sandbox-restore  (不满意就恢复)
+undo --value data_win  (恢复已提交的游戏数据)
 ```
 
 - 2583 个精灵共享 26 张纹理图谱（Texture 0~25）；图谱尺寸 512/1024/2048 混合（2026-11 审计实测）
@@ -398,20 +398,18 @@ sandbox-restore  (不满意就恢复)
 - 编辑 PNG 会自动 Resize 匹配原尺寸；替换后通过 `GMImage` 自动处理格式转换（QOI/BZ2 等）
 - 已验证无损循环：`export-texture → replace-texture → export-texture` MD5 完全一致
 
-### 沙箱模式与写入安全（v2.3.0+）
+### 实验工作区与写入
 
-**data_win 写操作默认沙箱**：不带 `--commit` 的写命令只落 `game.ios.sandbox` 副本（真实文件与 Steam 零接触），每次写入打印回执（影响文件 + MD5 前后 + 退路）。确认后 `--commit` 直写（含 Steam 同步，可用 `--no-steam-sync` 抑制），或 `sandbox-restore` 应用沙箱。`--sandbox` 与 `--commit` 互斥。
+游戏数据写操作默认使用源文件旁的 `.deterline/<文件名>/default/`。有旧 `*.sandbox` 时，默认继续使用旧副本。指定 `--workspace` 可单独创建和选择工作区，名称允许小写字母、数字、连字符和下划线。
 
 ```bash
-# 默认：写入自动隔离到沙箱副本（打印写入回执）
-python run.py --action spawn-obj --value "room_asrielroom" --key "obj_dummy1" --file data_win
-
-# 确认效果后二选一：
-python run.py --action sandbox-restore          # 应用沙箱到原文件
-python run.py --action spawn-obj ... --commit   # 下一次写入直接落盘（含 Steam 同步）
+python run.py --action add-string --value "Test text" --file data_win --workspace test
+python run.py --action list-strings --file data_win --workspace test
+python run.py --action sandbox-restore --workspace test --preview
+python run.py --action sandbox-restore --workspace test
 ```
 
-沙箱自动创建 `game.ios.sandbox` 作为工作副本，所有操作只影响副本。
+应用工作区前会比较原始文件的基线哈希，并备份当前目标。缺少基线记录的旧副本可保留，使用新工作区重做编辑。直接写入请加 `--commit`，如需跳过 Steam 同步请再加 `--no-steam-sync`。`--preview` 显示拟写入目标和哈希，存档文本另有行级差异。原有代码替换 `--dry-run` 仍可查看源码匹配或差异。
 
 ---
 
@@ -1056,7 +1054,7 @@ game_restart();            // 重启游戏
 | WEAPON/ARMOR 自动 AT/DF | 设置装备时自动同步加成值 |
 | `undo --value data_win` | 恢复 `game.ios` 到修改前状态（用 `.bak.时间戳` 可恢复到指定版本） |
 | `remove-obj --instance ID` | 精确移除单个实例，不影响其他对象 |
-| **写入默认沙箱** | v2.3.0：写命令默认只落 `*.sandbox` 副本 + 写入回执；`--commit` 直写；`--no-steam-sync` 抑制 Steam 同步 |
+| **写入默认沙箱** | 写命令默认落在实验工作区并打印回执；`--commit` 直写；`--no-steam-sync` 抑制 Steam 同步 |
 | **`verify-nsid` 变量体检** | 检查损坏的变量 NameStringID（读取会崩溃的陷阱），`--fix` 自动修复 |
 | **变量自动初始化** | `npc-dialogue`/`guard-npc-alarm` 自动在 Create 事件写 `deterline_state = 0;`，防止新变量 NSID 损坏崩溃 |
 | **精灵搜索** `search-sprite` | 零匹配以退出码 3 结束（推荐逻辑仅 get-obj/spawn-obj 有） |

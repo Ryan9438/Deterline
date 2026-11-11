@@ -1,64 +1,11 @@
-"""argparse 入口与 85 分支 dispatch（O2 步 10：main() 1:1 平移）。
-
-1:1 平移；表驱动/subparsers 改造为独立后续项（方案 §2.2 步 10 明文）。
-唯一声明内变更：--action 的 choices 字面量上提为模块级 ACTION_CHOICES
-（gen_docs import-first 契约，O2-step0 地雷 #2；内容逐字节同源，--help
-golden 逐字节断言护航）。dispatch 裸名经 AST 引导统一为模块属性形式
-（与包纪律一致；mock 面不变——cmd 函数对象无 patch 消费者）。
-"""
+"""Parse legacy CLI options and dispatch through the command registry."""
 
 import argparse
-import json
-import os
 import sys
-from pathlib import Path
 
-from . import (config, errors, file0, inifile, paths, state, utmt)
-from .cmds import (cjk, code, dialogue, doctor, door, npc, room, save_cmds,
-                   sprite, verify)
+from . import command_handlers, errors, paths, sandbox, state, utmt
 
-# gen_docs.authoritative_actions 的 import-first 契约（O1b/O2-step0）
-ACTION_CHOICES = ["get", "set", "list", "find", "reset-flags", "reset-all",
-                                 "room-list", "create-system-info", "undo",
-                                 "list-backups",
-                                 "list-strings", "get-string", "set-string",
-                                 "add-string", "delete-string",
-                                 "replace-string", "search-strings",
-                                 "list-codes", "decompile-code",
-                                 "replace-code", "find-replace-code",
-                                 "append-code", "prepend-code",
-                                  "search-textdata", "add-textentry", "update-textentry",
-                                  "delete-textentry",
-                                   "batch-add-textentry",
-                                   "guided-add-dialogue",
-                                 "search-vars", "search-code", "create-script",
-                                   "room-objects", "search-sctext",
-                                    "spawn-obj", "remove-obj",
-                                    "npc-dialogue", "npc-choice", "guard-npc-alarm",
-                                   "quest-init", "quest-status",
-                                   "sandbox-restore",
-                                   "list-sprites", "search-sprite",
-                                   "get-obj", "set-obj-sprite",
-                                   "list-textures", "export-sprite",
-                                   "replace-sprite", "duplicate-sprite",
-                                   "preview-sprite", "colorize-sprite",
-                                   "export-texture", "replace-texture",
-                                   "dump-sprites",
-                                    "experiment-snapshot", "experiment-list",
-                                    "experiment-restore",
-                                    "room-info", "create-room",
-                                    "set-room-bg", "set-room-prop", "set-room-view",
-                                    "list-game-bgs", "create-bg-asset",
-                                    "gml-bg", "set-room-solid-bg", "room-bg-info",
-                                     "remove-tile",
-                                     "handler-extract",
-                                     "create-door",
-                                     "list-doors",
-                                     "remove-door",
-                                     "create-pit",
-                                     "create-battle",
-                                     "verify-nsid", "verify-instances", "verify-code", "smoke-test", "diff-snapshots", "set-derived",
-                                     "cjk-font", "cjk-trigger", "cjk-check", "doctor", "md5"]
+ACTION_CHOICES = list(command_handlers.COMMANDS)
 
 
 def main():
@@ -179,6 +126,8 @@ def main():
     parser.add_argument("--value", help="要设置/搜索的值 (set/find 操作必需)")
     parser.add_argument("--old", help="replace-string 的旧文本 (decompile-code 兼容别名，等同 --search)")
     parser.add_argument("--search", help="decompile-code: 仅显示匹配该文本的行 (等同行过滤)")
+    parser.add_argument("--preview", action="store_true",
+                        help="运行检查并预览拟写入文件，不提交编辑方案")
     parser.add_argument("--dry-run", action="store_true",
                         help="预览替换结果/匹配数，不写入文件 (replace-code/find-replace-code 用)")
     parser.add_argument("--section", default="General",
@@ -247,8 +196,10 @@ def main():
                         help="色相范围 \"min-max\" (colorize-sprite 用, 如 \"180-260\")")
     parser.add_argument("--hue-to", type=float, default=None,
                         help="目标色相角度 0-360 (colorize-sprite 用)")
+    parser.add_argument("--workspace", type=sandbox.workspace_name,
+                        help="选择独立实验工作区（读取也使用该工作区）")
     parser.add_argument("--sandbox", action="store_true",
-                        help="沙箱模式: 在 game.ios.sandbox 副本上操作（v2 起写操作默认即沙箱，此参数保留为显式声明）")
+                        help="沙箱模式: 在实验工作区副本上操作（v2 起写操作默认即沙箱，此参数保留为显式声明）")
     parser.add_argument("--commit", action="store_true",
                         help="v2 写入安全: 直写真实文件（默认写操作只落沙箱副本）；含 Steam 同步")
     parser.add_argument("--no-steam-sync", action="store_true",
@@ -350,8 +301,6 @@ def main():
 
     # --x/--y default to None so remove-door can require explicit coordinates;
     # other commands keep the historical 320/240 default.
-    x_explicit = args.x is not None
-    y_explicit = args.y is not None
     # cjk-trigger 用原始 None 判定（其默认 220/330 与 spawn 的 320/240 不同）
     args.x_raw = args.x
     args.y_raw = args.y
@@ -361,527 +310,46 @@ def main():
         args.y = 240
 
     # Activate sandbox mode
-    if args.sandbox and args.commit:
-        print("错误: --sandbox 与 --commit 互斥（沙箱=彩排，commit=直写，二选一）", file=sys.stderr)
+    if (args.sandbox or args.workspace) and args.commit:
+        print("错误: --sandbox / --workspace 与 --commit 互斥（沙箱=彩排，commit=直写，二选一）", file=sys.stderr)
         sys.exit(2)
-    if args.sandbox:
-        state.SANDBOX_ACTIVE = True
-    if args.commit:
-        state.COMMIT_ACTIVE = True
-    if getattr(args, "no_steam_sync", False):
-        state.NO_STEAM_SYNC = True
-    if getattr(args, "allow_cjk", False):
-        state.ALLOW_CJK = True
-    if args.auto_snapshot:
-        state.AUTO_SNAPSHOT = True
+    if args.action == "smoke-test" and (args.preview or args.sandbox or args.workspace):
+        parser.error("smoke-test 需要启动游戏，不能与预览或工作区一起使用")
+    state.PREVIEW = args.preview
+    if args.preview:
+        print("预览模式：下面的修改方案不会提交。")
+    state.WORKSPACE = args.workspace
+    state.SANDBOX_ACTIVE = bool(args.sandbox or args.workspace)
+    state.SANDBOX_ORIGINAL = None
+    state.COMMIT_ACTIVE = args.commit
+    state.NO_STEAM_SYNC = args.no_steam_sync
+    state.ALLOW_CJK = args.allow_cjk
+    state.AUTO_SNAPSHOT = args.auto_snapshot
 
-    # Handle sandbox-restore before file-type checks
-    if args.action == "sandbox-restore":
-        try:
-            game_file = paths.find_game_data_file(args.dir)
-            sandbox_path = game_file.with_suffix(game_file.suffix + ".sandbox")
-            if not sandbox_path.exists():
-                print(f"错误: 沙箱备份不存在: {sandbox_path}", file=sys.stderr)
-                sys.exit(1)
-            shutil.copy2(str(sandbox_path), str(game_file))
-            sandbox_path.unlink()
-            print(f"✓ 沙箱备份已恢复: {sandbox_path.name} → {game_file.name}")
-        except FileNotFoundError as e:
-            print(f"错误: {e}", file=sys.stderr)
-            sys.exit(1)
-        return
-
-    # Handle md5 before file-type checks (read-only; prints game data file hash).
-    # Lets a report include the raw hash so "did the file actually change?" is
-    # verifiable in one line.
-    elif args.action == "doctor":
-        sd = None
-        try:
-            sd = paths.find_save_dir(args.dir)
-        except FileNotFoundError as e:
-            print(f"  ✗ 存档目录定位 — {e}", file=sys.stderr)
-        doctor.cmd_doctor(sd, args.dir)
-    elif args.action == "md5":
-        try:
-            game_file = paths.find_game_data_file(args.dir)
-        except FileNotFoundError as e:
-            print(f"错误: {e}", file=sys.stderr)
-            sys.exit(1)
-        digest = hashlib.md5(game_file.read_bytes()).hexdigest()
-        print(f"{digest}  {game_file}")
-        return
-
-    # Handle set-derived before file-type checks (touches both file0 and data_win)
-    if args.action == "set-derived":
-        if args.key is None or args.value is None:
-            parser.error("set-derived 需要 --key (HP/MAXHP/AT/DF) 和 --value")
-        try:
-            save_dir = paths.find_save_dir(args.dir)
-            game_file = paths.find_game_data_file(args.dir)
-        except FileNotFoundError as e:
-            print(f"错误: {e}", file=sys.stderr)
-            sys.exit(1)
-        try:
-            code.cmd_set_derived(save_dir, game_file, args.key, args.value)
-        except (FileNotFoundError, ValueError, RuntimeError, errors.DeterlineError) as e:
-            print(f"错误: {e}", file=sys.stderr)
-            sys.exit(1)
-        return
-
-    # ── Dialogue editor actions (data_win) ────────────────
-    if args.file == "data_win":
-        try:
-            game_file = paths.find_game_data_file(args.dir)
-        except FileNotFoundError as e:
-            print(f"错误: {e}", file=sys.stderr)
-            sys.exit(1)
-
-        if state.SANDBOX_ACTIVE:
-            sandbox_path = game_file.with_suffix(game_file.suffix + ".sandbox")
-            print(f"🔒 沙箱模式: 所有操作作用于 {sandbox_path.name}", file=sys.stderr)
-
-        try:
-            if args.action == "list-strings":
-                dialogue.cmd_strg_list(game_file, args.limit, args.offset, args.hex)
-            elif args.action == "get-string":
-                if args.key is None:
-                    parser.error("--key 是必需的 (字符串索引)")
-                dialogue.cmd_strg_get(game_file, int(args.key))
-            elif args.action == "set-string":
-                if args.key is None or args.value is None:
-                    parser.error("--key 和 --value 是必需的")
-                dialogue.cmd_strg_set(game_file, int(args.key), args.value)
-            elif args.action == "add-string":
-                if args.value is None:
-                    parser.error("--value 是必需的 (新对话文本)")
-                dialogue.cmd_strg_add(game_file, args.value)
-            elif args.action == "delete-string":
-                if args.key is None:
-                    parser.error("--key 是必需的 (要删除的索引)")
-                dialogue.cmd_strg_delete(game_file, int(args.key))
-            elif args.action == "replace-string":
-                if args.old is None or args.value is None:
-                    parser.error("--old 和 --value 是必需的")
-                dialogue.cmd_strg_replace(game_file, args.old, args.value)
-            elif args.action == "search-strings":
-                if args.value is None:
-                    parser.error("--value 是必需的 (搜索关键词)")
-                dialogue.cmd_strg_search(game_file, args.value, args.limit)
-            elif args.action == "list-codes":
-                code.cmd_code_list(game_file, args.limit, args.offset)
-            elif args.action == "decompile-code":
-                if args.key is None:
-                    parser.error("--key 是必需的 (代码名称)")
-                code.cmd_code_decompile(game_file, args.key, args.limit, search=args.search or args.old or "")
-            elif args.action == "replace-code":
-                if args.key is None or args.value is None:
-                    parser.error("--key 和 --value 是必需的 (代码名称 + GML 源码或文件路径)")
-                code.cmd_code_replace(game_file, args.key, args.value, value_is_file=args.file_path,
-                                 show_diff=args.show_diff, dry_run=args.dry_run)
-            elif args.action == "find-replace-code":
-                if args.key is None or args.old is None or args.value is None:
-                    parser.error("--key, --old 和 --value 是必需的")
-                code.cmd_code_find_replace(game_file, args.key, args.old, args.value,
-                                      show_diff=args.show_diff, dry_run=args.dry_run)
-            elif args.action == "search-textdata":
-                if args.value is None:
-                    parser.error("--value 是必需的 (搜索关键词)")
-                dialogue.cmd_textdata_search(game_file, args.value, args.limit)
-            elif args.action == "add-textentry":
-                if args.key is None or args.value is None:
-                    parser.error("--key 和 --value 是必需的")
-                dialogue.cmd_textdata_add(game_file, args.key, args.value,
-                                 face=args.face, emotion=args.emotion)
-            elif args.action == "guided-add-dialogue":
-                if args.key is None or args.value is None:
-                    parser.error("--key (文本 key) 和 --value (对话内容) 是必需的")
-                dialogue.cmd_guided_add_dialogue(game_file, args.key, args.value,
-                                        face=args.face, emotion=args.emotion)
-            elif args.action == "delete-textentry":
-                if args.key is None:
-                    parser.error("--key 是必需的 (要删除的 textdata key)")
-                dialogue.cmd_textdata_delete(game_file, args.key)
-            elif args.action == "update-textentry":
-                if args.key is None or args.value is None:
-                    parser.error("--key 和 --value 是必需的 (已存在的 textdata key + 新文本)")
-                dialogue.cmd_textdata_update(game_file, args.key, args.value,
-                                    face=args.face, emotion=args.emotion)
-            elif args.action in ("search-vars", "search-code"):
-                if args.value is None:
-                    parser.error("--value 是必需的 (变量名/精灵名/任意代码片段)")
-                code.cmd_search_vars(game_file, args.value, args.limit)
-            elif args.action == "room-objects":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间内部名，如 torielroom)")
-                room.cmd_room_objects(game_file, args.value)
-            elif args.action == "create-script":
-                if args.key is None or args.value is None:
-                    parser.error("--key 和 --value 是必需的 (代码名 + GML 源码或文件路径)")
-                code.cmd_create_script(game_file, args.key, args.value, value_is_file=args.file_path)
-            elif args.action == "search-sctext":
-                if args.value is None:
-                    parser.error("--value 是必需的 (搜索关键词)")
-                dialogue.cmd_search_sctext(game_file, args.value, args.limit)
-            elif args.action == "spawn-obj":
-                if args.value is None or args.key is None:
-                    parser.error("--value (房间名) 和 --key (对象名) 是必需的")
-                room.cmd_spawn_obj(game_file, args.value, args.key, args.x, args.y)
-            elif args.action == "npc-dialogue":
-                if args.value is None or args.key is None:
-                    parser.error("--value (房间名) 和 --key (对象名) 是必需的")
-                if args.text_key is None or args.text is None:
-                    parser.error("--text-key (textdata key) 和 --text (对话内容) 是必需的")
-                npc.cmd_npc_dialogue(game_file, args.value, args.key, args.x, args.y,
-                                 args.text_key, args.text,
-                                 face=args.face, emotion=args.emotion, once=args.once,
-                                 range_=args.range)
-            elif args.action == "npc-choice":
-                if args.value is None or args.key is None:
-                    parser.error("--value (房间名) 和 --key (对象名) 是必需的")
-                if args.text_key is None or args.text is None:
-                    parser.error("--text-key (选择文本 key) 和 --text (选择文本) 是必需的")
-                npc.cmd_npc_choice(game_file, args.value, args.key, args.x, args.y,
-                               args.text_key, args.text,
-                               yes_key=args.yes_text_key, yes_text=args.yes_text,
-                               no_key=args.no_text_key, no_text=args.no_text,
-                               face=args.face, emotion=args.emotion, range_=args.range,
-                               goto_room=args.goto, item_id=args.item,
-                               repeat=args.repeat)
-            elif args.action == "guard-npc-alarm":
-                if args.key is None or args.instance is None:
-                    parser.error("--key (对象名) 和 --instance (实例 ID) 是必需的")
-                npc.cmd_guard_npc_alarm(game_file, args.key, args.instance, text_key=args.text_key)
-            elif args.action == "verify-nsid":
-                npc.cmd_verify_nsid(game_file, fix=args.fix)
-            elif args.action == "verify-instances":
-                npc.cmd_verify_instances(game_file, fix=args.fix)
-            elif args.action == "verify-code":
-                if args.key is None:
-                    parser.error("--key (代码条目名) 是必需的")
-                _stable = verify.cmd_verify_code(game_file, args.key, show_asm=args.asm)
-                if _stable is False:
-                    sys.exit(1)  # 往返不稳定（WARN）必须非零退出
-            elif args.action == "diff-snapshots":
-                if args.key is None or args.value is None:
-                    parser.error("--key (基线文件) 和 --value (对比文件) 是必需的")
-                verify.cmd_diff_snapshots(Path(args.key).expanduser(), Path(args.value).expanduser())
-            elif args.action == "smoke-test":
-                # 注意: --dir 在 data_win 语境下是游戏数据文件；存档目录固定走默认定位
-                _ok = verify.cmd_smoke_test(game_file, paths.find_save_dir(None),
-                               room_name=args.value or "room_torielroom",
-                               obj_name=args.key or "obj_cactus",
-                               x=args.x if args.x is not None else 160,
-                               y=args.y if args.y is not None else 150,
-                               timeout=args.timeout or 120,
-                               send_keys=args.keys or "external")
-                if not _ok:
-                    sys.exit(1)  # FAIL 必须非零退出，否则自动化无法感知
-            elif args.action == "create-door":
-                if args.value is None or args.key is None:
-                    parser.error("--value (当前房间名) 和 --key (目标房间名) 是必需的")
-                door.cmd_create_door(game_file, args.value, args.key,
-                                args.x, args.y, args.spawn_x, args.spawn_y)
-            elif args.action == "list-doors":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间名)")
-                door.cmd_list_doors(game_file, args.value)
-            elif args.action == "remove-door":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间名)")
-                if not args.all and not (x_explicit and y_explicit):
-                    parser.error("--x 和 --y (坐标) 或 --all (全部移除) 是必需的")
-                door.cmd_remove_door(game_file, args.value,
-                                args.x if x_explicit else None,
-                                args.y if y_explicit else None,
-                                remove_all=args.all)
-            elif args.action == "create-pit":
-                if args.value is None or args.key is None:
-                    parser.error("--value (当前房间名) 和 --key (目标房间名) 是必需的")
-                door.cmd_create_pit(game_file, args.value, args.key,
-                               args.x, args.y, args.spawn_x, args.spawn_y)
-            elif args.action == "create-battle":
-                if args.value is None or args.key is None:
-                    parser.error("--value (房间名) 和 --key (battlegroup ID) 是必需的")
-                try:
-                    bg_id = int(args.key)
-                except ValueError:
-                    parser.error("--key 必须是数字 (battlegroup ID)")
-                door.cmd_create_battle(game_file, args.value, bg_id,
-                                  border=args.border, x=args.x, y=args.y)
-            elif args.action == "remove-obj":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间名)")
-                if args.instance is None and args.key is None:
-                    parser.error("--instance (实例 ID) 或 --key (对象名) 是必需的")
-                room.cmd_remove_obj(game_file, args.value, args.key or "",
-                               instance_id=args.instance, remove_all=args.all)
-            elif args.action == "room-info":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间名)")
-                room.cmd_room_info(game_file, args.value)
-            elif args.action == "create-room":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间内部名)")
-                room.cmd_create_room(game_file, args.value, args.width, args.height,
-                                args.speed, args.caption, args.bg_color)
-            elif args.action == "set-room-bg":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间名)")
-                room.cmd_set_room_bg(game_file, args.value, args.index,
-                                enable=utmt._bool_or_none(args.enable),
-                                bg_name=args.bg,
-                                foreground=utmt._bool_or_none(args.foreground),
-                                x=(args.x if x_explicit else None),
-                                y=(args.y if y_explicit else None),
-                                speedx=args.speedx, speedy=args.speedy,
-                                tiled_h=utmt._bool_or_none(args.tiled_h),
-                                tiled_v=utmt._bool_or_none(args.tiled_v),
-                                stretch=utmt._bool_or_none(args.stretch),
-                                keep_bg_color=args.keep_bg_color)
-            elif args.action == "set-room-solid-bg":
-                if args.value is None or args.color is None:
-                    parser.error("--value (房间名) 和 --color (6位hex RGB) 是必需的")
-                try:
-                    room._parse_layers(args.layers)
-                except ValueError as e:
-                    parser.error(str(e))
-                room.cmd_set_room_solid_bg(game_file, args.value, args.color,
-                                      asset_name=args.asset_name,
-                                      layers=args.layers,
-                                      runtime=not args.no_runtime)
-            elif args.action == "room-bg-info":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间名)")
-                room.cmd_room_bg_info(game_file, args.value)
-            elif args.action == "set-room-prop":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间名)")
-                room.cmd_set_room_prop(game_file, args.value,
-                                  width=args.width, height=args.height,
-                                  speed=args.speed, caption=args.caption,
-                                  bg_color=args.bg_color,
-                                  persistent=args.persistent)
-            elif args.action == "set-room-view":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间名)")
-                room.cmd_set_room_view(game_file, args.value, args.index,
-                                  enable=utmt._bool_or_none(args.enable),
-                                  view_w=args.view_w, view_h=args.view_h,
-                                  port_w=args.port_w, port_h=args.port_h,
-                                  follow=args.follow,
-                                  border_x=args.border_x, border_y=args.border_y)
-            elif args.action == "list-game-bgs":
-                room.cmd_list_game_bgs(game_file, args.value or "")
-            elif args.action == "create-bg-asset":
-                if args.value is None or args.image is None:
-                    parser.error("--value (背景名) 和 --image (PNG 路径) 是必需的")
-                room.cmd_create_bg_asset(game_file, args.value, args.image)
-            elif args.action == "gml-bg":
-                if args.value is None or args.bg is None:
-                    parser.error("--value (房间名) 和 --bg (背景名/ID) 是必需的")
-                try:
-                    room._parse_layers(args.layers)
-                except ValueError as e:
-                    parser.error(str(e))
-                room.cmd_gml_bg(game_file, args.value, args.bg, args.slot,
-                           args.speedx, args.speedy,
-                           layers=args.layers, all_layers=args.all_layers,
-                           hide_above=args.hide_above,
-                           vtiled=(utmt._bool_or_none(args.tiled_v) is not False),
-                           foreground=(utmt._bool_or_none(args.foreground) is True))
-            elif args.action == "remove-tile":
-                if args.value is None:
-                    parser.error("--value 是必需的 (房间名)")
-                room.cmd_remove_tile(game_file, args.value, instance=args.instance)
-            elif args.action == "handler-extract":
-                code.cmd_handler_extract(game_file, apply=args.apply)
-            elif args.action == "append-code":
-                if args.key is None or args.value is None:
-                    parser.error("--key (代码名) 和 --value (GML) 是必需的")
-                code.cmd_code_append(game_file, args.key, args.value, value_is_file=args.file_path)
-            elif args.action == "prepend-code":
-                if args.key is None or args.value is None:
-                    parser.error("--key (代码名) 和 --value (GML) 是必需的")
-                code.cmd_code_prepend(game_file, args.key, args.value, value_is_file=args.file_path)
-            elif args.action == "batch-add-textentry":
-                if args.value is None:
-                    parser.error("--value 是必需的 (JSON 文件路径)")
-                dialogue.cmd_batch_textdata(game_file, args.value,
-                                   face=args.face, emotion=args.emotion)
-            elif args.action == "list-sprites":
-                sprite.cmd_sprite_list(game_file, args.limit)
-            elif args.action == "search-sprite":
-                if args.value is None:
-                    parser.error("--value 是必需的 (搜索关键词)")
-                sprite.cmd_sprite_search(game_file, args.value, args.limit)
-            elif args.action == "get-obj":
-                if args.key is None:
-                    parser.error("--key 是必需的 (对象名称)")
-                sprite.cmd_obj_get(game_file, args.key)
-            elif args.action == "set-obj-sprite":
-                if args.key is None or args.value is None:
-                    parser.error("--key (对象名) 和 --value (精灵名) 是必需的")
-                sprite.cmd_obj_set_sprite(game_file, args.key, args.value)
-            elif args.action == "list-textures":
-                sprite.cmd_texture_list(game_file, args.limit)
-            elif args.action == "export-sprite":
-                if args.key is None:
-                    parser.error("--key 是必需的 (精灵名)")
-                if args.json:
-                    sprite._export_sprite_json(game_file, args.key)
-                else:
-                    if args.value is None:
-                        parser.error("--value 是必需的 (路径)")
-                    # --value 以 .png 结尾且未显式指定 --frame 时，按"单帧导出到文件"处理
-                    if args.frame is not None:
-                        frame = args.frame
-                    elif args.value.lower().endswith(".png"):
-                        frame = 0
-                    else:
-                        frame = -1
-                    sprite.cmd_sprite_export(game_file, args.key, args.value, frame=frame)
-            elif args.action == "replace-sprite":
-                if args.key is None or args.value is None:
-                    parser.error("--key (精灵名) 和 --value (PNG 路径) 是必需的")
-                sprite.cmd_sprite_replace(game_file, args.key, args.value, frame=args.frame if args.frame is not None else 0, all_frames=args.all)
-            elif args.action == "duplicate-sprite":
-                if args.key is None or args.value is None:
-                    parser.error("--key (源精灵名) 和 --value (新精灵名) 是必需的")
-                sprite.cmd_sprite_duplicate(game_file, args.key, args.value)
-            elif args.action == "preview-sprite":
-                if args.key is None:
-                    parser.error("--key 是必需的 (精灵名)")
-                sprite.cmd_sprite_preview(game_file, args.key)
-            elif args.action == "colorize-sprite":
-                if args.key is None or args.value is None or args.hue_from is None or args.hue_to is None:
-                    parser.error("--key (源), --value (目标名), --hue-from (如 180-260), --hue-to (目标色相) 是必需的")
-                try:
-                    hf = tuple(float(x) / 360.0 for x in args.hue_from.split("-"))
-                except Exception:
-                    parser.error("--hue-from 格式错误，应为 \"180-260\"")
-                sprite.cmd_sprite_colorize(game_file, args.key, args.value, hue_from=hf, hue_to=args.hue_to)
-            elif args.action == "export-texture":
-                if args.value is None:
-                    parser.error("--value 是必需的 (输出目录)")
-                sprite.cmd_texture_export(game_file, args.key, args.value)
-            elif args.action == "replace-texture":
-                if args.key is None or args.value is None:
-                    parser.error("--key (纹理名) 和 --value (PNG 路径) 是必需的")
-                sprite.cmd_texture_replace(game_file, args.key, args.value)
-            elif args.action == "dump-sprites":
-                if args.value is None:
-                    parser.error("--value 是必需的 (输出目录)")
-                sprite.cmd_sprite_dump_all(game_file, args.value)
-            elif args.action == "cjk-font":
-                if args.value is None:
-                    parser.error("--value 是必需的 (font_cjk_build.py 输出目录)")
-                if not cjk.cmd_cjk_font(game_file, Path(args.value).expanduser(),
-                                    Path(args.work_dir).expanduser() if args.work_dir else None):
-                    sys.exit(1)  # scr_setfont 字节级体检 WARN 必须非零退出
-            elif args.action == "cjk-trigger":
-                if args.text is None:
-                    parser.error("--text 是必需的 (对话文本)")
-                if not cjk.cmd_cjk_trigger(game_file, args.room, args.object,
-                                       220 if args.x_raw is None else args.x_raw,
-                                       330 if args.y_raw is None else args.y_raw,
-                                       args.typer, args.text,
-                                       wrap=not args.no_wrap,
-                                       width_room_px=args.width):
-                    sys.exit(1)  # Step_1 字节级体检 WARN 必须非零退出
-            elif args.action == "cjk-check":
-                if args.text is None and args.value is None:
-                    parser.error("--text 传文本 或 --value 传文本文件路径，二选一")
-                if args.text is not None and args.value is not None:
-                    parser.error("--text 与 --value 互斥（复核 P2-3：并给时此前静默 --value 胜）")
-                cjk.cmd_cjk_check(args.text,
-                                  Path(args.glyphs) if args.glyphs else None,
-                                  Path(args.value) if args.value else None)
-
-            else:
-                parser.error(f"'{args.action}' 不支持 data_win 文件")
-        except (FileNotFoundError, ValueError, IndexError, RuntimeError, errors.DeterlineError) as e:
-            print(f"错误: {e}", file=sys.stderr)
-            sys.exit(1)
-        return
-
-    # ── Save editor actions (ini / file0) ────────────────
-    try:
-        save_dir = paths.find_save_dir(args.dir)
-    except FileNotFoundError as e:
-        print(f"错误: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    try:
+    routes = command_handlers.COMMANDS[args.action]
+    handler = routes.get("any") or routes.get(args.file)
+    if handler is None:
+        if args.file == "data_win":
+            parser.error(f"'{args.action}' 不支持 data_win 文件")
         if args.file == "file0":
-            if args.action == "list":
-                file0.cmd_file0_list(save_dir)
-            elif args.action == "find":
-                if args.value is None:
-                    parser.error("--value 是必需的 (搜索目标值)")
-                file0.cmd_file0_find(save_dir, args.value)
-            elif args.action == "get":
-                if not args.key:
-                    parser.error("--key 是必需的")
-                file0.cmd_file0_get(save_dir, args.key)
-            elif args.action == "set":
-                if not args.key or args.value is None:
-                    parser.error("--key 和 --value 是必需的")
-                file0.cmd_file0_set(save_dir, args.key, args.value)
+            parser.error(f"'{args.action}' 仅支持 INI 文件")
+        parser.error(f"'{args.action}' 仅支持 --file data_win (游戏数据) 操作；"
+                     "ini/file0 模式不适用该命令")
+
+    try:
+        if "any" in routes:
+            handler(args, parser, None)
+        elif args.file == "data_win":
+            game_file = paths.find_game_data_file(args.dir)
+            if args.action == "smoke-test":
+                handler(args, parser, game_file)
             else:
-                parser.error(f"'{args.action}' 仅支持 INI 文件")
+                with utmt.game_edit(args.action, read_workspace=command_handlers.edits_game(args)):
+                    handler(args, parser, game_file)
         else:
-            if args.action == "list":
-                inifile.cmd_ini_list(save_dir)
-            elif args.action == "room-list":
-                room.cmd_room_list(args.value or "")
-            elif args.action == "get":
-                if not args.key:
-                    parser.error("--key 是必需的")
-                inifile.cmd_ini_get(save_dir, args.section, args.key)
-            elif args.action == "set":
-                if not args.key or args.value is None:
-                    parser.error("--key 和 --value 是必需的")
-                inifile.cmd_ini_set(save_dir, args.section, args.key, args.value)
-            elif args.action == "find":
-                print("find 仅支持 file0 (在 INI 中用 get 或 list)", file=sys.stderr)
-                sys.exit(1)
-            elif args.action == "undo":
-                if not args.value:
-                    parser.error("--value 是必需的 (ini, file0, 或 data_win)")
-                save_cmds.cmd_undo(save_dir, args.value, backup_ts=args.backup,
-                         dir_override=args.dir)
-            elif args.action == "list-backups":
-                if not args.value:
-                    parser.error("--value 是必需的 (ini, file0, 或 data_win)")
-                save_cmds.cmd_list_backups(save_dir, args.value, dir_override=args.dir)
-            elif args.action == "create-system-info":
-                if args.value is None:
-                    parser.error("--value 是必需的 (962 或 963)")
-                save_cmds.cmd_create_system_info(save_dir, args.value)
-            elif args.action == "quest-init":
-                flag_idx = args.flag if args.flag is not None else config.FLAG_CUSTOM_START
-                dialogue.cmd_quest_init(save_dir, flag_idx)
-            elif args.action == "quest-status":
-                dialogue.cmd_quest_status(save_dir)
-            elif args.action == "reset-all":
-                save_cmds.cmd_reset_all(save_dir)
-            elif args.action == "experiment-snapshot":
-                save_cmds.cmd_experiment_snapshot(save_dir, args.value)
-            elif args.action == "experiment-list":
-                save_cmds.cmd_experiment_list(save_dir)
-            elif args.action == "experiment-restore":
-                if not args.value:
-                    parser.error("--value 是必需的 (快照标签)")
-                save_cmds.cmd_experiment_restore(save_dir, args.value)
-            elif args.action == "reset-flags":
-                save_cmds.cmd_reset_flags(save_dir)
-            else:
-                parser.error(
-                    f"'{args.action}' 仅支持 --file data_win (游戏数据) 操作；"
-                    f"ini/file0 模式不适用该命令"
-                )
-    except (FileNotFoundError, ValueError, errors.DeterlineError) as e:
-        print(f"错误: {e}", file=sys.stderr)
+            handler(args, parser, paths.find_save_dir(args.dir))
+    except (OSError, ValueError, IndexError, RuntimeError, errors.DeterlineError) as exc:
+        print(f"错误: {exc}", file=sys.stderr)
         sys.exit(1)
 
 

@@ -87,60 +87,21 @@ def _actions() -> list[str]:
 
 
 def _coverage_map() -> dict[str, list[str]]:
-    """action -> 其 dispatch 分支体内直接调用的 cmd_* 名（AST 精确界定）。
+    """Read each actual registry handler to associate its domain commands."""
+    import ast
+    import inspect
+    from deterline.command_handlers import COMMANDS
 
-    复核 P1-2 教训：80 行文本窗口跨分支渗漏造成假覆盖（邻居函数被测）。
-    AST 规则：If.test 含 action 名比较者 → 该 If 的 **body（含嵌套容器，
-    不含兄弟 elif/else 分支）** 内的 cmd_* 调用归属该 action。
-    """
-    import ast as _ast
-    cli_src = (REPO / "scripts" / "deterline" / "cli.py").read_text(encoding="utf-8")
-    tree = _ast.parse(cli_src)
-    actions = set(_actions())
-    out: dict[str, set[str]] = {a: set() for a in actions}
-
-    def test_action_names(test_node):
-        names = set()
-        for cmp_node in _ast.walk(test_node):
-            if (isinstance(cmp_node, _ast.Compare) and cmp_node.ops
-                    and isinstance(cmp_node.ops[0], (_ast.Eq, _ast.In))):
-                for side in (cmp_node.left, *cmp_node.comparators):
-                    if isinstance(side, _ast.Constant) and isinstance(side.value, str):
-                        names.add(side.value)
-                    elif isinstance(side, _ast.Tuple):
-                        names.update(
-                            e.value for e in side.elts
-                            if isinstance(e, _ast.Constant) and isinstance(e.value, str))
-        return names & actions
-
-    def cmd_names_in(body):
-        names = set()
-        for stmt in body:
-            for node in _ast.walk(stmt):
-                if isinstance(node, _ast.Call) and isinstance(node.func, _ast.Attribute) \
-                        and node.func.attr.startswith("cmd_"):
-                    names.add(node.func.attr)
-                elif isinstance(node, _ast.Name) and node.id.startswith("cmd_"):
-                    names.add(node.id)
-        return names
-
-    def walk_stmts(nodes):
-        for stmt in nodes:
-            if isinstance(stmt, _ast.If):
-                for a in test_action_names(stmt.test):
-                    out[a] |= cmd_names_in(stmt.body)
-                walk_stmts(stmt.body)
-                walk_stmts(stmt.orelse)
-            elif isinstance(stmt, (_ast.FunctionDef, _ast.AsyncFunctionDef,
-                                   _ast.For, _ast.While, _ast.With,
-                                   _ast.Try)):
-                for attr in ("body", "orelse", "finalbody"):
-                    walk_stmts(getattr(stmt, attr, []))
-                for h in getattr(stmt, "handlers", []):
-                    walk_stmts(h.body)
-
-    walk_stmts(tree.body)
-    return {a: sorted(v) for a, v in out.items()}
+    out = {}
+    for action, routes in COMMANDS.items():
+        functions = set()
+        for handler in routes.values():
+            for node in ast.walk(ast.parse(inspect.getsource(handler))):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                    if node.func.attr.startswith("cmd_"):
+                        functions.add(node.func.attr)
+        out[action] = sorted(functions)
+    return out
 
 
 class TestDispatchCoverageRatchet(unittest.TestCase):

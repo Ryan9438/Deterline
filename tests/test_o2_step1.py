@@ -278,38 +278,15 @@ class TestShimReexportsAreLiveBindings(unittest.TestCase):
 
 
 class TestCliSsot(unittest.TestCase):
-    """步 10 终态守卫：cli.py 的 ACTION_CHOICES 与 dispatch 分支双向一致。
+    def test_every_action_has_a_callable_dispatch_route(self):
+        from deterline import cli, command_handlers
 
-    room-list P0 的教训：冷路径无测试覆盖时，写错前缀要等运行时才炸——
-    至少让"每个 action 都有分支"成为静态事实。"""
-
-    def test_every_action_has_dispatch_branch(self):
-        import ast as _ast
-        src = (SCRIPTS / "deterline" / "cli.py").read_text(encoding="utf-8")
-        tree = _ast.parse(src)
-        # ACTION_CHOICES 模块级字面量
-        choices = None
-        for n in tree.body:
-            if (isinstance(n, ast.Assign) and len(n.targets) == 1
-                    and isinstance(n.targets[0], ast.Name)
-                    and n.targets[0].id == "ACTION_CHOICES"):
-                choices = [_ast.literal_eval(e) for e in n.value.elts]
-        self.assertIsNotNone(choices, "cli.py 缺 ACTION_CHOICES")
-        # dispatch 分支里的字符串比较 args.action == "xxx"
-        branches = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Compare):
-                for side in (node.left, *node.comparators):
-                    if isinstance(side, ast.Constant) and isinstance(side.value, str):
-                        branches.add(side.value)  # Eq 形态：args.action == "x"
-                    elif isinstance(side, ast.Tuple):
-                        branches.update(
-                            e.value for e in side.elts
-                            if isinstance(e, ast.Constant) and isinstance(e.value, str))
-                        # In 形态：args.action in ("x", "y")（共享分支）
-        missing = [a for a in choices if a not in branches]
-        self.assertEqual(missing, [],
-                         f"ACTION_CHOICES 中无 dispatch 分支的 action（冷路径）: {missing}")
+        self.assertEqual(cli.ACTION_CHOICES, list(command_handlers.COMMANDS))
+        for action, routes in command_handlers.COMMANDS.items():
+            with self.subTest(action=action):
+                self.assertTrue(routes)
+                self.assertTrue(set(routes) <= {"any", "data_win", "ini", "file0"})
+                self.assertTrue(all(callable(handler) for handler in routes.values()))
 
 
 if __name__ == "__main__":

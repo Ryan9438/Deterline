@@ -7,6 +7,8 @@
 import os
 import shutil
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 MACOS_PATHS = [
@@ -46,23 +48,23 @@ def find_game_data_file(override: str | None = None) -> Path:
     """Locate game.ios or data.win (for dialogue editing)."""
     if override:
         p = Path(override).expanduser()
-        if p.exists():
+        if p.is_file():
             return p
         raise FileNotFoundError(f"游戏数据文件不存在: {override}")
     # Priority 1: Steam app bundle (game reads from here on Steam launch)
     p = Path("~/Library/Application Support/Steam/steamapps/common/"
              "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
-    if p.exists():
+    if p.is_file():
         return p
     # Priority 2: data.win in Steam bundle
     p2 = p.with_name("data.win")
-    if p2.exists():
+    if p2.is_file():
         return p2
     # Priority 3: configurable fallback via DETERLINE_GAME_FILE env var
     env_path = os.environ.get("DETERLINE_GAME_FILE", "")
     if env_path:
         p3 = Path(env_path).expanduser()
-        if p3.exists():
+        if p3.is_file():
             return p3
     raise FileNotFoundError(
         "未找到 UNDERTALE 游戏数据文件 (game.ios/data.win)。\n"
@@ -71,19 +73,26 @@ def find_game_data_file(override: str | None = None) -> Path:
     )
 
 
-def backup_file(path: Path) -> None:
-    import time
-    bak = path.with_suffix(path.suffix + ".bak")
-    try:
-        shutil.copy2(str(path), str(bak))
-    except OSError as e:
-        print(f"警告: 备份失败 ({e})", file=sys.stderr)
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    ts_bak = path.with_suffix(path.suffix + f".bak.{ts}")
-    try:
-        shutil.copy2(str(path), str(ts_bak))
-    except OSError as e:
-        print(f"警告: 时间戳备份失败 ({e})", file=sys.stderr)
+def backup_file(path: Path, *, required: bool = False) -> None:
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    latest = path.with_suffix(path.suffix + ".bak")
+    archive = path.with_suffix(path.suffix + f".bak.{timestamp}_{time.time_ns()}")
+    for backup in (archive, latest):
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".new", delete=False) as stream:
+                temporary = Path(stream.name)
+            shutil.copy2(path, temporary)
+            with temporary.open("rb") as stream:
+                os.fsync(stream.fileno())
+            os.replace(temporary, backup)
+        except OSError as exc:
+            if required:
+                raise OSError(f"备份失败，已取消写入: {backup}: {exc}") from exc
+            print(f"警告: 备份失败 ({exc})", file=sys.stderr)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 def list_backups(path: Path) -> list[dict[str, str]]:

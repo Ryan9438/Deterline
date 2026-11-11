@@ -8,7 +8,7 @@ import configparser
 import sys
 from pathlib import Path
 
-from . import errors, file0, paths, rooms_data
+from . import errors, file0, rooms_data, transactions
 
 # ============================================================
 # INI Value Helpers
@@ -89,18 +89,19 @@ def _read_ini(path: Path) -> _CasePreservingConfigParser:
     except configparser.DuplicateOptionError:
         cp = _CasePreservingConfigParser(strict=False)
         cp.read(str(path), encoding="utf-8")
-        print("检测到 INI 重复键 (游戏多周目残留)，自动清理...")
-        _write_ini(path, cp)
-        print("  ✓ 已清理")
-        cp = _CasePreservingConfigParser()
-        cp.read(str(path), encoding="utf-8")
+        print("检测到 INI 重复键，读取时采用最后一个值。", file=sys.stderr)
         return cp
 
 
 def _write_ini(path: Path, cp: configparser.ConfigParser) -> None:
-    paths.backup_file(path)
-    with open(str(path), "w", encoding="utf-8") as f:
-        cp.write(f, space_around_delimiters=False)
+    transactions.write_one(path, _serialize_ini(cp))
+
+
+def _serialize_ini(cp: configparser.ConfigParser) -> bytes:
+    import io
+    stream = io.StringIO()
+    cp.write(stream, space_around_delimiters=False)
+    return stream.getvalue().encode("utf-8")
 
 
 def cmd_ini_list(save_dir: Path) -> None:
@@ -161,6 +162,7 @@ FILE0_ONLY_KEYS = {
 
 def cmd_ini_set(save_dir: Path, section: str, key: str, value: str) -> None:
     path = save_dir / "undertale.ini"
+    baselines = {path: transactions.fingerprint(path)}
     cp = _read_ini(path)
     key = normalize_key(key)
 
@@ -183,7 +185,7 @@ def cmd_ini_set(save_dir: Path, section: str, key: str, value: str) -> None:
     old_display = parse_ini_value(old_raw) if old_raw else "(不存在)"
 
     cp.set(section, key, formatted)
-    _write_ini(path, cp)
+    changes = {path: _serialize_ini(cp)}
 
     new_display = parse_ini_value(formatted)
     msg = f"✓ [{section}] {key}: {old_display} → {new_display}"
@@ -197,7 +199,14 @@ def cmd_ini_set(save_dir: Path, section: str, key: str, value: str) -> None:
             name = rooms_data.ROOMS.get(new_display)
             if name:
                 msg += f"  ({name})"
-        file0.cmd_file0_set(save_dir, file0_key, str(actual))
+        f0_path = save_dir / "file0"
+        baselines[f0_path] = transactions.fingerprint(f0_path)
+        name, numbers = file0._parse_file0(f0_path)
+        idx = file0._resolve_file0_key(file0_key)
+        if idx is None or not (0 <= idx < len(numbers)):
+            raise errors.ValidationError(f"file0 字段不存在: {file0_key}")
+        numbers[idx] = int(actual)
+        changes[f0_path] = file0._serialize_file0(name, numbers)
         msg += "  (游戏读 file0，已同步)"
-
+    transactions.write_many(changes, baselines=baselines)
     print(msg)

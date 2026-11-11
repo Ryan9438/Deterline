@@ -426,26 +426,25 @@ def cmd_set_derived(save_dir: Path, game_file: Path, key: str, value: str) -> No
     print(f"   注意: 这会永久改写 game.ios 的 {', '.join(DERIVED_TARGET_SCRIPTS)}，"
           f"对所有存档生效。用 undo --value data_win 可恢复。")
 
-    # 1) 写入 file0（读档时立即生效）
-    file0.cmd_file0_set(save_dir, file0_key, str(val), warn_derived=False)
+    with utmt.game_edit("set-derived", read_workspace=True):
+        file0.cmd_file0_set(save_dir, file0_key, str(val), warn_derived=False,
+                            submit=utmt.submit_file_edit)
+        patched = 0
+        for code_name in DERIVED_TARGET_SCRIPTS:
+            code = _get_decompiled_code(game_file, code_name)
+            if code is None:
+                print(f"   ⚠️ 找不到脚本 {code_name}，跳过", file=sys.stderr)
+                continue
+            new_code, n = _patch_stat_assignments(code, var, val)
+            if n == 0:
+                print(f"   ⚠️ {code_name} 中没有 global.{var} 赋值，跳过", file=sys.stderr)
+                continue
+            cmd_code_replace(game_file, code_name, new_code)
+            patched += n
+            print(f"   ✓ {code_name}: 改写 {n} 处 global.{var}")
 
-    # 2) 改写游戏脚本，阻止进战斗/升级时按 LV 重算
-    patched = 0
-    for code_name in DERIVED_TARGET_SCRIPTS:
-        code = _get_decompiled_code(game_file, code_name)
-        if code is None:
-            print(f"   ⚠️ 找不到脚本 {code_name}，跳过", file=sys.stderr)
-            continue
-        new_code, n = _patch_stat_assignments(code, var, val)
-        if n == 0:
-            print(f"   ⚠️ {code_name} 中没有 global.{var} 赋值，跳过", file=sys.stderr)
-            continue
-        cmd_code_replace(game_file, code_name, new_code)
-        patched += n
-        print(f"   ✓ {code_name}: 改写 {n} 处 global.{var}")
-
-    if patched == 0:
-        raise RuntimeError("未能改写任何脚本，游戏仍会按 LV 重算该属性")
+        if patched == 0:
+            raise RuntimeError("未能改写任何脚本，游戏仍会按 LV 重算该属性")
     print(f"✓ {upper} 已固定为 {val}（共改写 {patched} 处）")
 
 

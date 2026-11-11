@@ -5,12 +5,11 @@ sprite/texture 导出替换全家（含 obj-get/obj-set-sprite）。跨模块一
 ACTIVE——旗标单点纪律）。PIL 为函数内局部导入（1:1 保留）。
 """
 
-import os
 import subprocess
 import sys
 from pathlib import Path
 
-from .. import errors, paths, state, utmt
+from .. import errors, utmt
 
 def cmd_sprite_list(game_file: Path, limit: int) -> None:
     """List all sprites with name, dimensions, frame count."""
@@ -695,20 +694,12 @@ def cmd_texture_replace(game_file: Path, texture_name: str, png_path: str) -> No
     if not p.exists():
         raise errors.NotFoundError(f"文件不存在: {png_path}")
     cli = utmt._find_utmt_cli()
-    target = utmt._resolve_write_target(game_file)
-    _before = utmt._md5_file(target)
-    if not state.SANDBOX_ACTIVE:
-        paths.backup_file(target)
-    cmd = ["dotnet", cli, "replace", str(target), "-t", f"{texture_name}={png_path}", "-o", str(target)]
-    subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=True)
-    _after = utmt._md5_file(target)
-    _scope = "仅沙箱副本" if state.SANDBOX_ACTIVE else "真实文件（目标即 Steam 路径，无需同步）"
-    print(f"📝 写入回执: {target}")
-    print(f"   MD5: {_before[:12]}… → {_after[:12]}… | 范围: {_scope}")
-    if state.SANDBOX_ACTIVE:
-        print("   应用: --commit 直写 或 sandbox-restore；放弃: 直接删除 *.sandbox")
-    else:
-        print("   退路: undo --value data_win / list-backups")
+    utmt._run_game_write(
+        game_file,
+        lambda target, output: ["dotnet", cli, "replace", str(target), "-t",
+                                f"{texture_name}={png_path}", "-o", str(output)],
+        timeout=300,
+    )
     print(f"✓ {texture_name} 已替换: {png_path}")
 
 

@@ -8,7 +8,7 @@ GameMaker 纯文本序列化格式；数据表（FILE0_FIELDS..ARMOR_DF、ITEMS�
 import sys
 from pathlib import Path
 
-from . import errors, paths
+from . import errors, transactions
 
 # ============================================================
 # file0 Operations  (GameMaker 纯文本序列化格式)
@@ -254,11 +254,11 @@ def _parse_file0(path: Path) -> tuple[str, list[int]]:
 
 
 def _write_file0(path: Path, name: str, numbers: list[int]) -> None:
-    paths.backup_file(path)
-    with open(str(path), "w", encoding="utf-8", newline="\r\n") as f:
-        f.write(name + "\r\n")
-        for n in numbers:
-            f.write(f"{n} \r\n")
+    transactions.write_one(path, _serialize_file0(name, numbers))
+
+
+def _serialize_file0(name: str, numbers: list[int]) -> bytes:
+    return (name + "\r\n" + "".join(f"{n} \r\n" for n in numbers)).encode("utf-8")
 
 
 def _resolve_file0_key(key: str) -> int | None:
@@ -356,8 +356,9 @@ def cmd_file0_find(save_dir: Path, value: str) -> None:
 
 
 def cmd_file0_set(save_dir: Path, key: str, value: str,
-                  warn_derived: bool = True) -> None:
+                  warn_derived: bool = True, *, submit=None) -> None:
     path = save_dir / "file0"
+    baseline = transactions.fingerprint(path)
     name, numbers = _parse_file0(path)
 
     try:
@@ -392,7 +393,11 @@ def cmd_file0_set(save_dir: Path, key: str, value: str,
 
     numbers[idx] = val
     hint = _file0_field_hint(numbers, idx)
-    _write_file0(path, name, numbers)
+    edit = transactions.FileEdit(path.resolve(), _serialize_file0(name, numbers), baseline)
+    if submit is None:
+        transactions.EditPlan((edit,)).apply()
+    else:
+        submit(edit)
 
     # HP/AT/DF 由 LV 推导：读档时先用 file0 值，但进战斗/升级时会被游戏重算覆盖。
     if warn_derived and numbers:

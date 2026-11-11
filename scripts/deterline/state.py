@@ -19,3 +19,5 @@ NO_STEAM_SYNC = False     # V2: --no-steam-sync 时为 True（即使 --commit �
 AUTO_SNAPSHOT = False     # 实验前自动 .bak 时间戳备份（--auto-snapshot）
 ALLOW_CJK = False   # C3a: --allow-cjk 时为 True（放行 CJK，配合中文字体注入 C3b）
 _UTMT_CLI_PATH: str | None = None   # _find_utmt_cli 的解析缓存
+WORKSPACE: str | None = None  # Named experiment selected for this CLI invocation.
+PREVIEW = False  # Validate and describe edit plans without committing them.

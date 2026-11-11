@@ -11,7 +11,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import errors
+from . import errors, state, transactions, utmt
 
 ROOMS: dict[str, str] = {}
 _ROOMS_LOADED = False
@@ -54,13 +54,11 @@ def _update_rooms_json(room_id: str, name: str) -> None:
     p = _rooms_json_path()
     if room_id in ROOMS:
         return
-    ROOMS[room_id] = name
-    try:
-        with open(str(p), "w", encoding="utf-8") as f:
-            json.dump(ROOMS, f, ensure_ascii=False, indent=2)
-        print(f"  rooms.json 已更新: [{room_id}] {name}")
-    except OSError as e:
-        print(f"  警告: rooms.json 写入失败 ({e})", file=sys.stderr)
+    updated = {**ROOMS, room_id: name}
+    content = json.dumps(updated, ensure_ascii=False, indent=2).encode("utf-8")
+    utmt.submit_file_edit(transactions.FileEdit.prepare(p, content))
+    if not state.PREVIEW:
+        ROOMS[room_id] = name
 
 
 def resolve_room(val: str) -> str:

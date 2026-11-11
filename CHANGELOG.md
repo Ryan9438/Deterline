@@ -1,5 +1,30 @@
 # Changelog
 
+## v2.4.0 — 2026-11-11（写入事务层 + 实验工作区 + 命令注册表）
+
+**性质：架构重构（Codex 协作产出），接口级新增 `--preview` / `--workspace`；命令面与文档 SSOT 不变（86 命令）。已由 ZCode 独立核验（见下）。**
+
+### 架构
+
+- **事务写入层** `deterline/transactions.py`：`EditPlan` 记录目标/基线哈希/拟写入内容；提交时按序取得文件锁、目标旁暂存 + 回滚副本、备份确认后逐文件 `os.replace`；后续替换失败自动回滚已替换文件；大文件流式复制。
+- **实验工作区** `deterline/sandbox.py`：默认副本迁移到源文件旁 `.deterline/<文件名>/default/`；`--workspace NAME` 命名隔离；manifest 记录源文件 SHA-256 与每次成功编辑的产物哈希；应用前校验源文件未漂移，过期工作区拒绝应用。旧 `*.sandbox` 在存在时仍优先（兼容路径）。
+- **命令注册表** `deterline/command_handlers.py`：取代 85 分支 if/elif 链；`ACTION_CHOICES = COMMANDS`；路由按 `any/data_win/ini/file0` 分键。
+- **统一 UTMT 编辑批次** `utmt.GameEdit` + `game_edit()`：多步 UTMT 编辑共享暂存目录、中间产物喂下一步、末步通过后经 EditPlan 一次性提交（含 Steam 目标成组备份提交）；GameMaker FORM 头校验；`submit_file_edit` 允许非 UTMT 文件编辑并入当前批次。
+- **`--preview`**：显示拟提交文件与哈希；INI/file0 附行级差异。原 replace-code 的 `--dry-run` 保留。
+- **行为规范化**：file0 写入统一标准 CRLF（原实现 newline 转换产生 `\r\r\n`）；`_read_ini` 重复键改只读（取最后一个值，不再自动清理改写）；`backup_file` 先写时间戳归档再更新 latest，`required=True` 失败即取消写入；`find_game_data_file` 改 `is_file()` 判定。
+
+### ZCode 独立核验（2026-11-11 深夜）
+
+- 246/246 单测通过；gen_docs --check / shim 导入 / 版本链一致。
+- 真机（tmp 副本 + 真实 UTMT）：`--preview` 零写盘；工作区创建 + manifest + 编辑历史；旧 `.sandbox` 兼容优先；基线漂移拒绝；**cjk-font 五步管线产出的工作区 md5 与 v2.3.3 时代 A3 快照逐字节一致**（行为等价的最强证据）。
+- 仓库 game.ios / Steam 副本 / 真实 file0 的 md5 全程未变。
+
+### 已知限制（待验证清单）
+
+- file0 新行尾（`\r\n`）未经游戏内读档验证——下一个实机窗口的首要核对项。
+- 真实 Steam 写入、进程强杀后的多文件恢复、Windows 文件锁：未验证。
+- `--workspace` 与旧 `.sandbox` 共存时旧副本优先（设计取舍；`--workspace default` 可显式走新工作区）。
+
 ## v2.3.1 — 2026-11-11（O2 拆包：scripts/modify_save.py → deterline/ 包）
 
 **性质：纯结构重构，行为零变化。** 命令面、参数面、输出文案、退出码、golden CSX 全部不变。

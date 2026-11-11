@@ -40,8 +40,7 @@ class WritePolicyTestBase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         self.game_file = Path(d) / "game.ios"
         self.game_file.write_bytes(b"FAKE-GAME-DATA-BASELINE")
-        self.sandbox_path = self.game_file.with_suffix(
-            self.game_file.suffix + ".sandbox")
+        self.sandbox_path = self.game_file.resolve().parent / ".deterline" / "game.ios" / "default" / "game.ios"
 
     def _patched_flags(self, sandbox=False, commit=False, no_steam_sync=False,
                        sandbox_original=None):

@@ -6,12 +6,11 @@ utmt./state./dialogue./room./inifile./errors.
 """
 
 import json
-import shutil
 import sys
 import time
 from pathlib import Path
 
-from .. import errors, inifile, state, utmt
+from .. import errors, inifile, state, transactions, utmt
 from . import code, dialogue, npc, room
 
 _DIFF_SNAPSHOT_CSX = """
@@ -80,53 +79,56 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
     b_game = game_file.with_name(f"game.ios.snap.smoke_{ts}")
     b_f0 = f0.with_name(f"file0.snap.smoke_{ts}")
     b_ini = ini.with_name(f"undertale.ini.snap.smoke_{ts}")
-    shutil.copy2(str(game_file), str(b_game))
-    if f0.exists():
-        shutil.copy2(str(f0), str(b_f0))
-    if ini.exists():
-        shutil.copy2(str(ini), str(b_ini))
+    backups = {b_game: game_file}
+    backups.update({snapshot: target for snapshot, target in ((b_f0, f0), (b_ini, ini))
+                    if target.is_file()})
+    transactions.write_many(backups)
     md5_before = utmt._md5_file(game_file)
     print(f"  备份: {b_game.name} / {b_f0.name} / {b_ini.name}")
 
     # ── 2. 注入（本命令是内建 commit 流：直写真实文件；任何失败都走 finally 恢复）──
     passed = False
     marker_content = ""
+    previous_policy = state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC
     try:
         state.COMMIT_ACTIVE = True
-        dialogue.cmd_textdata_add(game_file, text_key, f"* SMOKE OK {ts}/%%")
-        new_id = room._spawn_obj_internal(game_file, room_name, obj_name, x, y, quiet=True)
-        if new_id is None:
-            raise RuntimeError("smoke-test: 生成实例失败")
-        print(f"  实例: [{new_id}]")
+        state.SANDBOX_ACTIVE = False
+        state.NO_STEAM_SYNC = True
+        with utmt.game_edit("smoke-test"):
+            dialogue.cmd_textdata_add(game_file, text_key, f"* SMOKE OK {ts}/%%")
+            new_id = room._spawn_obj_internal(game_file, room_name, obj_name, x, y, quiet=True)
+            if new_id is None:
+                raise RuntimeError("smoke-test: 生成实例失败")
+            print(f"  实例: [{new_id}]")
 
-        info = npc._query_npc_target(game_file, obj_name)
-        if info is None:
-            raise RuntimeError(f"smoke-test: 对象未找到 {obj_name}")
-        # 触发块 = 已验证扁平形态 + 标记写入（同为块内单层语句）
-        block = f"""if (id == {new_id} && !instance_exists(obj_dialoguer) && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
-{{
-    if (distance_to_object(obj_mainchara) < 50)
+            info = npc._query_npc_target(game_file, obj_name)
+            if info is None:
+                raise RuntimeError(f"smoke-test: 对象未找到 {obj_name}")
+            # 触发块 = 已验证扁平形态 + 标记写入（同为块内单层语句）
+            block = f"""if (id == {new_id} && !instance_exists(obj_dialoguer) && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
     {{
-        global.msc = 0;
-        global.typer = 5;
-        global.facechoice = 0;
-        global.faceemotion = 0;
-        global.msg[0] = scr_gettext("{text_key}");
-        global.msg[1] = "%%%";
-        instance_create(0, 0, obj_dialoguer);
-        var smokefile = file_text_open_write("{marker_name}");
-        file_text_write_string(smokefile, "SMOKE_OK id={new_id} t=" + string(current_time));
-        file_text_close(smokefile);
+        if (distance_to_object(obj_mainchara) < 50)
+        {{
+            global.msc = 0;
+            global.typer = 5;
+            global.facechoice = 0;
+            global.faceemotion = 0;
+            global.msg[0] = scr_gettext("{text_key}");
+            global.msg[1] = "%%%";
+            instance_create(0, 0, obj_dialoguer);
+            var smokefile = file_text_open_write("{marker_name}");
+            file_text_write_string(smokefile, "SMOKE_OK id={new_id} t=" + string(current_time));
+            file_text_close(smokefile);
+        }}
     }}
-}}
-"""
-        step_code = info["step_code"]
-        if step_code:
-            code._append_to_code(game_file, step_code, block)
-        else:
-            code.cmd_create_script(game_file, f"gml_Object_{info['obj']}_Step_0", block)
-        if info["native"] and info["alarm_code"]:
-            npc._guard_alarm_for_instance(game_file, info["alarm_code"], new_id)
+    """
+            step_code = info["step_code"]
+            if step_code:
+                code._append_to_code(game_file, step_code, block)
+            else:
+                code.cmd_create_script(game_file, f"gml_Object_{info['obj']}_Step_0", block)
+            if info["native"] and info["alarm_code"]:
+                npc._guard_alarm_for_instance(game_file, info["alarm_code"], new_id)
 
         # ── 3. 传送到目标房（内部名 → 数字 ID；resolve_room 不认内部名）──
         room_id = utmt._room_id_by_name(game_file, room_name)
@@ -168,17 +170,13 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
                     break
     finally:
         # ── 5. 全量恢复（任何路径：PASS/FAIL/异常 都恢复）──
-        state.COMMIT_ACTIVE = False
+        state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC = previous_policy
         _sp.run(["pkill", "-x", "Mac_Runner"], capture_output=True)
         _time.sleep(2)
-        shutil.copy2(str(b_game), str(game_file))
-        f0_ok = ini_ok = True
-        if b_f0.exists():
-            shutil.copy2(str(b_f0), str(f0))
-            f0_ok = (utmt._md5_file(f0) == utmt._md5_file(b_f0))
-        if b_ini.exists():
-            shutil.copy2(str(b_ini), str(ini))
-            ini_ok = (utmt._md5_file(ini) == utmt._md5_file(b_ini))
+        transactions.write_many({target: snapshot for snapshot, target in backups.items()},
+                                backup=False)
+        f0_ok = not b_f0.exists() or utmt._md5_file(f0) == utmt._md5_file(b_f0)
+        ini_ok = not b_ini.exists() or utmt._md5_file(ini) == utmt._md5_file(b_ini)
         marker.unlink(missing_ok=True)
         md5_after = utmt._md5_file(game_file)
         restored = (md5_after == md5_before and f0_ok and ini_ok)

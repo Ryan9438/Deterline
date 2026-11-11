@@ -1,20 +1,17 @@
-"""UTMT CLI 脊柱（O2 步 3：从 modify_save.py 1:1 平移）。
-
-_run_utmt / 沙箱重定向 / V2 写入策略 / CSX 转义 / 输出解析 / md5 —— 全部命令
-域共享的脊柱。跨模块一律模块属性形式：state./errors./paths.（运行时查找，
-保 mock 与旗标写入可见）。shutil 在 _run_utmt 内保留函数内导入（1:1）。
-"""
+"""Run UTMT commands against the source, a workspace or a pending edit."""
 
 import hashlib
 import os
-import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
-from . import errors, paths, state
+from . import errors, sandbox, state, transactions
 
 def _md5_file(path: Path) -> str:
     """MD5 of a file (streamed) — used by write receipts."""
@@ -117,14 +114,20 @@ def _effective_game_file(game_file: Path) -> Path:
     沙箱对**所有**命令生效（含只读）——否则导出/反编译等读取操作会看到原文件、
     看不到沙箱里刚写入的内容（曾导致 colorize-sprite --sandbox 必然失败）。
     """
+    batch = _active_edit.get()
+    if batch and batch.output is not None and batch.source == game_file.resolve():
+        return batch.output
+    if batch and batch.read_workspace and not state.COMMIT_ACTIVE:
+        copy = sandbox.sandbox_path(game_file)
+        if copy.is_file():
+            return copy
     if state.SANDBOX_ACTIVE:
         if state.SANDBOX_ORIGINAL is None:
             state.SANDBOX_ORIGINAL = game_file
-        sandbox_path = game_file.with_suffix(game_file.suffix + ".sandbox")
-        if not sandbox_path.exists():
-            shutil.copy2(str(game_file), str(sandbox_path))
-            print(f"🔒 沙箱模式: 已创建 {sandbox_path.name}", file=sys.stderr)
-        return sandbox_path
+        copy = sandbox.sandbox_path(game_file)
+        if state.PREVIEW:
+            return copy if copy.is_file() else game_file
+        return sandbox.ensure_workspace(game_file)
     return game_file
 
 
@@ -133,128 +136,150 @@ def _resolve_write_target(game_file: Path) -> Path:
     副本，--commit 才写真实文件。返回实际应写入的路径。"""
     if not state.SANDBOX_ACTIVE and not state.COMMIT_ACTIVE:
         state.SANDBOX_ACTIVE = True
-        print("\U0001F7E1 默认沙箱 (v2 写入安全): 本次写入仅落在 *.sandbox 副本，真实文件未动。", file=sys.stderr)
-        print("   确认无误后: 加 --commit 直写真实文件(+Steam 同步)，或 sandbox-restore 应用沙箱。", file=sys.stderr)
+        print("\U0001F7E1 默认沙箱 (v2 写入安全): 本次写入落在实验工作区。", file=sys.stderr)
+        print("   确认后可用 sandbox-restore 应用工作区。", file=sys.stderr)
+    if state.PREVIEW and state.SANDBOX_ACTIVE:
+        return sandbox.sandbox_path(game_file)
     return _effective_game_file(game_file)
 
 
-def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
-    """Run a C# script via UndertaleModCli and return stdout.
+def _steam_target(target: Path) -> Path | None:
+    steam = Path("~/Library/Application Support/Steam/steamapps/common/"
+                 "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
+    if (not state.SANDBOX_ACTIVE and not state.NO_STEAM_SYNC
+            and target.suffix.lower() == steam.suffix.lower()
+            and steam.is_file() and steam.resolve() != target.resolve()):
+        return steam.resolve()
+    return None
 
-    If save=True, the modified game file is saved back in-place (with backup).
-    If save=False, the script runs as read-only (no output file).
-    In sandbox mode, operates on game_file.sandbox instead.
-    """
-    cli = _find_utmt_cli()
 
-    if save and state.AUTO_SNAPSHOT and not state.SANDBOX_ACTIVE:
-        ts = time.strftime("%Y%m%d_%H%M%S")
-        snap_path = game_file.with_name(f"game.ios.snap.auto_{ts}")
-        shutil.copy2(str(game_file), str(snap_path))
-        print(f"📸 自动快照: {snap_path.name}", file=sys.stderr)
-
-    # ── V2 写入默认安全：写操作走统一策略入口（默认沙箱，--commit 直写）──
-    if save:
-        target = _resolve_write_target(game_file)
-    else:
-        target = _effective_game_file(game_file) if state.SANDBOX_ACTIVE else game_file
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".csx", delete=False, encoding="utf-8") as f:
-        f.write(csx_code)
-        csx_path = f.name
-
+def _run_cli(cmd: list[str], timeout: int) -> str:
     try:
-        if save and not state.SANDBOX_ACTIVE:
-            paths.backup_file(target)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"UTMT CLI 执行超时 ({timeout} 秒)") from exc
+    except FileNotFoundError as exc:
+        raise FileNotFoundError("未找到 dotnet。请安装 .NET SDK。") from exc
+    if result.returncode != 0:
+        raise RuntimeError(f"UTMT CLI 执行失败 (返回码 {result.returncode}):\n{result.stderr}")
+    messages = _parse_msg(result.stdout)
+    failures = [line for line in messages if line.startswith("ERROR:")]
+    if failures:
+        hints = [line for line in messages if line.startswith(("HINT:", "WARN:"))]
+        raise RuntimeError("UTMT 脚本报告错误: " + "\n".join(failures + hints))
+    if result.stderr.strip():
+        print(f"[UTMT stderr] {result.stderr.strip()}", file=sys.stderr)
+    return result.stdout
 
-        # Save to temp file first (workaround: .app bundle prevents direct File.Move)
-        _before_write = _md5_file(target) if save else ""
-        temp_output = None
+
+class GameEdit:
+    def __init__(self, directory: Path, action: str, read_workspace: bool):
+        self.directory = directory
+        self.action = action
+        self.read_workspace = read_workspace
+        self.output: Path | None = None
+        self.source: Path | None = None
+        self.baselines: dict[Path, str | None] = {}
+        self.save_edits: list[transactions.FileEdit] = []
+
+    def run(self, game_file: Path, command, timeout: int) -> str:
+        if self.source is None:
+            self.source = game_file.resolve()
+            self.target = _resolve_write_target(game_file).resolve()
+            steam = _steam_target(self.target)
+            targets = (self.target, steam) if steam else (self.target,)
+            self.baselines = {path: transactions.fingerprint(path) for path in targets}
+            self.input = self.target if self.target.is_file() else game_file
+            self.before = _md5_file(self.input)
+        elif self.source != game_file.resolve():
+            raise RuntimeError("一次游戏数据修改只能使用一个源文件")
+        original = self.output or self.input
+        name = "next.ios" if self.output == self.directory / "output.ios" else "output.ios"
+        output = self.directory / name
+        output.unlink(missing_ok=True)
+        stdout = _run_cli(command(original, output), timeout)
+        if not output.is_file() or not output.stat().st_size:
+            raise RuntimeError("UTMT CLI 输出了空文件或未生成文件，保存已取消")
+        with original.open("rb") as previous, output.open("rb") as result:
+            if previous.read(4) == b"FORM":
+                header = result.read(8)
+                if len(header) != 8:
+                    raise RuntimeError("UTMT 输出的 GameMaker FORM 文件头不完整")
+                kind, size = struct.unpack("<4sI", header)
+                if kind != b"FORM" or size + 8 != output.stat().st_size:
+                    raise RuntimeError("UTMT 输出的 GameMaker FORM 文件头与文件长度不符")
+        self.output = output
+        return stdout
+
+    def commit(self) -> None:
+        edits = list(self.save_edits)
+        if self.output is not None:
+            edits.extend(transactions.FileEdit(path, self.output, baseline,
+                                               backup=not state.SANDBOX_ACTIVE)
+                         for path, baseline in self.baselines.items())
+            if state.SANDBOX_ACTIVE:
+                record = sandbox.record_edit(self.target, self.output, self.action)
+                if record is not None:
+                    edits.append(record)
+            if state.AUTO_SNAPSHOT and not state.SANDBOX_ACTIVE:
+                ts = time.strftime("%Y%m%d_%H%M%S")
+                snapshot = self.target.with_name(f"game.ios.snap.auto_{ts}_{time.time_ns()}")
+                edits.insert(0, transactions.FileEdit.prepare(snapshot, self.target, backup=False))
+        transactions.EditPlan(tuple(edits)).apply()
+        if self.output is not None and not state.PREVIEW:
+            scope = "仅沙箱副本" if state.SANDBOX_ACTIVE else "真实文件"
+            if len(self.baselines) > 1:
+                scope += " + Steam 同步"
+            print(f"📝 写入回执: {self.target}")
+            print(f"   MD5: {self.before[:12]}… → {_md5_file(self.target)[:12]}… | 范围: {scope}")
+
+
+_active_edit: ContextVar[GameEdit | None] = ContextVar("deterline_game_edit", default=None)
+
+
+@contextmanager
+def game_edit(action: str = "UTMT", *, read_workspace: bool = False):
+    existing = _active_edit.get()
+    if existing is not None:
+        yield existing
+        return
+    with tempfile.TemporaryDirectory(prefix="deterline-utmt-") as directory:
+        batch = GameEdit(Path(directory), action, read_workspace)
+        token = _active_edit.set(batch)
+        try:
+            yield batch
+            batch.commit()
+        finally:
+            _active_edit.reset(token)
+
+
+def _run_game_write(game_file: Path, command, timeout: int = 120) -> str:
+    with game_edit() as batch:
+        return batch.run(game_file, command, timeout)
+
+
+def submit_file_edit(edit: transactions.FileEdit) -> None:
+    batch = _active_edit.get()
+    if batch is None:
+        transactions.EditPlan((edit,)).apply()
+    else:
+        batch.save_edits.append(edit)
+
+
+def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
+    """Run a generated CSX script and commit its output through the editor."""
+    cli = _find_utmt_cli()
+    with tempfile.TemporaryDirectory(prefix="deterline-csx-") as directory:
+        script = Path(directory) / "edit.csx"
+        script.write_text(csx_code, encoding="utf-8")
         if save:
-            import tempfile as _tf
-            temp_output = _tf.NamedTemporaryFile(suffix=".ios", delete=False).name
-            cmd = ["dotnet", cli, "load", str(target), "-s", csx_path, "-o", temp_output]
-        else:
-            cmd = ["dotnet", cli, "load", str(target), "-s", csx_path]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if result.returncode != 0:
-            if temp_output and os.path.exists(temp_output):
-                os.unlink(temp_output)
-            raise RuntimeError(
-                f"UTMT CLI 执行失败 (返回码 {result.returncode}):\n{result.stderr}"
+            return _run_game_write(
+                game_file,
+                lambda target, output: ["dotnet", cli, "load", str(target),
+                                        "-s", str(script), "-o", str(output)],
             )
-
-        # A CSX script can print ScriptMessage("ERROR: ...") and `return` without
-        # setting a non-zero exit code. Treat that as a hard failure and DO NOT write
-        # the (unchanged/partial) output back — prevents no-op rewrites and
-        # "zero-operation fabricated success" reports.
-        csx_errs = [l for l in _parse_msg(result.stdout) if l.startswith("ERROR:")]
-        if csx_errs:
-            if temp_output and os.path.exists(temp_output):
-                os.unlink(temp_output)
-            msg = "UTMT 脚本报告错误: " + "; ".join(csx_errs)
-            # HINT（相似名称推荐等）与 ERROR 同批输出时随异常带上，
-            # 否则会被异常传播吞掉、永远到不了用户。
-            hints = [l for l in _parse_msg(result.stdout)
-                     if l.startswith("HINT:") or l.startswith("WARN:")]
-            if hints:
-                msg += "\n" + "\n".join(hints)
-            raise RuntimeError(msg)
-
-        # Copy temp output to target (bypass .app bundle File.Move issue)
-        if save and temp_output and os.path.exists(temp_output):
-            if os.path.getsize(temp_output) == 0:
-                os.unlink(temp_output)
-                raise RuntimeError("UTMT CLI 输出了空文件，保存已取消")
-            import shutil as _shutil
-            _shutil.copy2(temp_output, str(target))
-            # Also sync to Steam app bundle (game reads from there on Steam launch).
-            # Never sync in sandbox mode — the sandbox copy must not leak into the real file.
-            steam_path = Path("~/Library/Application Support/Steam/steamapps/common/"
-                             "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
-            steam_synced = False
-            if (not state.SANDBOX_ACTIVE and steam_path.exists()
-                    and str(steam_path.resolve()) != str(Path(target).resolve())):
-                if state.NO_STEAM_SYNC:
-                    print("\U0001F6D1 --no-steam-sync: 已跳过 Steam 同步（真实文件已更新，Steam 内需手动同步）", file=sys.stderr)
-                else:
-                    _shutil.copy2(temp_output, str(steam_path))
-                    steam_synced = True
-            os.unlink(temp_output)
-            # ── 写入回执：影响文件 + MD5 前后 + 退路（信任机制，研讨会共识）──
-            try:
-                _after = _md5_file(Path(target))
-            except OSError:
-                _after = "?"
-            if state.SANDBOX_ACTIVE:
-                _scope = "仅沙箱副本"
-            elif steam_synced:
-                _scope = "真实文件 + Steam 同步"
-            elif state.NO_STEAM_SYNC:
-                _scope = "真实文件（--no-steam-sync，未同步 Steam）"
-            else:
-                _scope = "真实文件（目标即 Steam 路径，无需同步）"
-            print(f"\U0001F4DD 写入回执: {target}")
-            print(f"   MD5: {_before_write[:12]}… → {_after[:12]}… | 范围: {_scope}")
-            if state.SANDBOX_ACTIVE:
-                print("   应用: --commit 直写 或 sandbox-restore；放弃: 直接删除 *.sandbox")
-            else:
-                print("   退路: undo --value data_win / list-backups / experiment-restore")
-
-        if result.stderr.strip():
-            print(f"[UTMT stderr] {result.stderr.strip()}", file=sys.stderr)
-        return result.stdout
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("UTMT CLI 执行超时 (120 秒)")
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "未找到 dotnet。请安装 .NET SDK:\n"
-            "  brew install dotnet\n"
-            "  或 https://dotnet.microsoft.com/download"
-        )
-    finally:
-        Path(csx_path).unlink(missing_ok=True)
+        target = _effective_game_file(game_file)
+        return _run_cli(["dotnet", cli, "load", str(target), "-s", str(script)], 120)
 
 
 def _bool_or_none(s: str | None) -> bool | None:

@@ -105,8 +105,10 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None) -> None:
 
     # 5. 沙箱残留
     sandboxes = [p for root in roots for p in root.glob("*.sandbox")]
-    check("沙箱残留", len(sandboxes) == 0,
-          "" if not sandboxes else "存在 *.sandbox——确认后删除或 sandbox-restore 应用")
+    if game_file is not None:
+        workspaces = game_file.resolve().parent / ".deterline" / game_file.name
+        sandboxes.extend(path for path in workspaces.glob(f"*/{game_file.name}") if path.is_file())
+    check("实验工作区", True, f"{len(sandboxes)} 个副本" if sandboxes else "无")
 
     # 6. UTMT CLI + dotnet
     try:

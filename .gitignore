@@ -15,6 +15,7 @@ __pycache__/
 # Runtime artifacts (created by the tool)
 *.snap.*
 *.sandbox
+*.sandbox.json
 
 # Game data / saves / runtime artifacts (never commit)
 game.ios
@@ -29,3 +30,4 @@ __pycache__/
 assets/fonts/vendor/
 build/
 cjk_work/
+.deterline/

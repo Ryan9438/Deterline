@@ -107,7 +107,7 @@ python run.py --action quest-init
 ### 全部命令（自动生成 · 与 SKILL.md/COMMANDS.md 逐字节一致）
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 86 个命令 · 版本 2.3.3 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 86 个命令 · 版本 2.4.0 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -133,7 +133,7 @@ python run.py --action quest-init
 > ⚠️ `set-derived`: 永久改写 game.ios、对所有存档生效；恢复用 undo --value data_win
 > ⚠️ `room-list`: 模糊名多匹配会报错并列出候选，须用唯一名
 > ⚠️ `doctor`: 零 UTMT 子进程——deep 验证仍走 verify-code/smoke-test 独立命令
-> ⚠️ `doctor`: 游戏文件 md5 ≠ 基线不一定是问题（实验态）；✗ 沙箱残留提醒确认后删除或 sandbox-restore
+> ⚠️ `doctor`: 游戏文件 md5 ≠ 基线不一定是问题（实验态）；列出实验工作区数量
 > ⚠️ `doctor`: 备份占盘 .bak* 单个约 250MB，长期不用可清（undo/experiment-restore 依赖）
 
 ### 💬 对话文本编辑 — --file data_win，STRG 与 textdata_en 中央数据库（16457 行 / 158 万字符）
@@ -272,7 +272,7 @@ python run.py --action quest-init
 | `verify-code --key "gml_Object_obj_cactus_Step_1"` | 字节级体检指定代码条目：反汇编指纹 + 变量读写普查 + 往返稳定性（WARN/不稳定退出码 1；--asm 输出完整反汇编） | sandbox |
 | `smoke-test --value room_torielroom --key obj_cactus` | 游戏内冒烟测试：注入扁平触发块 + 标记文件 → steam 启动 → 断言 → 自动恢复原文件（FAIL 退出码 1；--keys osascript 需辅助功能权限） | in-game |
 | `diff-snapshots --key baseline.ios --value after.ios` | 两份 game.ios 结构化差异报告（LastObj/实例/代码条目/字符串计数/自定义变量——实验隔离与泄漏取证） | sandbox |
-| `sandbox-restore` | 将沙箱副本应用回原文件（⚠️ 覆盖原文件） | sandbox |
+| `sandbox-restore` | 校验基线并备份后，将实验工作区应用回原文件 | sandbox |
 | `md5` | 打印 game.ios MD5（一行校验"是否真的改过"） | static |
 | `experiment-snapshot --value "test1"` | 创建命名实验快照（game.ios + file0） | static |
 | `experiment-list` | 列出全部实验快照 | static |
@@ -366,7 +366,7 @@ Skill 通过符号链接安装，工作区修改自动同步。
 ```
 deterline/
 ├── run.py              ← 快捷入口
-├── SKILL.md            ← Agent Skill 完整文档（2.3.3）
+├── SKILL.md            ← Agent Skill 完整文档（2.4.0）
 ├── COMMANDS.md         ← 常用指令速查
 ├── QUESTIONNAIRE_WORKFLOW.md ← 问卷工作流（Agent 必读）
 ├── README.md
@@ -382,7 +382,7 @@ deterline/
 ## 注意事项
 
 - 文中引用的 `AUDIT_2026-11-07/域X`、`01-ROADMAP` 等章节号出自**本地验证文档库**（随项目目录分发、不随本仓库发布）；仓库内仅含 C3b 字体管线相关报告
-- 修改 `game.ios` 前自动创建时间戳备份（`.bak.YYYYMMDD_HHMMSS`）
+- 写入真实 `game.ios` 前创建带时间戳的备份，使用 `list-backups` 查看标签
 - `global.flag[]` 索引范围 0-511，超出会崩溃。自定义事件仅用 `flag[510]` 和 `flag[511]`
 - 对话文本格式：`* ` 前缀必需、`/` 翻页、`/%%` 末页、`&` 换行、`^N` 暂停
 - 英文版不支持中文，中文字符显示为空白 `*`
@@ -390,7 +390,7 @@ deterline/
 - `replace-code` 会覆盖整个脚本；`append-code` / `prepend-code` 不覆盖原逻辑
 - LOVE、Kills、Room 同时存在于 INI 和 file0，`set --key Room` 自动同步
 - `facechoice` 范围 0-9（0=无头像, 1=Toriel, 2=Flowey, 3=Sans, ...），**不要用 10+**
-- **写入默认沙箱（v2.3.0）**：data_win 写命令默认只落 `*.sandbox` 副本并打印写入回执；`--commit` 直写（含 Steam 同步）；`--no-steam-sync` 抑制同步；`sandbox-restore` 应用沙箱
+- **游戏数据默认写入实验工作区**。用 `--workspace NAME` 隔离实验，用 `--preview` 查看拟写入文件和哈希，用 `sandbox-restore` 应用基线仍匹配的工作区。`--commit` 直接提交，可加 `--no-steam-sync` 跳过 Steam 同步
 - **安装 UTMT CLI 后**才能使用 `--file data_win` 相关命令
 - **房间 View 必须为 320×240（port 640×480）**——设成 640×480 会导致视角跟随失效（`view_xview` 被钳位到 0）
 - **背景修改按房间分类选命令**（`room-bg-info` 诊断）：数据驱动（B1）房 `set-room-bg` 有效（须覆盖所有启用层）；对象驱动（B2）房用 `gml-bg` 注入；纯 Tile（A 类）房须先启用一层。2026-11 审计修正：旧"set-room-bg 一律被运行时忽略"结论有误

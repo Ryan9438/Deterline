@@ -24,33 +24,17 @@ sys.path.insert(0, str(REPO / "tests"))
 
 import modify_save as ms  # noqa: E402
 import deterline.utmt as utmt  # noqa: E402
-from deterline import errors, paths, state  # noqa: E402
+from deterline import errors, paths, sandbox, state  # noqa: E402
 from _o2_patch import dual_patch_utmt  # noqa: E402
 
 STEAM_MARK = "UNDERTALE.app"  # Steam 真实路径的特征段（断言用，不含完整路径）
-
-
-class _FakeTF:
-    """tempfile.NamedTemporaryFile 替身：write 落到预置路径（支持 with 与裸 .name）。"""
-
-    def __init__(self, path):
-        self.name = str(path)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        pass
-
-    def write(self, b):
-        Path(self.name).write_text(b, encoding="utf-8")
 
 
 class SpineTestBase(unittest.TestCase):
     def setUp(self):
         d = tempfile.mkdtemp(prefix="utmt_spine_test_")
         self.addCleanup(shutil.rmtree, d, ignore_errors=True)
-        self.game_file = Path(d) / "game.ios"
+        self.game_file = Path(d).resolve() / "game.ios"
         self.game_file.write_bytes(b"FAKE-GAME")
         # copy2 真穿 + 录制 call 目标（沙箱创建副本等内部流程不受影响）
         self.copied = []
@@ -73,11 +57,12 @@ class SpineTestBase(unittest.TestCase):
         state.NO_STEAM_SYNC = False
         state.AUTO_SNAPSHOT = False
 
-    def _ok_run(self, stdout="OK: done\n"):
-        return mock.patch.object(utmt.subprocess, "run",
-                                 return_value=mock.Mock(returncode=0,
-                                                        stdout=stdout,
-                                                        stderr=""))
+    def _ok_run(self, stdout="OK: done\n", output=b"OUT"):
+        def run(cmd, **kwargs):
+            if "-o" in cmd:
+                Path(cmd[cmd.index("-o") + 1]).write_bytes(output)
+            return mock.Mock(returncode=0, stdout=stdout, stderr="")
+        return mock.patch.object(utmt.subprocess, "run", side_effect=run)
 
     def _steam_targets(self):
         return [b for a, b in self.copied if STEAM_MARK in b]
@@ -105,17 +90,8 @@ class TestRunUtmtControlFlow(SpineTestBase):
 
     def test_empty_output_rejected(self):
         """UTMT 输出空文件 → 拒绝保存（防 no-op 覆盖）。"""
-        csx_path = self.game_file.parent / "in.csx"
-        out_path = self.game_file.parent / "empty.ios"
-        out_path.write_text("")  # subprocess 被 mock：真实 UTMT 的空产物以预置文件模拟
-
-        def fake_ntf(**kw):
-            # csx 临时文件（with+write）与输出临时文件（裸 .name）分离
-            return _FakeTF(csx_path if kw.get("suffix") == ".csx" else out_path)
-
         with mock.patch.object(state, "SANDBOX_ACTIVE", True), \
-             self._ok_run(stdout="OK\n"), \
-             mock.patch("tempfile.NamedTemporaryFile", side_effect=fake_ntf):
+             self._ok_run(stdout="OK\n", output=b""):
             with self.assertRaisesRegex(RuntimeError, "空文件"):
                 utmt._run_utmt("// csx", self.game_file, save=True)
 
@@ -150,53 +126,39 @@ class TestRunUtmtControlFlow(SpineTestBase):
 class TestRunUtmtSafety(SpineTestBase):
     """沙箱/Steam 同步/备份/自动快照安全矩阵。"""
 
-    def _fake_ntf_pair(self):
-        csx_path = self.game_file.parent / "in.csx"
-        out_path = self.game_file.parent / "out.ios"
-        Path(out_path).write_text("OUT", encoding="utf-8")  # 非空输出 → 走回写路径
-
-        def fake_ntf(**kw):
-            return _FakeTF(csx_path if kw.get("suffix") == ".csx" else out_path)
-        return fake_ntf
-
     def test_sandbox_skips_steam_sync(self):
         with mock.patch.object(state, "SANDBOX_ACTIVE", True), \
              self._ok_run(stdout="OK\n"), \
-             mock.patch("tempfile.NamedTemporaryFile", side_effect=self._fake_ntf_pair()), \
              mock.patch.object(paths, "backup_file"):
             utmt._run_utmt("// csx", self.game_file, save=True)
         self.assertEqual(self._steam_targets(), [],
                          "沙箱模式 Steam 不得同步（copy2 录制断言）")
-        self.assertTrue(any(b.endswith("game.ios.sandbox") for a, b in self.copied),
-                        "沙箱模式应回写 sandbox 副本")
+        self.assertEqual(sandbox.sandbox_path(self.game_file).read_bytes(), b"OUT")
+        self.assertEqual(self.game_file.read_bytes(), b"FAKE-GAME")
 
     def test_no_steam_sync_flag_skips_sync(self):
         with mock.patch.object(state, "COMMIT_ACTIVE", True), \
              mock.patch.object(state, "NO_STEAM_SYNC", True), \
              self._ok_run(stdout="OK\n"), \
-             mock.patch("tempfile.NamedTemporaryFile", side_effect=self._fake_ntf_pair()), \
              mock.patch.object(paths, "backup_file"):
             utmt._run_utmt("// csx", self.game_file, save=True)
         self.assertEqual(self._steam_targets(), [],
                          "COMMIT + NO_STEAM_SYNC 下 Steam 不得同步")
-        self.assertTrue(any(b == str(self.game_file) for a, b in self.copied),
-                        "目标本体仍应回写")
+        self.assertEqual(self.game_file.read_bytes(), b"OUT")
 
     def test_backup_invoked_when_saving_real_file(self):
         with mock.patch.object(state, "COMMIT_ACTIVE", True), \
              mock.patch.object(state, "NO_STEAM_SYNC", True), \
              self._ok_run(stdout="OK\n"), \
-             mock.patch("tempfile.NamedTemporaryFile", side_effect=self._fake_ntf_pair()), \
              mock.patch.object(paths, "backup_file") as bak:
             utmt._run_utmt("// csx", self.game_file, save=True)
-        bak.assert_called_once_with(self.game_file)
+        bak.assert_called_once_with(self.game_file, required=True)
 
     def test_autosnapshot_creates_timestamped_snap(self):
         with mock.patch.object(state, "COMMIT_ACTIVE", True), \
              mock.patch.object(state, "AUTO_SNAPSHOT", True), \
              mock.patch.object(state, "NO_STEAM_SYNC", True), \
              self._ok_run(stdout="OK\n"), \
-             mock.patch("tempfile.NamedTemporaryFile", side_effect=self._fake_ntf_pair()), \
              mock.patch.object(paths, "backup_file"):
             utmt._run_utmt("// csx", self.game_file, save=True)
         snaps = list(self.game_file.parent.glob("game.ios.snap.auto_*"))
@@ -206,11 +168,51 @@ class TestRunUtmtSafety(SpineTestBase):
         with mock.patch.object(state, "SANDBOX_ACTIVE", True), \
              mock.patch.object(state, "AUTO_SNAPSHOT", True), \
              self._ok_run(stdout="OK\n"), \
-             mock.patch("tempfile.NamedTemporaryFile", side_effect=self._fake_ntf_pair()), \
              mock.patch.object(paths, "backup_file"):
             utmt._run_utmt("// csx", self.game_file, save=True)
         self.assertEqual(list(self.game_file.parent.glob("game.ios.snap.auto_*")),
                          [], "沙箱内不产生自动快照（父版语义）")
+
+    def test_second_utmt_step_reads_first_step_and_failure_discards_both(self):
+        def run(cmd, **kwargs):
+            source = Path(cmd[3])
+            output = Path(cmd[cmd.index("-o") + 1])
+            if source.read_bytes() == b"FAKE-GAME":
+                output.write_bytes(b"FIRST-STEP")
+                return mock.Mock(returncode=0, stdout="OK", stderr="")
+            self.assertEqual(source.read_bytes(), b"FIRST-STEP")
+            return mock.Mock(returncode=1, stdout="", stderr="second step failed")
+
+        with mock.patch.object(state, "COMMIT_ACTIVE", True), \
+             mock.patch.object(state, "NO_STEAM_SYNC", True), \
+             mock.patch.object(utmt.subprocess, "run", side_effect=run):
+            with self.assertRaisesRegex(RuntimeError, "second step failed"):
+                with utmt.game_edit():
+                    utmt._run_utmt("// step 1", self.game_file)
+                    utmt._run_utmt("// step 2", self.game_file)
+        self.assertEqual(self.game_file.read_bytes(), b"FAKE-GAME")
+        self.assertFalse(self.game_file.with_suffix(".ios.bak").exists())
+
+    def test_steam_replace_failure_rolls_back_first_target(self):
+        import os
+
+        steam = self.game_file.parent / "steam.ios"
+        steam.write_bytes(b"STEAM-ORIGINAL")
+        replace = os.replace
+
+        def fail_steam(source, target):
+            if target == steam:
+                raise PermissionError("mock Steam permission error")
+            return replace(source, target)
+
+        with mock.patch.object(state, "COMMIT_ACTIVE", True), \
+             mock.patch.object(utmt, "_steam_target", return_value=steam), \
+             self._ok_run(), mock.patch.object(os, "replace", side_effect=fail_steam):
+            with self.assertRaisesRegex(PermissionError, "mock Steam permission error"):
+                utmt._run_utmt("// edit", self.game_file)
+        self.assertEqual(self.game_file.read_bytes(), b"FAKE-GAME")
+        self.assertEqual(steam.read_bytes(), b"STEAM-ORIGINAL")
+        self.assertEqual(steam.with_suffix(".ios.bak").read_bytes(), b"STEAM-ORIGINAL")
 
 
 class TestSpineHelpers(SpineTestBase):
