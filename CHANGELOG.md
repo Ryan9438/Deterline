@@ -108,3 +108,55 @@
 
 - `--text`/`--value` 互斥校验（cjk-check）；覆盖棘轮 ALLOWLIST 24 条带理由（2 条内联型）；死导入清除。
 - 236/236 测试绿；fresh-archive 自包含复验通过。
+
+## v2.4.1 — 2026-11-12（阶段 0/1：中文样例复现链 + W3/O7 加固 + O5 索引）
+
+**性质：按外层 AUDIT_2026-11-07/02-下一步推进建议.md 与 03 手册的阶段 0/1 交付。样例状态：sandbox（实机验收待窗口，预案见 05 记录 §5）。**
+
+### 阶段 0（接手基线）
+
+- Codex 架构重构独立核验后检查点入库（v2.4.0，0eb0ef5）。
+- `tests/fixtures_save.py` / `fixtures_utmt.py`：共享夹具（标准库存档夹具、UTMT 集成夹具 + tmp 副本）。
+- 外层交付文档：04-接手基线与环境清单.md（0.2 复跑 / 0.3 清单 / 0.4 验证状态矩阵）。
+
+### 阶段 1.1/1.2：W3 冒烟三段裁决（68f9a8c）
+
+- `SmokeVerdict(started/triggered/restored)`：三段分别判定，PASS=三者皆 ok；启动失败/按键不可用/非 Steam 目标 → **UNVERIFIED(2)**（与真 FAIL(1) 区分）；报告含 SMOKE_RESULT 机器行。
+- 唯一标记（文件名含 run_id）+ 内容双钥（run/room/inst 字段级精确比对）；多候选探测删除（无内容校验的假 PASS 洞）。
+- 编辑目标 ≠ Steam 启动器加载路径 → 拒绝启动（DETERLINE_SMOKE_ALLOW_NONSTEAM=1 豁免）；pkill 后轮询进程真正消失再恢复（SIGTERM 回写竞态）。
+- 12 条离线负例（mock 启动器 + 假钟，毫秒级）。
+
+### 阶段 1.3/1.4：O7 资源级差异（0e10ace + 2aac783）
+
+- diff-snapshots 单次遍历同载摘要+明细：STR 内容哈希（LCS 锚定防 16k 位移误报）/ 实例 add-remove-move / CODEF 反汇编指纹（等指令数改代码必检出）/ FONT 字形+纹理页。
+- `--detail` / `--expected`（范围声明，范围外差异退出码 1）/ `--utmt-timeout` 300s。
+- 显式 A/B 输入 read-through 直读（工作区选择不得替换任一输入；消除 ensure_workspace 250MB 只读副作用）。
+- **1.5 实测发现的语义缺口**（结构投影不受 --expected 管辖 → 层1 恒 exit 1）已修复（ab2174d，议会 A 裁决最小切片：声明条目指令数投影 + 声明房间实例计数投影豁免；size/tiles/bg 与未声明条目仍计违规；双向钉测试）。样例层1 场景复验退出码 0。
+
+### 阶段 1.5：中文样例双副本字节级复现（9936c66 + 1.5a）
+
+- **cjk-trigger 两页扩展**：text 至多一个中部 `/%%` 页分隔 → msg[0]=页1/%%、msg[1]=页2/%%、msg[2]="%%%"（B4 消息表两页推广）；三页拒绝；逐页校验/折行；单页 golden 字节不变。
+- 样例：room_ruins1 / obj_cactus @220,330 / typer31 / sans 头像 / 两页中英混排。
+- 双副本两轮构建：工作区 sha256 **字节级一致**（4903050a…）；cjk-font 中间产物 md5 与 v2.3.3 时代 A3 快照同值（跨架构等价性）。
+- 层1（基线 vs 构建，声明范围）：资源级 0 违规；结构层 4 处差异 = 声明操作的结构投影（缺口已修）。
+- 撤销核验：覆盖回基线后 md5 复原。复现步骤全录于外层 05-中文样例复现记录.md。
+
+### 新命令：`backup-index`（阶段 2.3 O5 最小切片，92a2393）
+
+- 恢复资产只读索引：bak-latest/bak-archive/named-snapshot/workspace-copy/workspace-legacy 五类 → 路径/恢复目标/mtime/大小（--hash 追加 SHA-256）。
+- 恢复提示与 undo/experiment-restore 的 key/tag 语义精确对齐（首轮 33/59 提示不可用被审核席 B 实测抓出后全部修正）。
+- manifest 损坏容错；定位失败降级；零写盘零 UTMT。
+
+### 真 bug 修复（各轮交叉审核捕获）
+
+- cmd_smoke_test finally 引用已删除变量（每次真实运行 NameError——编排层零覆盖下静默）。
+- find_game_data_file 的 data.win 回退链在无 Steam 安装时 AttributeError。
+- cmd_reset_all ini 缺失 UnboundLocalError；doctor rooms.json 检查恒 ✗（`import json as _json` 函数内遮蔽）。
+- diff-snapshots 范围外差异退出码 0（契约未接线）。
+- 4 处死赋值/死导入清除。
+
+### 已知限制（移交后续）
+
+- file0 新行尾（CRLF）未经游戏内读档验证（实机窗口首要核对项）。
+- 结构层投影豁免的 CODE 移除不对称（保守方向仅假红）；单块 >2 页未支持。
+- 真实 Steam 写入、进程强杀恢复、Windows 锁：未验证（03 手册 2.2/2.5）。
