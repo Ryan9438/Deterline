@@ -280,6 +280,8 @@ python run.py --action quest-init
 
 > ⚠️ `verify-code`: V1 收窄版；注入实验后必跑，能区分活/死代码形态的指纹差异
 > ⚠️ `smoke-test`: ≈90 秒/次；环境敏感（无人值守开场动画可能卡住）；结束后自动还原并清理
+> ⚠️ `smoke-test`: 三段裁决（阶段 1.1）：started/triggered/restored 分判；verdict=unverified 退出码 2（启动失败/按键不可用/非 Steam 目标演练）——报告含 SMOKE_RESULT 机器行
+> ⚠️ `smoke-test`: 标记唯一（文件名含 run_id）+ 内容双钥（run/room/inst 字段级精确比对）；编辑目标非 Steam 安装路径时拒绝启动（DETERLINE_SMOKE_ALLOW_NONSTEAM=1 豁免）
 > ⚠️ `diff-snapshots`: --key 基线文件，--value 对比文件
 <!-- END generated:commands -->
 

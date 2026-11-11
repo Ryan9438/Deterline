@@ -91,9 +91,10 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
     """
     import os as _os
 
-    if state.PREVIEW or state.WORKSPACE:
+    if state.PREVIEW or state.WORKSPACE or state.SANDBOX_ACTIVE:
         raise errors.ValidationError(
-            "smoke-test 内建提交流，不得与 --preview / --workspace 组合")
+            "smoke-test 内建提交流，不得与 --preview / --workspace / --sandbox 组合"
+            "（库级调用亦受此守卫——argparse 层之下的第二道防线）")
 
     ts = time.strftime("%Y%m%d_%H%M%S")
     run_id = f"{ts}_{_os.getpid()}"
@@ -130,11 +131,17 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
     print(f"  备份: {b_game.name} / {b_f0.name} / {b_ini.name}")
 
     started, triggered, content, keys_ok = "fail", "skipped", "", True
+    marker = save_dir / marker_name  # P0-1：finally 引用——审核席 B 动态复现的 NameError
     try:
-        previous_policy = state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC
+        # AUTO_SNAPSHOT 一并压制（审核席 A P2-4）：smoke 自带三件显式备份，
+        # 全局 --auto-snapshot 会再插一枚 snap.auto_*（约 250MB）且清理面
+        # 不覆盖它——每轮净泄漏
+        previous_policy = (state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE,
+                           state.NO_STEAM_SYNC, state.AUTO_SNAPSHOT)
         state.COMMIT_ACTIVE = True
         state.SANDBOX_ACTIVE = False
         state.NO_STEAM_SYNC = True
+        state.AUTO_SNAPSHOT = False
         # ── 2. 注入（内建 commit 流；run_id/inst 写进标记正文）──
         try:
             with utmt.game_edit("smoke-test"):
@@ -176,17 +183,20 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
             room_id = utmt._room_id_by_name(game_file, room_name)
             inifile.cmd_ini_set(save_dir, "General", "Room", room_id)
         finally:
-            state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC = previous_policy
+            state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC, \
+                state.AUTO_SNAPSHOT = previous_policy
 
-        # ── 4. 清理旧标记（卫生，非判据）+ 启动 + 轮询 ──
+        # ── 4. 清理旧标记（卫生，非判据；只删文件，目录名不炸——审核席 A P3-d）──
         for stale in save_dir.glob("zcode_smoke_*.txt"):
-            stale.unlink(missing_ok=True)
+            if stale.is_file():
+                stale.unlink(missing_ok=True)
         started, triggered, content, keys_ok, elapsed = _launch_and_poll(
             save_dir, timeout, send_keys, run_id, new_id, marker_name,
             launch_allowed=launch_allowed, game_exe_running=game_exe_running)
     finally:
         # ── 5. 全量恢复（任何路径：PASS/FAIL/异常 都恢复）──
-        state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC = previous_policy
+        state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC, \
+            state.AUTO_SNAPSHOT = previous_policy
         _sp.run(["pkill", "-x", "Mac_Runner"], capture_output=True)
         for _ in range(8):  # 轮询进程真正消失（SIGTERM 回写竞态，复核席 3）
             time.sleep(1)
@@ -209,10 +219,22 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
                 if p_.name not in pre_baks:
                     p_.unlink(missing_ok=True)
 
+    if not restored:
+        reason = "恢复校验失败——现场未完全还原（快照保留供取证）"
+    elif started == "fail":
+        reason = "轮询期内未检测到游戏进程（启动失败或秒退）"
+    elif started == "skipped":
+        reason = "编辑目标非 Steam 安装路径——演练模式（未启动）"
+    elif not keys_ok and triggered != "ok":
+        reason = "osascript 按键全部失败（辅助功能权限？）"
+    elif triggered == "fail":
+        reason = "标记未出现或内容不符（未进入可测试场景 / 触发未执行 / 卡场景）"
+    else:
+        reason = ""
     verdict = SmokeVerdict(started, triggered,
-                           "ok" if restored else "fail", keys_ok=keys_ok)
+                           "ok" if restored else "fail", keys_ok=keys_ok,
+                           reason=reason)
     # elapsed 由 _launch_and_poll 返回（未启动 = 0）
-    reason = verdict.reason
     print(f"\n{'✅' if verdict.verdict == 'pass' else '⚠️' if verdict.verdict == 'unverified' else '❌'}"
           f" smoke-test {verdict.verdict.upper()}（{elapsed:.0f}s，验证级别: "
           f"{'in-game' if verdict.verdict != 'unverified' else '未能验证'}）")
@@ -246,7 +268,7 @@ def _check_launch_path(game_file: Path) -> tuple[bool, str]:
 
 def _launch_and_poll(save_dir: Path, timeout: int, send_keys: str, run_id: str,
                      new_id: str, marker_name: str, *, launch_allowed: bool,
-                     game_exe_running) -> tuple[str, str, str, bool, float]:
+                     game_exe_running, room_name: str = "") -> tuple[str, str, str, bool, float]:
     """启动 + 轮询唯一标记（文件名+内容双钥）。返回 (started, triggered,
     content, keys_ok, elapsed)。"""
     marker = save_dir / marker_name
@@ -274,7 +296,7 @@ def _launch_and_poll(save_dir: Path, timeout: int, send_keys: str, run_id: str,
                 osascript_failures += 1
             key_count += 1
         if marker.is_file():
-            ok, content = _accept_marker(marker, run_id, str(new_id))
+            ok, content = _accept_marker(marker, run_id, str(new_id), room_name)
             if ok:
                 return ("ok" if saw_game else "fail", "ok", content, True,
                         time.time() - start)
@@ -286,11 +308,13 @@ def _launch_and_poll(save_dir: Path, timeout: int, send_keys: str, run_id: str,
             time.time() - start)
 
 
-def _accept_marker(path: Path, run_id: str, new_id: str) -> tuple[bool, str]:
+def _accept_marker(path: Path, run_id: str, new_id: str,
+                   room_name: str = "") -> tuple[bool, str]:
     """读取并校验标记正文（文件名+内容双钥；阶段 1.1）。
 
-    返回 (ok, content)。ok 要求：正文以 SMOKE_OK| 开头且 run/inst 字段与
-    本次运行完全一致；读取失败返回 unreadable。
+    返回 (ok, content)。ok 要求：正文以 SMOKE_OK| 开头，且按 | 切分的
+    run/room/inst 三字段与本次运行完全一致（字段级精确比对——子串匹配会
+    让 run=…_123 误过 run=…_1234，审核席 A P2-3）。
     """
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -299,7 +323,14 @@ def _accept_marker(path: Path, run_id: str, new_id: str) -> tuple[bool, str]:
         return False, f"(unreadable: {exc})"
     if not text.startswith("SMOKE_OK|"):
         return False, text
-    if f"run={run_id}" not in text or f"inst={new_id}" not in text:
+    fields = {}
+    for part in text.strip().split("|"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            fields[k] = v
+    if (fields.get("run") != run_id
+            or fields.get("inst") != str(new_id)
+            or (room_name and fields.get("room") != room_name)):
         return False, text
     return True, text
 def _dump_structure_signature(game_file: Path) -> dict:

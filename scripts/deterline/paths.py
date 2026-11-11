@@ -62,11 +62,15 @@ def find_game_data_file(override: str | None = None) -> Path:
             return p
         raise FileNotFoundError(f"游戏数据文件不存在: {override}")
     # Priority 1: Steam app bundle (game reads from here on Steam launch)
-    p = steam_game_file()
-    if p is not None:
-        return p
-    # Priority 2: data.win in Steam bundle
-    p2 = p.with_name("data.win")
+    steam = steam_game_file()
+    if steam is not None:
+        return steam
+    # Priority 2: data.win in Steam bundle（steam_game_file()=None 时仍按固定
+    # 布局探测 data.win——复核席 B P1-1：对 None 调 with_name 会 AttributeError，
+    # 且会打断 DETERLINE_GAME_FILE 安全隔离回退）
+    p2 = (Path("~/Library/Application Support/Steam/steamapps/common/"
+               "Undertale/UNDERTALE.app/Contents/Resources").expanduser()
+          / "data.win")
     if p2.is_file():
         return p2
     # Priority 3: configurable fallback via DETERLINE_GAME_FILE env var

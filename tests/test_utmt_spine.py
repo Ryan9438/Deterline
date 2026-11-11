@@ -27,6 +27,7 @@ import fixtures_save  # noqa: E402
 import deterline.utmt as utmt  # noqa: E402
 from deterline import errors, paths, sandbox, state  # noqa: E402
 from deterline.cmds import verify as smoke_mod  # noqa: E402
+from deterline import paths as det_paths  # noqa: E402
 from _o2_patch import dual_patch_utmt  # noqa: E402
 
 STEAM_MARK = "UNDERTALE.app"  # Steam 真实路径的特征段（断言用，不含完整路径）
@@ -261,7 +262,11 @@ class TestSpineHelpers(SpineTestBase):
 
 
 class _FakeClock:
-    """假钟：sleep 只推进时钟；time() 返回当前假时刻。"""
+    """假钟：sleep 只推进时钟；time() 返回当前假时刻。
+
+    编排层测试会真跑 cmd_smoke_test 的 strftime（run_id 生成）——strftime
+    代理到真实 time 模块（确定性足够）。
+    """
 
     def __init__(self):
         self.now = 0.0
@@ -271,6 +276,10 @@ class _FakeClock:
 
     def time(self):
         return self.now
+
+    def strftime(self, fmt):
+        import time as _real
+        return _real.strftime(fmt)
 
 
 class _FakeSp:
@@ -409,3 +418,60 @@ class TestSmokeVerdict(unittest.TestCase):
         import inspect
         src = inspect.getsource(smoke_mod.cmd_smoke_test)
         self.assertIn("DETERLINE_SMOKE_ALLOW_NONSTEAM", src)
+
+
+class TestSmokeOrchestrator(unittest.TestCase):
+    """审核席 B P0-1 回归：cmd_smoke_test 编排层贯通测试（全 mock、零真实
+    UTMT/零真实路径）——接缝级测试绿灯下 P0 NameError 曾静默存活。"""
+
+    def _run_orchestrator(self):
+        import contextlib as _ctxlib
+        import io as _io
+        save_dir = fixtures_save.make_save_dir()
+        self.addCleanup(shutil.rmtree, str(save_dir), ignore_errors=True)
+        game = save_dir / "game.ios"
+        game.write_bytes(b"FAKE-ORCHESTRATOR")
+        before = {q.name: q.stat().st_mtime_ns for q in save_dir.iterdir()}
+        buf = _io.StringIO()
+        # 全 mock：注入缝（6 个领域函数）+ game_edit + Steam 定位 + 启动器 + 假钟
+        with mock.patch.object(smoke_mod.utmt, "game_edit",
+                               side_effect=lambda *a, **k: _ctxlib.nullcontext()), \
+             mock.patch.object(smoke_mod.dialogue, "cmd_textdata_add"), \
+             mock.patch.object(smoke_mod.room, "_spawn_obj_internal",
+                               return_value=1234), \
+             mock.patch.object(smoke_mod.npc, "_query_npc_target",
+                               return_value={"step_code": "", "native": False,
+                                             "alarm_code": None, "obj": "obj_cactus"}), \
+             mock.patch.object(smoke_mod.code, "_append_to_code"), \
+             mock.patch.object(smoke_mod.code, "cmd_create_script"), \
+             mock.patch.object(smoke_mod.utmt, "_room_id_by_name", return_value="31"), \
+             mock.patch.object(smoke_mod.inifile, "cmd_ini_set"), \
+             mock.patch.object(det_paths, "steam_game_file", return_value=None), \
+             mock.patch.object(smoke_mod, "_sp", _FakeSp(self)), \
+             mock.patch.object(smoke_mod, "time", _FakeClock()):
+            with _ctxlib.redirect_stdout(buf):
+                res = ms.cmd_smoke_test(game, save_dir)
+        return before, save_dir, buf.getvalue(), res
+
+    def test_orchestrator_reaches_smoke_result_without_nameerror(self):
+        """P0-1 回归钉：finally 的 marker.unlink NameError 曾使每次真实调用
+        崩溃、SMOKE_RESULT 永不打印、快照泄漏。"""
+        before, save_dir, out, res = self._run_orchestrator()
+        self.assertIn("SMOKE_RESULT:", out, "三段裁决机器行必须到达（P0-1 曾被 finally NameError 掐断）")
+        self.assertIn("verdict=unverified", out)
+        self.assertIn("started=skipped", out)
+        self.assertEqual(res.verdict, "unverified")
+        self.assertEqual(res.started, "skipped")
+        self.assertEqual(res.restored, "ok", "演练模式的恢复必须成功")
+        # 零残留（演练模式下快照已回滚、无 .bak 泄漏）
+        after = {q.name: q.stat().st_mtime_ns for q in save_dir.iterdir()}
+        new_names = set(after) - set(before)
+        self.assertEqual(new_names, set(),
+                         f"演练模式不得残留文件: {new_names}")
+
+    def test_orchestrator_reason_populated(self):
+        """审核席 A P2-1：reason 必须进入 SMOKE_RESULT（机器契约）。"""
+        _, _, out, res = self._run_orchestrator()
+        line = next(l for l in out.splitlines() if l.startswith("   SMOKE_RESULT:"))
+        self.assertIn("reason=", line)
+        self.assertIn("演练模式", line)

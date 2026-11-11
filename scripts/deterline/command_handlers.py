@@ -229,7 +229,7 @@ def _smoke_test_data_win(args, parser, game_file):
                    obj_name=args.key or "obj_cactus",
                    x=args.x if args.x is not None else 160,
                    y=args.y if args.y is not None else 150,
-                   timeout=args.timeout or 120,
+                   timeout=args.timeout if args.timeout is not None else 120,
                    send_keys=args.keys or "external")
     # 阶段 1.1 三段裁决：pass=0 / fail=1 / unverified=2（未能验证，可重跑）
     if res.verdict == "unverified":

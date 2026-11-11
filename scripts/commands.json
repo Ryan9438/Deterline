@@ -655,7 +655,9 @@
       "summary": "游戏内冒烟测试：注入扁平触发块 + 标记文件 → steam 启动 → 断言 → 自动恢复原文件（FAIL 退出码 1；--keys osascript 需辅助功能权限）",
       "example": "smoke-test --value room_torielroom --key obj_cactus",
       "notes": [
-        "≈90 秒/次；环境敏感（无人值守开场动画可能卡住）；结束后自动还原并清理"
+        "≈90 秒/次；环境敏感（无人值守开场动画可能卡住）；结束后自动还原并清理",
+        "三段裁决（阶段 1.1）：started/triggered/restored 分判；verdict=unverified 退出码 2（启动失败/按键不可用/非 Steam 目标演练）——报告含 SMOKE_RESULT 机器行",
+        "标记唯一（文件名含 run_id）+ 内容双钥（run/room/inst 字段级精确比对）；编辑目标非 Steam 安装路径时拒绝启动（DETERLINE_SMOKE_ALLOW_NONSTEAM=1 豁免）"
       ]
     },
     {
