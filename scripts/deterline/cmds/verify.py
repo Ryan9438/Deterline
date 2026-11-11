@@ -516,6 +516,10 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
     只读，两次 UTMT 遍历；显式 A/B 输入走 read-through 直读（工作区选择
     不得替换任一输入）。返回结构差异数（含范围外差异）；调用方据以设退出码。
     """
+    if expected is not None and not detail:
+        # fail-fast（审核席 B P2-2：库级直调可绕过适配器的 --expected⇒--detail
+        # 守卫——范围判定基于资源级差异，非 detail 时 expected 静默失效 = 假绿）
+        raise errors.ValidationError("--expected 需要 detail=True（范围判定基于资源级差异）")
     for f in (file_a, file_b):
         if not f.exists():
             raise errors.NotFoundError(f"文件不存在: {f}")
@@ -552,8 +556,10 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
     # expected.instances 声明房间的操作 → 该房间 ROOM 元组的 inst 计数分量
     # 属声明操作的结构投影（如触发块 spawn）；size/tiles/bg 分量仍计违规
     # （席2 修正案：元组拆分防"整条豁免掩护真实结构变化"）。
-    # expected.code 名单/any → 该条目的 CODE 指令数投影豁免；CODEF 指纹仍由
-    # 资源级裁决（--detail）。ROOM/CODE 整体增删不豁免。
+    # expected.code 名单/any → 该条目的 CODE 指令数投影豁免（含名单内新增；
+    # 移除仍计违规——与资源级对声明内 removed 允许存在不对称，保守方向仅
+    # 假红风险）；CODEF 内容指纹仍由资源级裁决（--detail），指令数不变内容
+    # 变必须由 --detail 抓出。ROOM 整体移除不豁免。
     rooms_a, rooms_b = a["rooms"], b["rooms"]
     inst_scope = (expected or {}).get("instances") or {}
     for name in sorted(set(rooms_a) - set(rooms_b)):

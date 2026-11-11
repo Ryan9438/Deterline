@@ -638,6 +638,26 @@ class TestO7Orchestrator(unittest.TestCase):
         self.assertGreaterEqual(ret2, 1)
         self.assertNotIn("结构投影，允许", out2)
 
+    def test_layer1_code_exemption_with_real_code_field(self):
+        """审核席 B P2-1：层1 CODE 豁免分支（_code_allowed）此前零覆盖——
+        真实形态 sig["code"]={name: int} 的钉。"""
+        sig_a = self._canned_dump(
+            [], [], {}, {}, counts={})
+        sig_a["code"]["gml_Object_obj_cactus_Step_1"] = 12
+        sig_b = self._canned_dump(
+            [], [], {}, {}, counts={})
+        sig_b["code"]["gml_Object_obj_cactus_Step_1"] = 70
+        sig_b["code"]["gml_Object_obj_rogue_Step_0"] = 1
+        out, _, ret = self._run_diff(
+            sig_a, sig_b, detail=True,
+            expected={"code": ["gml_Object_obj_cactus_Step_1"]})
+        # 声明条目豁免（ret 只含范围外 rogue 的 1 处）；未声明条目仍计违规
+        self.assertEqual(ret, 1, out)
+        self.assertIn("结构投影，允许", out)
+        self.assertIn("CODE 新增: gml_Object_obj_rogue_Step_0", out)
+        self.assertEqual(out.count("（--expected 结构投影，允许）"), 1,
+                         "恰好一条豁免标记（声明条目），rogue 不豁免")
+
     def test_structural_projection_room_size_change_still_counts(self):
         """席2 修正案钉：ROOM 元组拆分——inst 分量豁免，size/tiles/bg 变化
         仍计违规（防整条豁免掩护真实结构变化）。"""
