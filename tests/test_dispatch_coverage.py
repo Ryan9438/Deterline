@@ -48,7 +48,7 @@ ALLOWLIST: dict[str, str] = {
     "md5": "逻辑内联 cli.py dispatch（无 cmd_* 函数）——表驱动 dispatch 收编",
     "sandbox-restore": "逻辑内联 cli.py dispatch——同上",
     "decompile-code": "读式诊断；golden 钉 _decompile_to_lines 链路",
-    "diff-snapshots": "verify 域；A3 双轮 parity 已实证行为",
+
     "dump-sprites": "读式导出（UTMT dump）",
     "export-sprite": "读式导出",
     "export-texture": "读式导出",

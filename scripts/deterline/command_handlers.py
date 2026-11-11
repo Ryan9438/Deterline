@@ -221,18 +221,23 @@ def _diff_snapshots_data_win(args, parser, game_file):
         parser.error("--key (基线文件) 和 --value (对比文件) 是必需的")
     expected = None
     if getattr(args, "expected", None):
+        if not getattr(args, "detail", False):
+            parser.error("--expected 需要 --detail（范围判定基于资源级差异；"
+                         "审核席 B P2-1：此前静默忽略 = 假绿）")
         exp_path = Path(args.expected).expanduser()
         if not exp_path.is_file():
             parser.error(f"--expected 文件不存在: {exp_path}")
         import json as _json
         expected = _json.loads(exp_path.read_text(encoding="utf-8"))
-    verify.cmd_diff_snapshots(Path(args.key).expanduser(),
-                              Path(args.value).expanduser(),
-                              detail=bool(getattr(args, "detail", False)),
-                              expected=expected,
-                              utmt_timeout=(args.utmt_timeout
-                                            if getattr(args, "utmt_timeout", None)
-                                            else 300))
+    d = verify.cmd_diff_snapshots(Path(args.key).expanduser(),
+                                  Path(args.value).expanduser(),
+                                  detail=bool(getattr(args, "detail", False)),
+                                  expected=expected,
+                                  utmt_timeout=(args.utmt_timeout
+                                                if getattr(args, "utmt_timeout", None) is not None
+                                                else 300))
+    if d:
+        sys.exit(1)  # P0（审核席 B）：范围外差异/结构差异必须非零退出——契约本体
 
 
 def _smoke_test_data_win(args, parser, game_file):

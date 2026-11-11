@@ -10,6 +10,7 @@ Steam 常驻路径在本机存在，任何非沙箱用例必须叠加 NO_STEAM_S
 旗标 patch（本文件每个用例都已满足其一）。
 """
 
+import json
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,7 @@ import fixtures_save  # noqa: E402
 import deterline.utmt as utmt  # noqa: E402
 from deterline import errors, paths, sandbox, state  # noqa: E402
 from deterline.cmds import verify as smoke_mod  # noqa: E402
+import deterline.command_handlers as command_handlers_mod  # noqa: E402
 from deterline import paths as det_paths  # noqa: E402
 from _o2_patch import dual_patch_utmt  # noqa: E402
 
@@ -542,3 +544,100 @@ class TestO7DetailDiff(unittest.TestCase):
                                              "code": ["gml_Script_x"]})
         self.assertTrue(any("rogue" in v for v in out),
                         "范围外新增 code 条目必须报计划外差异")
+
+
+class TestO7Orchestrator(unittest.TestCase):
+    """审核席 B P1：cmd_diff_snapshots 编排层离线贯通（假 dump 输出，零
+    UTMT）——P0"范围外差异退出码 1 未实现"在此类测试下必然爆红。"""
+
+    def _canned_dump(self, strings, instances, codefp, fonts, counts=None):
+        """直接构造解析后的签名 dict（_dump_structure_signature 的返回形态）。"""
+        counts = counts or {}
+        return {"rooms": {}, "code": {}, "counts": counts, "vardeterline": [],
+                "strings": list(strings), "instances": list(instances),
+                "codefp": dict(codefp), "fonts": dict(fonts)}
+
+    def _run_diff(self, sig_a, sig_b, **kw):
+        import contextlib as _ctxlib
+        import io as _io
+        buf = _io.StringIO()
+        # 显式输入文件存在性守卫需要真文件（read-through 直读校验 exists）
+        for p in ("/tmp/a.ios", "/tmp/b.ios"):
+            Path(p).write_bytes(b"fake-game-o7") if not Path(p).is_file() else None
+            self.addCleanup(Path(p).unlink, missing_ok=True)
+        with mock.patch.object(smoke_mod, "_dump_structure_signature",
+                               side_effect=[sig_a, sig_b]), \
+             mock.patch.object(smoke_mod.utmt, "_find_utmt_cli",
+                               return_value="/fake/cli.dll"):
+            if "exit" in kw:
+                with self.assertRaises(SystemExit) as cm:
+                    with _ctxlib.redirect_stdout(buf):
+                        ret = smoke_mod.cmd_diff_snapshots(
+                            Path("/tmp/a.ios"), Path("/tmp/b.ios"),
+                            utmt_timeout=1, **{k: v for k, v in kw.items() if k != "exit"})
+                return buf.getvalue(), cm.exception.code, ret
+            with _ctxlib.redirect_stdout(buf):
+                ret = smoke_mod.cmd_diff_snapshots(
+                    Path("/tmp/a.ios"), Path("/tmp/b.ios"),
+                    utmt_timeout=1, **kw)
+        return buf.getvalue(), None, ret
+
+    def test_detail_identical_zero_diffs(self):
+        sig = self._canned_dump([(10, "aaa")], [("r", 1, "o", 0, 0)],
+                                {"g": (1, "d")}, {"f": (1, 0, "d")})
+        out, code, ret = self._run_diff(sig, sig, detail=True)
+        self.assertEqual(ret, 0)
+        self.assertIn("资源级差异", out)
+
+    def test_out_of_scope_violation_bumps_diffs(self):
+        """审核席 B P0 回归钉：范围外差异必须计入返回值（adapter 据以 exit 1）。"""
+        sig_a = self._canned_dump([(10, "old")], [], {}, {})
+        sig_b = self._canned_dump([(10, "rogue")], [], {}, {})
+        out, _, ret = self._run_diff(
+            sig_a, sig_b, detail=True,
+            expected={"instances": {"r": ["move"]}})
+        self.assertIn("计划外差异", out)
+        self.assertGreaterEqual(ret, 1, "范围外差异必须进入返回 diffs（P0）")
+
+    def test_expected_derived_counts_allowed(self):
+        """审核席 B P2-2：声明 strings → STRGCOUNT 计数差异允许。"""
+        sig_a = self._canned_dump([(10, "old")], [], {}, {},
+                                  counts={"STRGCOUNT": 10})
+        sig_b = self._canned_dump([(10, "rogue"), (5, "extra")], [], {}, {},
+                                  counts={"STRGCOUNT": 11})
+        out, _, ret = self._run_diff(
+            sig_a, sig_b, detail=True, expected={"strings": "any"})
+        self.assertEqual(ret, 0, out)
+        self.assertIn("允许", out)
+
+    def test_adapter_exit_codes(self):
+        """适配器契约：diffs>0 → SystemExit(1)；0 → 正常返回。"""
+        import contextlib as _ctxlib
+        import io as _io
+        import json as _json
+        sig_a = self._canned_dump([(10, "old")], [], {}, {})
+        sig_b = self._canned_dump([(10, "rogue")], [], {}, {})
+        exp = {"strings": ["unrelated"]}  # 范围外
+        for p in ("/tmp/a.ios", "/tmp/b.ios"):
+            Path(p).write_bytes(b"fake-game-o7") if not Path(p).is_file() else None
+            self.addCleanup(Path(p).unlink, missing_ok=True)
+        exp_path = Path(self.save_dir2()) / "exp.json"
+        exp_path.write_text(json.dumps(exp), encoding="utf-8")
+        args = mock.Mock(key="/tmp/a.ios", value="/tmp/b.ios",
+                         expected=str(exp_path), detail=True,
+                         utmt_timeout=None)
+        parser = mock.Mock()
+        with mock.patch.object(smoke_mod, "_dump_structure_signature",
+                               side_effect=[sig_a, sig_b]), \
+             mock.patch.object(det_paths, "find_game_data_file",
+                               return_value=Path("/tmp/a.ios")):
+            with self.assertRaises(SystemExit) as cm:
+                with _ctxlib.redirect_stdout(_io.StringIO()):
+                    command_handlers_mod._diff_snapshots_data_win(args, parser, None)
+        self.assertEqual(cm.exception.code, 1)
+
+    def save_dir2(self):
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="o7_orchestrator_"))
+        self.addCleanup(shutil.rmtree, str(d), ignore_errors=True)
+        return d

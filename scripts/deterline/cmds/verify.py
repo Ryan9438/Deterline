@@ -491,18 +491,21 @@ def _evaluate_expected(detail: dict, expected: dict) -> list[str]:
                       ("move", detail["instances"]["moved"])):
         for item in items:
             room = item[0]
-            if op not in (inst_scope.get(room) or inst_scope.get("any") or []):
+            room_scope = (inst_scope.get(room)
+                          if room in inst_scope else inst_scope.get("any", []))
+            if op not in (room_scope or []):
                 violations.append(f"INST {op} {item}")
     fonts_scope = expected.get("fonts")
     if fonts_scope != "any":
-        for k in detail["fonts"]["changed"] + detail["fonts"]["added"]:
-            violations.append(f"FONT changed/added {k}")
+        for k in (detail["fonts"]["changed"] + detail["fonts"]["added"]
+                  + detail["fonts"]["removed"]):
+            violations.append(f"FONT {k}")
     return violations
 
 
 def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
                        expected: dict | None = None,
-                       utmt_timeout: int = 300) -> None:
+                       utmt_timeout: int = 300) -> int:
     """O7 snapshot-diff：两份 game.ios 的结构化差异报告（实验隔离/泄漏取证）。
 
     对比维度：LastObj、各房间（尺寸/实例数/Tile 数/启用背景层）、代码条目
@@ -511,7 +514,7 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
     CODEF 反汇编指纹 / FONT 字形+纹理页）——`detail=True` 时输出资源级
     差异报告；`expected` 声明允许改变的资源范围，范围外差异退出码 1（1.4）。
     只读，两次 UTMT 遍历；显式 A/B 输入走 read-through 直读（工作区选择
-    不得替换任一输入）。
+    不得替换任一输入）。返回结构差异数（含范围外差异）；调用方据以设退出码。
     """
     for f in (file_a, file_b):
         if not f.exists():
@@ -521,11 +524,26 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
     b = _dump_structure_signature(file_b, timeout=utmt_timeout)
     diffs = 0
 
+    # counts 允许性由类别推导（审核席 B P2-2）：声明 strings/code/fonts/
+    # instances → 对应计数（STRGCOUNT/CODECOUNT/TEXCOUNT/LASTOBJ）可变
+    derived_allowed = set()
+    if expected:
+        if expected.get("strings") is not None:
+            derived_allowed.add("STRGCOUNT")
+        if expected.get("code") is not None:
+            derived_allowed.add("CODECOUNT")
+        if expected.get("fonts") is not None:
+            derived_allowed.add("TEXCOUNT")
+        if expected.get("instances") is not None:
+            derived_allowed.add("LASTOBJ")
     for k in sorted(set(a["counts"]) | set(b["counts"])):
         va, vb = a["counts"].get(k), b["counts"].get(k)
         if va != vb:
-            print(f"  COUNT {k}: {va} → {vb}")
-            diffs += 1
+            if k in derived_allowed:
+                print(f"  COUNT {k}: {va} → {vb}（--expected 类别推导，允许）")
+            else:
+                print(f"  COUNT {k}: {va} → {vb}")
+                diffs += 1
     if a["vardeterline"] != b["vardeterline"]:
         print(f"  VARDETERLINE: {a['vardeterline']} → {b['vardeterline']}")
         diffs += 1
