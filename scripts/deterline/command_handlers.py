@@ -219,7 +219,20 @@ def _verify_code_data_win(args, parser, game_file):
 def _diff_snapshots_data_win(args, parser, game_file):
     if args.key is None or args.value is None:
         parser.error("--key (基线文件) 和 --value (对比文件) 是必需的")
-    verify.cmd_diff_snapshots(Path(args.key).expanduser(), Path(args.value).expanduser())
+    expected = None
+    if getattr(args, "expected", None):
+        exp_path = Path(args.expected).expanduser()
+        if not exp_path.is_file():
+            parser.error(f"--expected 文件不存在: {exp_path}")
+        import json as _json
+        expected = _json.loads(exp_path.read_text(encoding="utf-8"))
+    verify.cmd_diff_snapshots(Path(args.key).expanduser(),
+                              Path(args.value).expanduser(),
+                              detail=bool(getattr(args, "detail", False)),
+                              expected=expected,
+                              utmt_timeout=(args.utmt_timeout
+                                            if getattr(args, "utmt_timeout", None)
+                                            else 300))
 
 
 def _smoke_test_data_win(args, parser, game_file):

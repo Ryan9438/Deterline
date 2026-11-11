@@ -283,6 +283,9 @@ python run.py --action quest-init
 > ⚠️ `smoke-test`: 三段裁决（阶段 1.1）：started/triggered/restored 分判；verdict=unverified 退出码 2（启动失败/按键不可用/非 Steam 目标演练）——报告含 SMOKE_RESULT 机器行
 > ⚠️ `smoke-test`: 标记唯一（文件名含 run_id）+ 内容双钥（run/room/inst 字段级精确比对）；编辑目标非 Steam 安装路径时拒绝启动（DETERLINE_SMOKE_ALLOW_NONSTEAM=1 豁免）
 > ⚠️ `diff-snapshots`: --key 基线文件，--value 对比文件
+> ⚠️ `diff-snapshots`: 阶段 1.3：--detail 输出资源级差异（字符串内容哈希 LCS 锚定 / 实例 add-remove-move / 代码反汇编指纹 / 字体字形+纹理页）；单次遍历同载摘要+明细
+> ⚠️ `diff-snapshots`: 阶段 1.4：--expected JSON 声明允许改变的资源范围（strings/code/fonts: any 或名单；instances: {房间: [move,add,remove]} 操作词表）——范围外差异退出码 1
+> ⚠️ `diff-snapshots`: 显式 A/B 输入 read-through 直读（工作区选择不会替换任一输入）；--utmt-timeout 默认 300s（--detail 全量反汇编）
 <!-- END generated:commands -->
 
 完整命令列表见 [COMMANDS.md](COMMANDS.md)，Agent Skill 文档见 [SKILL.md](SKILL.md)。

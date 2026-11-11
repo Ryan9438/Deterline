@@ -16,7 +16,9 @@ from .. import errors, inifile, paths, state, transactions, utmt
 from . import code, dialogue, npc, room
 
 _DIFF_SNAPSHOT_CSX = """
-// O7: 结构签名 dump（只读）——房间摘要 + 代码条目长度 + 计数
+// O7: 结构签名 dump（只读）——房间摘要 + 代码条目长度 + 计数 + 资源级明细
+using System.Security.Cryptography;
+using System.Text;
 ScriptMessage("LASTOBJ:" + Data.GeneralInfo.LastObj);
 ScriptMessage("STRGCOUNT:" + Data.Strings.Count);
 ScriptMessage("CODECOUNT:" + Data.Code.Count);
@@ -37,6 +39,37 @@ foreach (var room in Data.Rooms) {{
 }}
 foreach (var c in Data.Code)
     ScriptMessage("CODE|" + c.Name.Content + "|" + c.Instructions.Count);
+string Sha(string s){ return Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(s))).ToLowerInvariant(); }
+foreach (var s in Data.Strings)
+    ScriptMessage("STR|" + Encoding.UTF8.GetByteCount(s.Content ?? "") + "|" + Sha(s.Content ?? ""));
+foreach (var room in Data.Rooms)
+    foreach (var g in room.GameObjects) {
+        ScriptMessage("INST|" + room.Name.Content + "|" + g.InstanceID + "|"
+            + (g.ObjectDefinition != null ? g.ObjectDefinition.Name.Content : "?") + "|"
+            + g.X.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|"
+            + g.Y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+foreach (var c in Data.Code) {
+    var locals = Data.CodeLocals.ByName(c.Name.Content) ?? new UndertaleCodeLocals();
+    ScriptMessage("CODEF|" + c.Name.Content + "|" + c.Instructions.Count + "|"
+        + Sha(c.Disassemble(Data.Variables, locals, true)));
+}
+foreach (var f in Data.Fonts) {
+    var sb = new System.Text.StringBuilder();
+    foreach (var gl in f.Glyphs) sb.Append(gl.Character).Append(',').Append(gl.SourceX)
+        .Append(',').Append(gl.SourceY).Append(',').Append(gl.SourceWidth)
+        .Append(',').Append(gl.SourceHeight).Append(';');
+    // 字形(=UndertaleTexturePageItem)自带 TexturePage 反引用（属页探针实证），
+    // 经 Data.EmbeddedTextures 查索引；字形数为 0 时 tex 记 -1
+    int tex = -1;
+    if (f.Texture != null) {
+        for (int ti = 0; ti < Data.EmbeddedTextures.Count && tex < 0; ti++)
+            if (Data.EmbeddedTextures[ti] == f.Texture.TexturePage)
+                tex = ti;
+    }
+    ScriptMessage("FONT|" + (f.Name != null ? f.Name.Content : "?") + "|" + f.Glyphs.Count
+        + "|" + tex + "|" + Sha(sb.ToString()));
+}
 """
 
 
@@ -333,10 +366,16 @@ def _accept_marker(path: Path, run_id: str, new_id: str,
             or (room_name and fields.get("room") != room_name)):
         return False, text
     return True, text
-def _dump_structure_signature(game_file: Path) -> dict:
-    """单次只读 UTMT 遍历，输出结构签名（供快照 diff）。"""
-    out = utmt._run_utmt(_DIFF_SNAPSHOT_CSX, game_file, save=False)
-    sig = {"rooms": {}, "code": {}, "counts": {}, "vardeterline": []}
+def _dump_structure_signature(game_file: Path, timeout: int = 300) -> dict:
+    """单次只读 UTMT 遍历，输出结构签名（供快照 diff）。
+
+    显式输入 read-through 直读（阶段 1.3：工作区选择不得替换显式 A/B
+    输入；只读遍历也不产生 ensure_workspace 复制副作用）。
+    """
+    out = utmt._run_utmt(_DIFF_SNAPSHOT_CSX, game_file, save=False,
+                         resolve_workspace=False, timeout=timeout)
+    sig = {"rooms": {}, "code": {}, "counts": {}, "vardeterline": [],
+           "strings": [], "instances": [], "codefp": {}, "fonts": {}}
     for line in utmt._parse_msg(out):
         if line.startswith("ROOM|"):
             _, name, size, inst, tiles, bg = line.split("|", 5)
@@ -349,22 +388,137 @@ def _dump_structure_signature(game_file: Path) -> dict:
             sig["counts"][k] = int(v)
         elif line.startswith("VARDETERLINE:"):
             sig["vardeterline"].append(line[len("VARDETERLINE:"):])
+        elif line.startswith("STR|"):
+            _, ln, sha = line.split("|", 2)
+            sig["strings"].append((int(ln), sha))
+        elif line.startswith("INST|"):
+            _, room_n, iid, obj, xx, yy = line.split("|", 5)
+            sig["instances"].append((room_n, int(iid), obj, int(xx), int(yy)))
+        elif line.startswith("CODEF|"):
+            _, name, n, digest = line.split("|", 3)
+            sig["codefp"][name] = (int(n), digest)
+        elif line.startswith("FONT|"):
+            _, name, glyphs, tex, digest = line.split("|", 4)
+            sig["fonts"][name] = (int(glyphs), int(tex), digest)
     return sig
 
 
-def cmd_diff_snapshots(file_a: Path, file_b: Path) -> None:
+def _diff_detail_resources(a: dict, b: dict) -> dict:
+    """资源级差异（阶段 1.3）：字符串 LCS 锚点 / 实例操作分类 / 代码指纹 /
+    字体状态。返回可直接打印的明细 dict。"""
+    import difflib as _difflib
+    out: dict = {}
+    # 字符串：有序 (len, sha1) 序列做 LCS——插入/删除使 index 位移，锚点不可见
+    sm = _difflib.SequenceMatcher(a=[x[1] for x in a["strings"]],
+                                  b=[x[1] for x in b["strings"]], autojunk=False)
+    str_changes = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "replace":
+            for k in range(min(i2 - i1, j2 - j1)):
+                str_changes.append(("change", b["strings"][j1 + k]))
+            if i2 - i1 > j2 - j1:
+                for k in range(j2 - j1, i2 - i1):
+                    str_changes.append(("remove", a["strings"][i1 + k]))
+            elif j2 - j1 > i2 - i1:
+                for k in range(i2 - i1, j2 - j1):
+                    str_changes.append(("add", b["strings"][j1 + k]))
+        elif tag == "delete":
+            for k in range(i1, i2):
+                str_changes.append(("remove", a["strings"][k]))
+        elif tag == "insert":
+            for k in range(j1, j2):
+                str_changes.append(("add", b["strings"][k]))
+    out["strings"] = str_changes
+
+    inst_a = {(r, i, o, x, y) for r, i, o, x, y in a["instances"]}
+    inst_b = {(r, i, o, x, y) for r, i, o, x, y in b["instances"]}
+    removed = inst_a - inst_b
+    added = inst_b - inst_a
+    moves = []
+    for (r1, i1, o1, x1, y1) in sorted(removed):
+        same_id = [t for t in added if t[1] == i1]
+        if same_id:
+            t = same_id[0]
+            moves.append((t[0], i1, t[2], t[3], t[4], f"({x1},{y1})→({t[3]},{t[4]})"))
+            added.discard(t)
+            removed.discard((r1, i1, o1, x1, y1))
+    out["instances"] = {"added": sorted(added), "removed": sorted(removed),
+                        "moved": sorted(moves)}
+
+    fp_a, fp_b = a["codefp"], b["codefp"]
+    out["code"] = {
+        "changed": sorted(k for k in fp_a.keys() & fp_b.keys() if fp_a[k] != fp_b[k]),
+        "added": sorted(fp_b.keys() - fp_a.keys()),
+        "removed": sorted(fp_a.keys() - fp_b.keys()),
+    }
+    f_a, f_b = a["fonts"], b["fonts"]
+    out["fonts"] = {
+        "changed": sorted(k for k in f_a.keys() & f_b.keys() if f_a[k] != f_b[k]),
+        "added": sorted(f_b.keys() - f_a.keys()),
+        "removed": sorted(f_a.keys() - f_b.keys()),
+    }
+    return out
+
+
+def _evaluate_expected(detail: dict, expected: dict) -> list[str]:
+    """1.4：--expected 声明允许改变的资源范围 → 范围外差异清单（空 = 全部在范围内）。
+
+    形态（03 1.4）：{"strings": "any" | ["sha1", ...],
+                     "code": "any" | ["条目名", ...],
+                     "instances": {"房间名": ["move", "add", "remove"]},
+                     "fonts": "any"}
+    counts 允许性由类别推导：声明 strings/code/fonts 任一 → 对应 COUNT 可变。
+    """
+    violations = []
+    strings_scope = expected.get("strings")
+    if strings_scope != "any":
+        allowed = set(strings_scope or [])
+        for op, entry in detail["strings"]:
+            if entry[1] not in allowed:
+                violations.append(f"STR {op} {entry}")
+    code_scope = expected.get("code")
+    if code_scope != "any":
+        allowed = set(code_scope or [])
+        for k in detail["code"]["changed"] + detail["code"]["added"]:
+            if k not in allowed:
+                violations.append(f"CODE changed/added {k}")
+        for k in detail["code"]["removed"]:
+            if k not in allowed:
+                violations.append(f"CODE removed {k}")
+    inst_scope = expected.get("instances") or {}
+    for op, items in (("add", detail["instances"]["added"]),
+                      ("remove", detail["instances"]["removed"]),
+                      ("move", detail["instances"]["moved"])):
+        for item in items:
+            room = item[0]
+            if op not in (inst_scope.get(room) or inst_scope.get("any") or []):
+                violations.append(f"INST {op} {item}")
+    fonts_scope = expected.get("fonts")
+    if fonts_scope != "any":
+        for k in detail["fonts"]["changed"] + detail["fonts"]["added"]:
+            violations.append(f"FONT changed/added {k}")
+    return violations
+
+
+def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
+                       expected: dict | None = None,
+                       utmt_timeout: int = 300) -> None:
     """O7 snapshot-diff：两份 game.ios 的结构化差异报告（实验隔离/泄漏取证）。
 
     对比维度：LastObj、各房间（尺寸/实例数/Tile 数/启用背景层）、代码条目
     （增删/指令数变化）、字符串/精灵/纹理/变量计数、deterline* 变量。
-    只读，两次 UTMT 遍历。
+    阶段 1.3 起单次遍历同时携带资源级明细（STR 内容哈希 / 实例坐标 /
+    CODEF 反汇编指纹 / FONT 字形+纹理页）——`detail=True` 时输出资源级
+    差异报告；`expected` 声明允许改变的资源范围，范围外差异退出码 1（1.4）。
+    只读，两次 UTMT 遍历；显式 A/B 输入走 read-through 直读（工作区选择
+    不得替换任一输入）。
     """
     for f in (file_a, file_b):
         if not f.exists():
             raise errors.NotFoundError(f"文件不存在: {f}")
     print(f"--- diff-snapshots ---\n  A={file_a}\n  B={file_b}")
-    a = _dump_structure_signature(file_a)
-    b = _dump_structure_signature(file_b)
+    a = _dump_structure_signature(file_a, timeout=utmt_timeout)
+    b = _dump_structure_signature(file_b, timeout=utmt_timeout)
     diffs = 0
 
     for k in sorted(set(a["counts"]) | set(b["counts"])):
@@ -396,8 +550,32 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path) -> None:
             print(f"  CODE 变化: {name}: instr {code_a[name]} → {code_b[name]}")
             diffs += 1
 
+    if detail:
+        rd = _diff_detail_resources(a, b)
+        print("--- 资源级差异（--detail） ---")
+        print(f"  字符串: {len(rd['strings'])} 处变化（add/change/remove，内容哈希锚定）")
+        print(f"  实例: add={len(rd['instances']['added'])} "
+              f"remove={len(rd['instances']['removed'])} "
+              f"move={len(rd['instances']['moved'])}")
+        print(f"  代码指纹: changed={len(rd['code']['changed'])} "
+              f"added={len(rd['code']['added'])} removed={len(rd['code']['removed'])}")
+        print(f"  字体: changed={len(rd['fonts']['changed'])} "
+              f"added={len(rd['fonts']['added'])} removed={len(rd['fonts']['removed'])}")
+        for op, entry in rd["strings"][:10]:
+            print(f"    STR {op} len={entry[0]} sha={entry[1][:16]}")
+        for item in rd["instances"]["moved"][:10]:
+            print(f"    INST move {item[0]} id={item[1]} {item[5]}")
+        for k in rd["code"]["changed"][:10]:
+            print(f"    CODEF changed {k}")
+        violations = _evaluate_expected(rd, expected or {}) if expected is not None else []
+        if violations:
+            print(f"  ✗ 计划外差异 {len(violations)} 项（超出 --expected 声明范围）:")
+            for v in violations[:20]:
+                print(f"    {v}")
+            diffs += 1
     if diffs == 0:
-        print("✅ 结构完全一致（0 差异）")
+        print("✅ 结构完全一致（0 差异；资源级明细见上）" if detail
+              else "✅ 结构完全一致（0 差异）")
     else:
         print(f"\n⚠️ 共 {diffs} 处结构差异")
     return diffs

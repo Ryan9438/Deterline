@@ -56,13 +56,17 @@ def utmt_cli() -> str:
     return cli
 
 
-def tmp_game_copy(testcase: unittest.TestCase) -> Path:
+def tmp_game_copy(testcase) -> Path:
     """把仓库基线 game.ios 复制到独立 tmp 目录（注册 addCleanup）。
 
-    返回副本路径；调用方显式传给 --dir / game_file 参数。
+    testcase 可为 TestCase 实例/类（cls.addCleanup 亦可）。返回副本路径；
+    调用方显式传给 --dir / game_file 参数。
     """
     d = Path(tempfile.mkdtemp(prefix="deterline_utmt_fixture_"))
-    testcase.addCleanup(shutil.rmtree, d, ignore_errors=True)
+    if isinstance(testcase, type):
+        testcase.addClassCleanup(shutil.rmtree, d, ignore_errors=True)  # 类级
+    else:
+        testcase.addCleanup(shutil.rmtree, d, ignore_errors=True)
     game = d / "game.ios"
     shutil.copy2(REPO / "game.ios", game)
     return game

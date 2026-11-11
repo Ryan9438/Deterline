@@ -218,6 +218,12 @@ def main():
                         help="cjk-trigger: SCR_TEXTTYPE 编号（默认 31 = fnt_maintext spacing12；须在 CJK_TYPER_TABLE）")
     parser.add_argument("--glyphs", type=str, default=None,
                         help="cjk-check: 字形表路径（默认 build/font_cjk/glyphs.json）")
+    parser.add_argument("--detail", action="store_true",
+                        help="diff-snapshots: 输出资源级差异（字符串哈希/实例坐标/代码指纹/字体）")
+    parser.add_argument("--expected", type=str, default=None,
+                        help="diff-snapshots --detail: 声明允许改变的资源范围 JSON（范围外差异退出码 1）")
+    parser.add_argument("--utmt-timeout", type=int, default=None,
+                        help="diff-snapshots: 单次 UTMT 遍历超时（默认 300s，--detail 因全量反汇编指纹需更长）")
     # cjk-trigger 复用全局 --x/--y/--text/--width：x,y=触发位（x 须<320）、text=对话文本、width=预折行宽度(房间像素)
     parser.add_argument("--no-wrap", action="store_true",
                         help="cjk-trigger: 关闭预折行（默认开）")

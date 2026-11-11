@@ -475,3 +475,70 @@ class TestSmokeOrchestrator(unittest.TestCase):
         line = next(l for l in out.splitlines() if l.startswith("   SMOKE_RESULT:"))
         self.assertIn("reason=", line)
         self.assertIn("演练模式", line)
+
+
+class TestO7DetailDiff(unittest.TestCase):
+    """阶段 1.3/1.4：资源级差异的解析/对比/范围判定（单层，假签名零 UTMT）。"""
+
+    def _sig(self, strings, instances, codefp, fonts):
+        return {"rooms": {}, "code": {}, "counts": {}, "vardeterline": [],
+                "strings": strings, "instances": instances,
+                "codefp": codefp, "fonts": fonts}
+
+    def test_string_change_detected(self):
+        """02 验收：原地改台词（同 index 改内容）必须检出。"""
+        a = self._sig([(10, "aaa"), (12, "bbb")], [], {}, {})
+        b = self._sig([(10, "aaa"), (12, "zzz")], [], {}, {})
+        rd = smoke_mod._diff_detail_resources(a, b)
+        self.assertEqual(len(rd["strings"]), 1)
+        self.assertEqual(rd["strings"][0][0], "change")
+        self.assertEqual(rd["strings"][0][1][1], "zzz")
+
+    def test_string_insert_no_mass_false_alarm(self):
+        """插入一条字符串不产生 16000 级误报（LCS 锚定）。"""
+        a = self._sig([(10, f"h{i}") for i in range(50)], [], {}, {})
+        b = self._sig([(10, "NEW") ] + [(10, f"h{i}") for i in range(50)], [], {}, {})
+        rd = smoke_mod._diff_detail_resources(a, b)
+        self.assertEqual(len(rd["strings"]), 1)
+        self.assertEqual(rd["strings"][0][0], "add")
+
+    def test_instance_move_detected_as_move(self):
+        """02 验收：移动现有实例（id 不变坐标变）→ move 而非 add/remove。"""
+        a = self._sig([], [("room_ruins1", 113928, "obj_cactus", 220, 330)], {}, {})
+        b = self._sig([], [("room_ruins1", 113928, "obj_cactus", 300, 330)], {}, {})
+        rd = smoke_mod._diff_detail_resources(a, b)
+        self.assertEqual(len(rd["instances"]["moved"]), 1)
+        self.assertEqual(rd["instances"]["moved"][0][1], 113928)
+        self.assertEqual(rd["instances"]["added"], [])
+
+    def test_equal_instruction_count_code_change_detected(self):
+        """02 验收：同指令数改代码（指纹必变）必须检出。"""
+        a = self._sig([], [], {"gml_Script_x": (3, "digest-old")}, {})
+        b = self._sig([], [], {"gml_Script_x": (3, "digest-new")}, {})
+        rd = smoke_mod._diff_detail_resources(a, b)
+        self.assertEqual(rd["code"]["changed"], ["gml_Script_x"])
+
+    def test_font_glyph_remap_detected(self):
+        """字形数不变但重映射（digest 变）也检出。"""
+        a = self._sig([], [], {}, {"fnt_main": (4064, 3, "g-digest-a")})
+        b = self._sig([], [], {}, {"fnt_main": (4064, 3, "g-digest-b")})
+        rd = smoke_mod._diff_detail_resources(a, b)
+        self.assertEqual(rd["fonts"]["changed"], ["fnt_main"])
+
+    def test_expected_scope_pass_and_violation(self):
+        a = self._sig([(10, "old")], [("room_ruins1", 1, "obj_cactus", 1, 1)],
+                      {"gml_Script_x": (1, "d1")}, {})
+        b = self._sig([(10, "new")], [("room_ruins1", 1, "obj_cactus", 9, 1)],
+                      {"gml_Script_x": (1, "d1"),
+                       "gml_Script_rogue": (1, "d2")}, {})
+        rd = smoke_mod._diff_detail_resources(a, b)
+        in_scope = {"strings": "any",
+                    "instances": {"room_ruins1": ["move"]},
+                    "code": "any"}
+        self.assertEqual(smoke_mod._evaluate_expected(rd, in_scope), [],
+                         "声明 any 后全部差异应在范围内")
+        out = smoke_mod._evaluate_expected(rd, {"strings": "any",
+                                             "instances": {"room_ruins1": ["move"]},
+                                             "code": ["gml_Script_x"]})
+        self.assertTrue(any("rogue" in v for v in out),
+                        "范围外新增 code 条目必须报计划外差异")

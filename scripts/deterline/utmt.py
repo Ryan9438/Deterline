@@ -266,8 +266,15 @@ def submit_file_edit(edit: transactions.FileEdit) -> None:
         batch.save_edits.append(edit)
 
 
-def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
-    """Run a generated CSX script and commit its output through the editor."""
+def _run_utmt(csx_code: str, game_file: Path, save: bool = True,
+              resolve_workspace: bool = True, timeout: int = 120) -> str:
+    """Run a generated CSX script and commit its output through the editor.
+
+    resolve_workspace=False（阶段 1.3）：只读直读显式路径——跳过
+    _effective_game_file 与 GameEdit 批次重定向（diff-snapshots 显式 A/B
+    输入不得被工作区选择替换；只读命令的写副作用 = ensure_workspace 复制
+    250MB 也一并避免）。仅 save=False 时合法，save=True 时忽略。
+    """
     cli = _find_utmt_cli()
     with tempfile.TemporaryDirectory(prefix="deterline-csx-") as directory:
         script = Path(directory) / "edit.csx"
@@ -278,8 +285,12 @@ def _run_utmt(csx_code: str, game_file: Path, save: bool = True) -> str:
                 lambda target, output: ["dotnet", cli, "load", str(target),
                                         "-s", str(script), "-o", str(output)],
             )
-        target = _effective_game_file(game_file)
-        return _run_cli(["dotnet", cli, "load", str(target), "-s", str(script)], 120)
+        if not resolve_workspace:
+            target = game_file
+        else:
+            target = _effective_game_file(game_file)
+        return _run_cli(["dotnet", cli, "load", str(target), "-s", str(script)],
+                        timeout)
 
 
 def _bool_or_none(s: str | None) -> bool | None:
