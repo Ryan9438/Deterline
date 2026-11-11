@@ -610,6 +610,47 @@ class TestO7Orchestrator(unittest.TestCase):
         self.assertEqual(ret, 0, out)
         self.assertIn("允许", out)
 
+    def test_structural_projection_exempt_when_declared(self):
+        """阶段 1.5 语义缺口（议会裁决 A）：声明 code 名单 + instances 房间
+        操作 → 结构投影（CODE 指令数、ROOM 实例计数）豁免；size/tiles/bg
+        分量与未声明条目仍计违规。"""
+        sig_a = self._canned_dump(
+            [], [], {"gml_Object_obj_cactus_Step_1": (12, "d0"),
+                     "gml_Script_scr_setfont": (27, "d1")},
+            {}, counts={})
+        sig_a["rooms"]["room_ruins1"] = ("320x480", 61, 0, "")
+        sig_b = self._canned_dump(
+            [], [], {"gml_Object_obj_cactus_Step_1": (70, "d0"),
+                     "gml_Script_scr_setfont": (33, "d1")},
+            {}, counts={})
+        sig_b["rooms"]["room_ruins1"] = ("320x480", 62, 0, "")
+        expected = {"code": ["gml_Object_obj_cactus_Step_1",
+                             "gml_Script_scr_setfont"],
+                    "instances": {"room_ruins1": ["add"]}}
+        out, _, ret = self._run_diff(sig_a, sig_b, detail=True,
+                                     expected=expected)
+        self.assertEqual(ret, 0, out)
+        self.assertIn("结构投影，允许", out)
+        sig_c = self._canned_dump([], [], {"gml_Script_rogue": (1, "d")}, {})
+        sig_d = self._canned_dump([], [], {"gml_Script_rogue": (2, "d")}, {})
+        out2, _, ret2 = self._run_diff(sig_c, sig_d, detail=True,
+                                       expected=expected)
+        self.assertGreaterEqual(ret2, 1)
+        self.assertNotIn("结构投影，允许", out2)
+
+    def test_structural_projection_room_size_change_still_counts(self):
+        """席2 修正案钉：ROOM 元组拆分——inst 分量豁免，size/tiles/bg 变化
+        仍计违规（防整条豁免掩护真实结构变化）。"""
+        sig_a = self._canned_dump([], [], {}, {})
+        sig_a["rooms"]["room_ruins1"] = ("320x480", 61, 0, "")
+        sig_b = self._canned_dump([], [], {}, {})
+        sig_b["rooms"]["room_ruins1"] = ("640x960", 62, 5, "bg_x")
+        out, _, ret = self._run_diff(
+            sig_a, sig_b, detail=True,
+            expected={"instances": {"room_ruins1": ["add"]}})
+        self.assertGreaterEqual(ret, 1, "inst 外分量变化必须计违规")
+        self.assertIn("inst 计数外的分量变化", out)
+
     def test_adapter_exit_codes(self):
         """适配器契约：diffs>0 → SystemExit(1)；0 → 正常返回。"""
         import contextlib as _ctxlib

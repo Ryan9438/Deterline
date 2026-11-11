@@ -548,25 +548,56 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
         print(f"  VARDETERLINE: {a['vardeterline']} → {b['vardeterline']}")
         diffs += 1
 
+    # 结构投影豁免（阶段 1.5 语义缺口修复，议会双席最小切片）：
+    # expected.instances 声明房间的操作 → 该房间 ROOM 元组的 inst 计数分量
+    # 属声明操作的结构投影（如触发块 spawn）；size/tiles/bg 分量仍计违规
+    # （席2 修正案：元组拆分防"整条豁免掩护真实结构变化"）。
+    # expected.code 名单/any → 该条目的 CODE 指令数投影豁免；CODEF 指纹仍由
+    # 资源级裁决（--detail）。ROOM/CODE 整体增删不豁免。
     rooms_a, rooms_b = a["rooms"], b["rooms"]
+    inst_scope = (expected or {}).get("instances") or {}
     for name in sorted(set(rooms_a) - set(rooms_b)):
         print(f"  ROOM 移除: {name}"); diffs += 1
     for name in sorted(set(rooms_b) - set(rooms_a)):
         print(f"  ROOM 新增: {name}"); diffs += 1
     for name in sorted(set(rooms_a) & set(rooms_b)):
-        if rooms_a[name] != rooms_b[name]:
-            print(f"  ROOM 变化: {name}: {rooms_a[name]} → {rooms_b[name]}")
+        ra, rb = rooms_a[name], rooms_b[name]
+        if ra == rb:
+            continue
+        size_a, inst_a, tiles_a, bg_a = ra
+        size_b, inst_b, tiles_b, bg_b = rb
+        room_scope = (inst_scope.get(name)
+                      if name in inst_scope else inst_scope.get("any", []))
+        if inst_a != inst_b and room_scope:
+            print(f"  ROOM inst {name}: {inst_a} → {inst_b}"
+                  f"（--expected 结构投影，允许）")
+        elif inst_a != inst_b:
+            print(f"  ROOM inst {name}: {inst_a} → {inst_b}")
+            diffs += 1
+        if (size_a, tiles_a, bg_a) != (size_b, tiles_b, bg_b):
+            print(f"  ROOM 变化: {name}: {ra} → {rb}（inst 计数外的分量变化）")
             diffs += 1
 
     code_a, code_b = a["code"], b["code"]
+    code_scope = (expected or {}).get("code")
+    def _code_allowed(name):
+        return code_scope == "any" or (isinstance(code_scope, list) and name in code_scope)
     for name in sorted(set(code_a) - set(code_b)):
         print(f"  CODE 移除: {name}"); diffs += 1
     for name in sorted(set(code_b) - set(code_a)):
-        print(f"  CODE 新增: {name} (instr={code_b[name]})"); diffs += 1
+        if _code_allowed(name):
+            print(f"  CODE 新增: {name} (instr={code_b[name]})"
+                  f"（--expected 结构投影，允许）")
+        else:
+            print(f"  CODE 新增: {name} (instr={code_b[name]})"); diffs += 1
     for name in sorted(set(code_a) & set(code_b)):
         if code_a[name] != code_b[name]:
-            print(f"  CODE 变化: {name}: instr {code_a[name]} → {code_b[name]}")
-            diffs += 1
+            if _code_allowed(name):
+                print(f"  CODE 变化: {name}: instr {code_a[name]} → {code_b[name]}"
+                      f"（--expected 结构投影，允许）")
+            else:
+                print(f"  CODE 变化: {name}: instr {code_a[name]} → {code_b[name]}")
+                diffs += 1
 
     if detail:
         rd = _diff_detail_resources(a, b)
