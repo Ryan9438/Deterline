@@ -451,7 +451,7 @@ class TestBackupIndexSmoke(_SaveDirBase):
         self.assertIn("bak-archive", out)
         self.assertIn("named-snapshot", out)
         self.assertIn("workspace-copy", out)
-        self.assertIn("history=2", out, "manifest history 摘要")
+        self.assertIn("ok=2", out, "manifest history 摘要")
         self.assertNotIn("workspace-legacy", out, "无 .sandbox 时不出现 legacy 行")
         # 提示语义对齐（P1-1/2/3 回归钉）
         self.assertIn("undo --value game.ios\t", out, "game 侧 latest 合法 key")
@@ -494,7 +494,26 @@ class TestBackupIndexSmoke(_SaveDirBase):
         game = self.save_dir / "game.ios"
         game.write_bytes(b"FAKE")
         out = self._index_output(game)
-        self.assertIn("manifest损坏", out, "损坏 manifest 容错不崩溃")
+        self.assertIn("损坏(", out, "损坏 manifest 容错不崩溃")
+
+    def test_system_info_indexed_and_undovable(self):
+        """议会 D'（第四选项）：system_information_962/963 备份此前
+        不被索引也不能 undo——扩 _backup_target keys + 索引覆盖。"""
+        import io as _io
+        import contextlib as _ctxlib
+        (self.save_dir / "system_information_962").write_bytes(b"")
+        (self.save_dir / "system_information_962.bak").write_bytes(b"pre")
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE")
+        out = self._index_output(game)
+        self.assertIn("system-info", out, "sysinfo 文件应被索引")
+        self.assertIn("undo --value 962", out, "恢复提示应给出合法 undo key")
+        # undo 可用性：用备份恢复 sysinfo
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=game):
+            ms.cmd_undo(self.save_dir, "962")
+        self.assertEqual((self.save_dir / "system_information_962").read_bytes(),
+                         b"pre", "undo 962 应从 .bak 恢复")
 
     def test_missing_locations_degrade(self):
         """双定位失败 → 降级提示行（含断言；审核席 B P2-4：原版零断言且
@@ -502,13 +521,14 @@ class TestBackupIndexSmoke(_SaveDirBase):
         import io as _io
         import contextlib as _ctxlib
         buf = _io.StringIO()
+        err = _io.StringIO()
         with mock.patch.object(deterline.paths, "find_game_data_file",
                                side_effect=FileNotFoundError("游戏数据目录未定位")), \
              mock.patch.object(deterline.paths, "find_save_dir",
                                side_effect=FileNotFoundError("无存档目录")):
-            with _ctxlib.redirect_stdout(buf):
+            with _ctxlib.redirect_stdout(buf), _ctxlib.redirect_stderr(err):
                 ms.cmd_backup_index(None, None)
-        out = buf.getvalue()
+        out = buf.getvalue() + err.getvalue()
         self.assertIn("游戏数据目录未定位", out)
         self.assertIn("存档目录未定位", out)
         self.assertIn("索引完成", out)

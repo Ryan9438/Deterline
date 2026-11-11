@@ -6,6 +6,7 @@ experiment-*。跨模块一律模块属性形式：errors./paths./inifile./file0
 """
 
 import json
+import json
 import os
 import random
 import sys
@@ -19,12 +20,13 @@ from .. import errors, file0, inifile, paths, state, transactions
 # ============================================================
 
 GAME_BACKUP_KEYS = {"data_win", "game", "game.ios"}
+SYSINFO_KEYS = {"962": "system_information_962", "963": "system_information_963"}
 
 
 def _backup_target(save_dir: Path | None, key: str, dir_override: str | None) -> Path:
     if key in GAME_BACKUP_KEYS:
         return paths.find_game_data_file(dir_override)
-    filenames = {"ini": "undertale.ini", "file0": "file0"}
+    filenames = {"ini": "undertale.ini", "file0": "file0", **SYSINFO_KEYS}
     if key not in filenames:
         raise errors.ValidationError(f"未知文件: '{key}'")
     directory = save_dir if save_dir is not None else paths.find_save_dir(dir_override)
@@ -343,22 +345,21 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def _manifest_summary(copy: Path) -> str:
+def _manifest_summary(copy: Path) -> tuple[str, int | None]:
     """容错读取工作区 manifest（索引对损坏 manifest 不崩——区别于
-    check_baseline 的拒绝路径）。"""
+    check_baseline 的拒绝路径）。返回 (status, history_count|None)。"""
     manifest = copy.with_name(copy.name + ".json")
     try:
         record = json.loads(manifest.read_text(encoding="utf-8"))
-        n = len(record.get("history", []))
-        return f"history={n}"
+        return "ok", len(record.get("history", []))
     except FileNotFoundError:
-        return "无manifest"
+        return "无manifest", None
     except Exception as e:  # noqa: BLE001 — 索引容错
-        return f"manifest损坏({type(e).__name__})"
+        return f"损坏({type(e).__name__})", None
 
 
 def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
-                     with_hash: bool = False) -> None:
+                     with_hash: bool = False, json_out: bool = False) -> None:
     """只读索引：备份/命名快照/工作区副本 → 类型/路径/恢复目标/mtime/大小。
 
     零写盘、零 UTMT、零清理（O5 保留策略的前置证据面）。
@@ -367,24 +368,47 @@ def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
     """
     import time as _time
 
-    def row(kind: str, path: Path, restore_hint: str) -> None:
+    # --json（阶段 5.1 首切片）：schema deterline.backup-index/v1 结构化输出；
+    # 默认人读输出逐字节不变。降级信息进 warnings 字段（stdout 保持纯 JSON）。
+    warnings: list[str] = []
+    entries: list[dict] = []
+
+    def row(kind: str, path: Path, restore_cmd: str,
+            restore_value: str, restore_backup: str | None = None,
+            manifest_status: str | None = None,
+            manifest_history: int | None = None) -> None:
+        entry = {"kind": kind, "path": str(path),
+                 "restore": {"cmd": restore_cmd, "value": restore_value}}
+        if restore_backup is not None:
+            entry["restore"]["backup"] = restore_backup
+        if manifest_status is not None:
+            entry["manifest"] = {"status": manifest_status,
+                                 "history": manifest_history}
         try:
             st = path.stat()
+            entry["mtime_epoch"] = int(st.st_mtime)
+            entry["mtime_iso"] = _time.strftime(
+                "%Y-%m-%dT%H:%M:%S", _time.localtime(st.st_mtime))
+            entry["size_bytes"] = st.st_size
+            if with_hash:
+                entry["sha256"] = _sha256_file(path)
         except OSError as exc:
-            print(f"{kind}\t{path}\t→ (不可stat: {exc})")
-            return
-        mtime = _time.strftime("%Y-%m-%d %H:%M:%S", _time.localtime(st.st_mtime))
-        size_mb = st.st_size / 1e6
-        line = (f"{kind}\t{path}\t→ {restore_hint}\t{mtime}\t{size_mb:.1f}MB")
-        if with_hash:
-            try:
-                line += f"\tsha256={_sha256_file(path)}"
-            except OSError as exc:
-                line += f"\tsha256=(不可读: {exc})"
+            entry["error"] = str(exc)
+        entries.append(entry)
+        restore_hint = restore_cmd + " --value " + restore_value
+        if restore_backup is not None:
+            restore_hint += " --backup " + restore_backup
+        manifest_note = ""
+        if manifest_status is not None:
+            manifest_note = f" | {manifest_status}"
+            if manifest_history is not None:
+                manifest_note += f"={manifest_history}"
+        line = (f"{kind}\t{path}\t→ {restore_hint}\t"
+                f"{entry.get('mtime_iso', '?')}\t"
+                f"{entry.get('size_bytes', 0) / 1e6:.1f}MB{manifest_note}")
+        if with_hash and "sha256" in entry:
+            line += f"\tsha256={entry['sha256']}"
         print(line)
-
-    print("--- backup-index（只读索引） ---")
-    print("  提示列按当前定位文件生成；重放 undo/experiment-restore 请保持同一 --dir。")
 
     # ── 游戏数据旁（game.ios/data.win 所在目录）──
     # 提示列与 undo/experiment-restore 的 key/tag 语义对齐（审核席 B P1-1/2/3：
@@ -398,41 +422,60 @@ def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
         bak_prefix = game_file.name + ".bak."  # paths.backup_file 归档命名
         for p in sorted(gparent.glob(f"*{game_file.suffix}.bak*")):
             if p.name == game_file.name + ".bak":
-                row("bak-latest", p, f"undo --value {undo_key}")
+                row("bak-latest", p, "undo", undo_key)
             else:
                 ts = p.name[len(bak_prefix):]
-                row("bak-archive", p, f"undo --value {undo_key} --backup {ts}")
+                row("bak-archive", p, "undo", undo_key, restore_backup=ts)
         snap_prefix = game_file.name + ".snap."
         for p in sorted(gparent.glob(f"{snap_prefix}*")):
             tag = p.name[len(snap_prefix):]
-            row("named-snapshot", p, f"experiment-restore --value {tag}")
+            row("named-snapshot", p, "experiment-restore", tag)
         for p in sorted(gparent.glob("*.sandbox")):
-            row("workspace-legacy", p, "sandbox-restore")
+            row("workspace-legacy", p, "sandbox-restore", "")
         ws_root = gparent / ".deterline"
         if ws_root.is_dir():
             for ws in sorted(ws_root.rglob("*")):
                 if ws.is_file() and not ws.name.endswith(".json"):
                     ws_name = ws.parent.name
-                    row("workspace-copy", ws,
-                        f"sandbox-restore --workspace {ws_name} | {_manifest_summary(ws)}")
+                    m_status, m_hist = _manifest_summary(ws)
+                    row("workspace-copy", ws, "sandbox-restore", ws_name,
+                        manifest_status=m_status, manifest_history=m_hist)
+        game_dir_found = True
     except FileNotFoundError as e:
-        print(f"（游戏数据目录未定位：{e}）")
+        game_dir_found = False
+        warnings.append(f"游戏数据目录未定位: {e}")
 
     # ── 存档目录旁 ──
     if save_dir is not None:
+        for sysname in ("system_information_962", "system_information_963"):
+            p = save_dir / sysname
+            if p.is_file():
+                row("system-info", p, "undo",
+                    sysname.split("_")[-1])
         for base, key in (("file0", "file0"), ("undertale.ini", "ini")):
             bak_prefix = base + ".bak."
             for p in sorted(save_dir.glob(f"{base}.bak*")):
                 if p.name == f"{base}.bak":
-                    row("bak-latest", p, f"undo --value {key}")
+                    row("bak-latest", p, "undo", key)
                 else:
                     ts = p.name[len(bak_prefix):]
-                    row("bak-archive", p, f"undo --value {key} --backup {ts}")
+                    row("bak-archive", p, "undo", key, restore_backup=ts)
             snap_prefix = base + ".snap."
             for p in sorted(save_dir.glob(f"{snap_prefix}*")):
                 tag = p.name[len(snap_prefix):]
-                row("named-snapshot", p, f"experiment-restore --value {tag}")
-    else:
-        print("（存档目录未定位——undo/list-backups 需 --dir）")
+                row("named-snapshot", p, "experiment-restore", tag)
+    elif save_dir is None:
+        warnings.append("存档目录未定位——undo/list-backups 需 --dir")
 
-    print("--- 索引完成 ---")
+    if json_out:
+        print(json.dumps({
+            "schema": "deterline.backup-index/v1",
+            "game_dir": str(gparent) if game_dir_found else None,
+            "save_dir": str(save_dir) if save_dir is not None else None,
+            "entries": entries,
+            "warnings": warnings,
+        }, ensure_ascii=False, indent=2))
+    else:
+        for w in warnings:
+            print(f"  ⚠️ {w}", file=sys.stderr)
+        print("--- 索引完成 ---")
