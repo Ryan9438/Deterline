@@ -1,5 +1,5 @@
 usage: modify_save.py [-h]
-                      --action {get,set,list,find,reset-flags,reset-all,room-list,create-system-info,undo,list-backups,list-strings,get-string,set-string,add-string,delete-string,replace-string,search-strings,list-codes,decompile-code,replace-code,find-replace-code,append-code,prepend-code,search-textdata,add-textentry,update-textentry,delete-textentry,batch-add-textentry,guided-add-dialogue,search-vars,search-code,create-script,room-objects,search-sctext,spawn-obj,remove-obj,npc-dialogue,npc-choice,guard-npc-alarm,quest-init,quest-status,sandbox-restore,list-sprites,search-sprite,get-obj,set-obj-sprite,list-textures,export-sprite,replace-sprite,duplicate-sprite,preview-sprite,colorize-sprite,export-texture,replace-texture,dump-sprites,experiment-snapshot,experiment-list,experiment-restore,room-info,create-room,set-room-bg,set-room-prop,set-room-view,list-game-bgs,create-bg-asset,gml-bg,set-room-solid-bg,room-bg-info,remove-tile,handler-extract,create-door,list-doors,remove-door,create-pit,create-battle,verify-nsid,verify-instances,verify-code,smoke-test,diff-snapshots,set-derived,cjk-font,cjk-trigger,cjk-check,doctor,md5}
+                      --action {get,set,list,find,reset-flags,reset-all,room-list,create-system-info,undo,list-backups,list-strings,get-string,set-string,add-string,delete-string,replace-string,search-strings,list-codes,decompile-code,replace-code,find-replace-code,append-code,prepend-code,search-textdata,add-textentry,update-textentry,delete-textentry,batch-add-textentry,guided-add-dialogue,search-vars,search-code,create-script,room-objects,search-sctext,spawn-obj,remove-obj,npc-dialogue,npc-choice,guard-npc-alarm,quest-init,quest-status,sandbox-restore,list-sprites,search-sprite,get-obj,set-obj-sprite,list-textures,export-sprite,replace-sprite,duplicate-sprite,preview-sprite,colorize-sprite,export-texture,replace-texture,dump-sprites,experiment-snapshot,experiment-list,experiment-restore,room-info,create-room,set-room-bg,set-room-prop,set-room-view,list-game-bgs,create-bg-asset,gml-bg,set-room-solid-bg,room-bg-info,remove-tile,handler-extract,create-door,list-doors,remove-door,create-pit,create-battle,verify-nsid,verify-instances,verify-code,smoke-test,diff-snapshots,backup-index,set-derived,cjk-font,cjk-trigger,cjk-check,doctor,md5}
                       [--key KEY] [--value VALUE] [--old OLD]
                       [--search SEARCH] [--preview] [--dry-run]
                       [--section SECTION] [--file {ini,file0,data_win}]
@@ -19,10 +19,10 @@ usage: modify_save.py [-h]
                       [--work-dir WORK_DIR] [--room ROOM] [--object OBJECT]
                       [--typer TYPER] [--glyphs GLYPHS] [--detail]
                       [--expected EXPECTED] [--utmt-timeout UTMT_TIMEOUT]
-                      [--no-wrap] [--auto-snapshot] [--apply] [--once]
-                      [--timeout TIMEOUT] [--keys {external,osascript}]
-                      [--fix] [--width WIDTH] [--height HEIGHT]
-                      [--speed SPEED] [--caption CAPTION]
+                      [--hash] [--no-wrap] [--auto-snapshot] [--apply]
+                      [--once] [--timeout TIMEOUT]
+                      [--keys {external,osascript}] [--fix] [--width WIDTH]
+                      [--height HEIGHT] [--speed SPEED] [--caption CAPTION]
                       [--bg-color BG_COLOR] [--persistent] [--bg BG]
                       [--index INDEX] [--enable ENABLE]
                       [--foreground FOREGROUND] [--speedx SPEEDX]
@@ -39,7 +39,7 @@ UNDERTALE Save Editor — 修改 undertale.ini / file0
 
 options:
   -h, --help            show this help message and exit
-  --action {get,set,list,find,reset-flags,reset-all,room-list,create-system-info,undo,list-backups,list-strings,get-string,set-string,add-string,delete-string,replace-string,search-strings,list-codes,decompile-code,replace-code,find-replace-code,append-code,prepend-code,search-textdata,add-textentry,update-textentry,delete-textentry,batch-add-textentry,guided-add-dialogue,search-vars,search-code,create-script,room-objects,search-sctext,spawn-obj,remove-obj,npc-dialogue,npc-choice,guard-npc-alarm,quest-init,quest-status,sandbox-restore,list-sprites,search-sprite,get-obj,set-obj-sprite,list-textures,export-sprite,replace-sprite,duplicate-sprite,preview-sprite,colorize-sprite,export-texture,replace-texture,dump-sprites,experiment-snapshot,experiment-list,experiment-restore,room-info,create-room,set-room-bg,set-room-prop,set-room-view,list-game-bgs,create-bg-asset,gml-bg,set-room-solid-bg,room-bg-info,remove-tile,handler-extract,create-door,list-doors,remove-door,create-pit,create-battle,verify-nsid,verify-instances,verify-code,smoke-test,diff-snapshots,set-derived,cjk-font,cjk-trigger,cjk-check,doctor,md5}
+  --action {get,set,list,find,reset-flags,reset-all,room-list,create-system-info,undo,list-backups,list-strings,get-string,set-string,add-string,delete-string,replace-string,search-strings,list-codes,decompile-code,replace-code,find-replace-code,append-code,prepend-code,search-textdata,add-textentry,update-textentry,delete-textentry,batch-add-textentry,guided-add-dialogue,search-vars,search-code,create-script,room-objects,search-sctext,spawn-obj,remove-obj,npc-dialogue,npc-choice,guard-npc-alarm,quest-init,quest-status,sandbox-restore,list-sprites,search-sprite,get-obj,set-obj-sprite,list-textures,export-sprite,replace-sprite,duplicate-sprite,preview-sprite,colorize-sprite,export-texture,replace-texture,dump-sprites,experiment-snapshot,experiment-list,experiment-restore,room-info,create-room,set-room-bg,set-room-prop,set-room-view,list-game-bgs,create-bg-asset,gml-bg,set-room-solid-bg,room-bg-info,remove-tile,handler-extract,create-door,list-doors,remove-door,create-pit,create-battle,verify-nsid,verify-instances,verify-code,smoke-test,diff-snapshots,backup-index,set-derived,cjk-font,cjk-trigger,cjk-check,doctor,md5}
   --key KEY             键名或数字索引 (file0 用数字)
   --value VALUE         要设置/搜索的值 (set/find 操作必需)
   --old OLD             replace-string 的旧文本 (decompile-code 兼容别名，等同 --search)
@@ -105,6 +105,7 @@ options:
   --utmt-timeout UTMT_TIMEOUT
                         diff-snapshots: 单次 UTMT 遍历超时（默认 300s，--detail
                         因全量反汇编指纹需更长）
+  --hash                backup-index: 逐项追加 SHA-256（大文件耗时）
   --no-wrap             cjk-trigger: 关闭预折行（默认开）
   --auto-snapshot       每次写入操作前自动创建实验快照
   --apply               应用模式 (handler-extract 用, 默认仅诊断)

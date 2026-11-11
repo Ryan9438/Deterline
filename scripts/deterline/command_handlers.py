@@ -8,6 +8,16 @@ from . import config, file0, inifile, paths, sandbox, state, transactions, utmt
 from .cmds import cjk, code, dialogue, doctor, door, npc, room, save_cmds, sprite, verify
 
 
+def _backup_index(args, parser, target):
+    save_dir = None
+    try:
+        save_dir = paths.find_save_dir(args.dir)
+    except FileNotFoundError as exc:
+        print(f"（存档目录未定位：{exc}）", file=sys.stderr)
+    save_cmds.cmd_backup_index(save_dir, args.dir,
+                               with_hash=bool(getattr(args, "hash", False)))
+
+
 def _doctor(args, parser, target):
     try:
         save_dir = paths.find_save_dir(args.dir)
@@ -734,6 +744,7 @@ COMMANDS = {
     "verify-code": {"data_win": _verify_code_data_win},
     "smoke-test": {"data_win": _smoke_test_data_win},
     "diff-snapshots": {"data_win": _diff_snapshots_data_win},
+    "backup-index": {"any": _backup_index},
     "set-derived": {"any": _set_derived},
     "cjk-font": {"data_win": _cjk_font_data_win},
     "cjk-trigger": {"data_win": _cjk_trigger_data_win},

@@ -224,6 +224,8 @@ def main():
                         help="diff-snapshots --detail: 声明允许改变的资源范围 JSON（范围外差异退出码 1）")
     parser.add_argument("--utmt-timeout", type=int, default=None,
                         help="diff-snapshots: 单次 UTMT 遍历超时（默认 300s，--detail 因全量反汇编指纹需更长）")
+    parser.add_argument("--hash", action="store_true",
+                        help="backup-index: 逐项追加 SHA-256（大文件耗时）")
     # cjk-trigger 复用全局 --x/--y/--text/--width：x,y=触发位（x 须<320）、text=对话文本、width=预折行宽度(房间像素)
     parser.add_argument("--no-wrap", action="store_true",
                         help="cjk-trigger: 关闭预折行（默认开）")

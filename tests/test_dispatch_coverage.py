@@ -404,3 +404,88 @@ class TestDoctorPerItemChecks(_SaveDirBase):
         self.assertIn("✓ rooms.json", out)
         self.assertNotIn("✗ rooms.json", out)
         self.assertIn(cm.exception.code, (0, 1))
+
+
+class TestBackupIndexSmoke(_SaveDirBase):
+    """backup-index 冒烟（O5 最小切片）：只读索引，全 tmp 隔离。
+
+    隔离教训：cmd_backup_index 内部 paths.find_game_data_file(dir_override)
+    —— override=None 时优先级 1（Steam）恒压过 env 兜底（v2.3.3 事故模式），
+    必须 patch find_game_data_file 本体。
+    """
+
+    def _index_output(self, game_file):
+        import io as _io
+        import contextlib as _ctxlib
+        buf = _io.StringIO()
+        err = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=game_file):
+            with _ctxlib.redirect_stdout(buf), _ctxlib.redirect_stderr(err):
+                ms.cmd_backup_index(self.save_dir, None,
+                                    with_hash=self.with_hash)
+        return buf.getvalue() + err.getvalue()
+
+    with_hash = False
+
+    def test_lists_bak_snap_workspace_and_legacy(self):
+        import json as _json
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE-GAME")
+        (self.save_dir / "game.ios.bak").write_bytes(b"a")
+        (self.save_dir / "game.ios.bak.20261112_000000_1").write_bytes(b"b")
+        (self.save_dir / "game.ios.snap.demo").write_bytes(b"c")
+        (self.save_dir / "file0.bak").write_bytes(b"d")
+        ws = self.save_dir / ".deterline" / "game.ios" / "cjk_sample"
+        ws.mkdir(parents=True)
+        (ws / "game.ios").write_bytes(b"WS")
+        (ws / "game.ios.json").write_text(
+            _json.dumps({"source_sha256": "x", "history": [{"a": 1}, {"b": 2}]}),
+            encoding="utf-8")
+        out = self._index_output(game)
+        self.assertIn("bak-latest", out)
+        self.assertIn("bak-archive", out)
+        self.assertIn("named-snapshot", out)
+        self.assertIn("workspace-copy", out)
+        self.assertIn("history=2", out, "manifest history 摘要")
+        self.assertNotIn("workspace-legacy", out, "无 .sandbox 时不出现 legacy 行")
+
+    def test_legacy_sandbox_row(self):
+        (self.save_dir / "game.ios.sandbox").write_bytes(b"sandbox")
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE")
+        out = self._index_output(game)
+        self.assertIn("workspace-legacy", out)
+
+    def test_hash_flag_appends_sha256(self):
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE")
+        (self.save_dir / "game.ios.bak").write_bytes(b"BAK-CONTENT")
+        self.with_hash = True
+        try:
+            out = self._index_output(game)
+        finally:
+            self.with_hash = False
+        self.assertIn("sha256=", out)
+
+    def test_corrupt_manifest_tolerated(self):
+        ws = self.save_dir / ".deterline" / "game.ios" / "ws1"
+        ws.mkdir(parents=True)
+        (ws / "game.ios").write_bytes(b"WS")
+        (ws / "game.ios.json").write_text("{NOT VALID", encoding="utf-8")
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE")
+        out = self._index_output(game)
+        self.assertIn("manifest损坏", out, "损坏 manifest 容错不崩溃")
+
+    def test_missing_locations_degrade(self):
+        import io as _io
+        import contextlib as _ctxlib
+        empty = Path(tempfile.mkdtemp(prefix="o5_empty_"))
+        self.addCleanup(shutil.rmtree, str(empty), ignore_errors=True)
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=empty / "none.ios"), \
+             mock.patch.object(deterline.paths, "find_save_dir",
+                               side_effect=FileNotFoundError("无存档目录")):
+            with _ctxlib.redirect_stdout(_io.StringIO()):
+                ms.cmd_backup_index(None, None)  # 双定位失败 → 降级行不崩溃

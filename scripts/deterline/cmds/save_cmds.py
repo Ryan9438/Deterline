@@ -5,6 +5,7 @@ experiment-*。跨模块一律模块属性形式：errors./paths./inifile./file0
 （运行时查找，保 mock 与旗标写入可见——研讨会2/01 风险 #1 铁律）。
 """
 
+import json
 import os
 import random
 import sys
@@ -327,3 +328,87 @@ def cmd_experiment_restore(save_dir: Path, tag: str) -> None:
     for target, source in edits.items():
         print(f"✓ 已恢复 {target} ← {source.name}")
     print("完成。请重启游戏。")
+
+
+# ============================================================
+# backup-index（阶段 2.3 最小切片，O5）：恢复资产只读索引
+# ============================================================
+
+def _sha256_file(path: Path) -> str:
+    import hashlib as _hl
+    h = _hl.sha256()
+    with open(str(path), "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _manifest_summary(copy: Path) -> str:
+    """容错读取工作区 manifest（索引对损坏 manifest 不崩——区别于
+    check_baseline 的拒绝路径）。"""
+    manifest = copy.with_name(copy.name + ".json")
+    try:
+        record = json.loads(manifest.read_text(encoding="utf-8"))
+        n = len(record.get("history", []))
+        return f"history={n}"
+    except FileNotFoundError:
+        return "无manifest"
+    except Exception as e:  # noqa: BLE001 — 索引容错
+        return f"manifest损坏({type(e).__name__})"
+
+
+def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
+                     with_hash: bool = False) -> None:
+    """只读索引：备份/命名快照/工作区副本 → 类型/路径/恢复目标/mtime/大小。
+
+    零写盘、零 UTMT、零清理（O5 保留策略的前置证据面）。
+    --hash 追加每项 SHA-256（大文件逐项流式）。
+    定位失败降级为提示行，不崩溃（doctor 先例）。
+    """
+    import time as _time
+
+    def row(kind: str, path: Path, restore_hint: str) -> None:
+        st = path.stat()
+        mtime = _time.strftime("%Y-%m-%d %H:%M:%S", _time.localtime(st.st_mtime))
+        size_mb = st.st_size / 1e6
+        line = (f"{kind}\t{path}\t→ {restore_hint}\t{mtime}\t{size_mb:.1f}MB")
+        if with_hash:
+            line += f"\tsha256={_sha256_file(path)}"
+        print(line)
+
+    print("--- backup-index（只读索引） ---")
+    located_any = False
+
+    # ── 游戏数据旁（game.ios/data.win 所在目录）──
+    try:
+        game_file = paths.find_game_data_file(dir_override)
+        located_any = True
+        gparent = game_file.parent
+        for p in sorted(gparent.glob("game.ios.bak*")) + sorted(gparent.glob("data.win.bak*")):
+            kind = "bak-latest" if p.name.endswith(".bak") else "bak-archive"
+            row(kind, p, f"undo --value {game_file.name}")
+        for p in sorted(gparent.glob("*.snap.*")):
+            row("named-snapshot", p, f"experiment-restore --value {p.name}")
+        for p in sorted(gparent.glob("*.sandbox")):
+            row("workspace-legacy", p, "sandbox-restore")
+        ws_root = gparent / ".deterline"
+        if ws_root.is_dir():
+            for ws in sorted(ws_root.rglob("*")):
+                if ws.is_file() and not ws.name.endswith(".json"):
+                    row("workspace-copy", ws,
+                        f"sandbox-restore --workspace {ws.parent.name} | {_manifest_summary(ws)}")
+    except FileNotFoundError as e:
+        print(f"（游戏数据目录未定位：{e}）")
+
+    # ── 存档目录旁 ──
+    if save_dir is not None:
+        for base in ("file0", "undertale.ini"):
+            for p in sorted(save_dir.glob(f"{base}.bak*")):
+                kind = "bak-latest" if p.name.endswith(base + ".bak") else "bak-archive"
+                row(kind, p, f"undo --value {base}")
+            for p in sorted(save_dir.glob(f"{base}.snap.*")):
+                row("named-snapshot", p, f"experiment-restore --value {p.name.split('.', 2)[-1]}")
+    else:
+        print("（存档目录未定位——undo/list-backups 需 --dir）")
+
+    print("--- 索引完成 ---")

@@ -112,6 +112,7 @@ from deterline.cmds.cjk import (CJK_TYPER_TABLE, _CJK_PASS1_CSX,  # noqa: E402,F
                                 _build_cjk_trigger_csx, cmd_cjk_trigger,
                                 cmd_cjk_check)
 from deterline.cmds.doctor import cmd_doctor  # noqa: E402,F401
+from deterline.cmds.save_cmds import cmd_backup_index  # noqa: E402,F401
 from deterline.cli import main  # noqa: E402
 
 if __name__ == "__main__":

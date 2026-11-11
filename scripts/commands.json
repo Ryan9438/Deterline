@@ -746,6 +746,18 @@
         "游戏文件 md5 ≠ 基线不一定是问题（实验态）；列出实验工作区数量",
         "备份占盘 .bak* 单个约 250MB，长期不用可清（undo/experiment-restore 依赖）"
       ]
+    },
+    {
+      "action": "backup-index",
+      "group": "save",
+      "verify": "static",
+      "summary": "恢复资产只读索引（O5 最小切片）：.bak/.snap/.sandbox/.deterline 工作区 → 类型/路径/恢复目标/mtime/大小（--hash 追加 SHA-256）；零写盘零 UTMT",
+      "example": "backup-index --hash",
+      "notes": [
+        "覆盖 game 旁（game.ios/data.win.bak*.snap*、.deterline 工作区、legacy .sandbox）与存档目录（file0/undertale.ini 的 bak/snap）",
+        "工作区行尾附 manifest history 摘要；损坏 manifest 容错（标 manifest损坏 不崩溃）",
+        "恢复入口：undo / experiment-restore / sandbox-restore（本命令零恢复零清理）"
+      ]
     }
   ]
 }
