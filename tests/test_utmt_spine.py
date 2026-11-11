@@ -23,8 +23,10 @@ sys.path.insert(0, str(REPO / "scripts"))
 sys.path.insert(0, str(REPO / "tests"))
 
 import modify_save as ms  # noqa: E402
+import fixtures_save  # noqa: E402
 import deterline.utmt as utmt  # noqa: E402
 from deterline import errors, paths, sandbox, state  # noqa: E402
+from deterline.cmds import verify as smoke_mod  # noqa: E402
 from _o2_patch import dual_patch_utmt  # noqa: E402
 
 STEAM_MARK = "UNDERTALE.app"  # Steam 真实路径的特征段（断言用，不含完整路径）
@@ -256,3 +258,154 @@ class TestSpineHelpers(SpineTestBase):
                 ms._run_utmt("// x", self.game_file, save=False)
         # 双挂载断言：patch 退出后两处均恢复为同一真身
         self.assertIs(ms._run_utmt, utmt._run_utmt)
+
+
+class _FakeClock:
+    """假钟：sleep 只推进时钟；time() 返回当前假时刻。"""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def sleep(self, seconds):
+        self.now += seconds  # 每次轮询推进 2s（与真实节奏一致）
+
+    def time(self):
+        return self.now
+
+
+class _FakeSp:
+    """模拟启动器：按 argv[0] 分派 open/pgrep/osascript/pkill。"""
+
+    def __init__(self, case, *, pgrep_ok_after=None, osascript_rc=0):
+        self.case = case
+        self.pgrep_ok_after = pgrep_ok_after  # None=永不命中；N=第 N 次 sleep 后命中
+        self.osascript_rc = osascript_rc
+        self.open_calls = 0
+        self.pgrep_calls = 0
+        self.osascript_calls = 0
+
+    def run(self, cmd, **kwargs):
+        name = cmd[0]
+        if name == "open":
+            self.open_calls += 1
+            return unittest.mock.Mock(returncode=0)
+        if name == "pgrep":
+            self.pgrep_calls += 1
+            ok = (self.pgrep_ok_after is not None
+                  and self.case.clock.now >= self.pgrep_ok_after)
+            return unittest.mock.Mock(returncode=0 if ok else 1)
+        if name == "osascript":
+            self.osascript_calls += 1
+            return unittest.mock.Mock(returncode=self.osascript_rc)
+        if name == "pkill":
+            return unittest.mock.Mock(returncode=0)
+        return unittest.mock.Mock(returncode=0)
+
+
+class TestSmokeVerdict(unittest.TestCase):
+    """阶段 1.1/1.2：W3 三段裁决负例（mock 启动器 + 假钟，全部离线毫秒级）。"""
+
+    RUN_ID = "20261112_000000_123"
+
+    def setUp(self):
+        self.save_dir = fixtures_save.make_save_dir()
+        self.addCleanup(shutil.rmtree, str(self.save_dir), ignore_errors=True)
+        self.clock = _FakeClock()
+        self.sp = _FakeSp(self, pgrep_ok_after=2.0)
+        p1 = mock.patch.object(smoke_mod, "time", self.clock)
+        p2 = mock.patch.object(smoke_mod, "_sp", self.sp)
+        p1.start(); p2.start()
+        self.addCleanup(p1.stop); self.addCleanup(p2.stop)
+
+    def _poll(self, *, new_id="7", marker_body=None, launch_allowed=True,
+              keys="external", timeout=10.0):
+        marker_name = f"zcode_smoke_{self.RUN_ID}.txt"
+        marker = self.save_dir / marker_name
+        if marker_body is not None:
+            marker.write_text(marker_body, encoding="utf-8")
+        return smoke_mod._launch_and_poll(
+            self.save_dir, timeout, keys, self.RUN_ID, new_id, marker_name,
+            launch_allowed=launch_allowed,
+            game_exe_running=lambda: self.sp.pgrep_ok_after is not None)
+
+    def _marker_body(self, run_id=RUN_ID, inst="7"):
+        return f"SMOKE_OK|run={run_id}|room=room_torielroom|inst={inst}"
+
+    def test_correct_marker_passes(self):
+        started, triggered, content, keys_ok, _ = self._poll(
+            marker_body=self._marker_body())
+        self.assertEqual((started, triggered), ("ok", "ok"))
+        self.assertIn(f"run={self.RUN_ID}", content)
+
+    def test_planted_marker_wrong_run_rejected(self):
+        """旧标记/伪造正文（同文件名但 run 字段不符）→ 触发判据不接受。"""
+        started, triggered, content, _, _ = self._poll(
+            marker_body=self._marker_body(run_id="OLD_RUN"))
+        self.assertEqual((started, triggered), ("ok", "fail"))
+        self.assertIn("run=OLD_RUN", content)
+
+    def test_non_smoke_prefix_rejected(self):
+        started, triggered, _, _, _ = self._poll(
+            marker_body="gammaruined everything")
+        self.assertEqual(triggered, "fail")
+
+    def test_wrong_instance_rejected(self):
+        started, triggered, _, _, _ = self._poll(
+            marker_body=self._marker_body(inst="999"))
+        self.assertEqual((started, triggered), ("ok", "fail"))
+
+    def test_unreadable_marker_degrades_to_fail(self):
+        """复核席 3：读取失败不得当作通过（旧实现 exists 即 pass 的洞）。"""
+        marker = self.save_dir / f"zcode_smoke_{self.RUN_ID}.txt"
+        marker.write_text(self._marker_body(), encoding="utf-8")
+        marker.chmod(0o200)  # 写-only：read_text → PermissionError
+        self.addCleanup(lambda: marker.chmod(0o644) if marker.exists() else None)
+        started, triggered, content, _, _ = self._poll()
+        self.assertEqual((started, triggered), ("ok", "fail"))
+        self.assertIn("unreadable", content)
+
+    def test_launcher_never_sees_game_unverified(self):
+        """pgrep 全程未命中（启动失败/秒退）→ started=fail → UNVERIFIED 而非 FAIL。"""
+        self.sp.pgrep_ok_after = None
+        started, triggered, _, _, _ = self._poll()
+        self.assertEqual((started, triggered), ("fail", "fail"))
+        v = smoke_mod.SmokeVerdict(started, triggered, "ok")
+        self.assertEqual(v.verdict, "unverified")
+
+    def test_keys_unavailable_unverified(self):
+        """osascript 全部失败（辅助功能权限缺失）→ UNVERIFIED 而非 FAIL。"""
+        self.sp.osascript_rc = 1
+        started, triggered, _, keys_ok, _ = self._poll(keys="osascript")
+        self.assertFalse(keys_ok)
+        v = smoke_mod.SmokeVerdict(started, triggered, "ok", keys_ok=keys_ok)
+        self.assertEqual(v.verdict, "unverified")
+
+    def test_restore_failure_is_fail_not_unverified(self):
+        """恢复校验失败是真失败（round-trip 前裁决属性回归）。"""
+        v = smoke_mod.SmokeVerdict("ok", "ok", "fail")
+        self.assertEqual(v.verdict, "fail")
+
+    def test_launch_path_gate_rejects_tmp_copy(self):
+        allowed, reason = smoke_mod._check_launch_path(self.save_dir / "game.ios")
+        self.assertFalse(allowed)
+        self.assertIn("Steam", reason)
+
+    def test_launch_path_gate_accepts_steam_install(self):
+        steam = paths.steam_game_file()
+        if steam is None:
+            self.skipTest("本机无 Steam 安装")
+        allowed, reason = smoke_mod._check_launch_path(steam)
+        self.assertTrue(allowed)
+        self.assertEqual(reason, "")
+
+    def test_launch_refused_skips_open(self):
+        self.sp.pgrep_ok_after = 2.0
+        started, triggered, _, _, elapsed = self._poll(launch_allowed=False)
+        self.assertEqual((started, triggered, elapsed), ("skipped", "skipped", 0.0))
+        self.assertEqual(self.sp.open_calls, 0, "拒绝启动时不得调用 open steam://run")
+
+    def test_nonsteaming_escape_env_documented(self):
+        """DETERLINE_SMOKE_ALLOW_NONSTEAM=1 的豁免开关在 cmd_smoke_test 中读取。"""
+        import inspect
+        src = inspect.getsource(smoke_mod.cmd_smoke_test)
+        self.assertIn("DETERLINE_SMOKE_ALLOW_NONSTEAM", src)

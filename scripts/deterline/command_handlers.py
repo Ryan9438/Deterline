@@ -224,14 +224,17 @@ def _diff_snapshots_data_win(args, parser, game_file):
 
 def _smoke_test_data_win(args, parser, game_file):
     # 注意: --dir 在 data_win 语境下是游戏数据文件；存档目录固定走默认定位
-    _ok = verify.cmd_smoke_test(game_file, paths.find_save_dir(None),
+    res = verify.cmd_smoke_test(game_file, paths.find_save_dir(None),
                    room_name=args.value or "room_torielroom",
                    obj_name=args.key or "obj_cactus",
                    x=args.x if args.x is not None else 160,
                    y=args.y if args.y is not None else 150,
                    timeout=args.timeout or 120,
                    send_keys=args.keys or "external")
-    if not _ok:
+    # 阶段 1.1 三段裁决：pass=0 / fail=1 / unverified=2（未能验证，可重跑）
+    if res.verdict == "unverified":
+        sys.exit(2)
+    if res.verdict != "pass":
         sys.exit(1)  # FAIL 必须非零退出，否则自动化无法感知
 
 

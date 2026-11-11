@@ -6,11 +6,13 @@ utmt./state./dialogue./room./inifile./errors.
 """
 
 import json
+import subprocess as _sp
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
-from .. import errors, inifile, state, transactions, utmt
+from .. import errors, inifile, paths, state, transactions, utmt
 from . import code, dialogue, npc, room
 
 _DIFF_SNAPSHOT_CSX = """
@@ -38,40 +40,81 @@ foreach (var c in Data.Code)
 """
 
 
+@dataclass(frozen=True)
+class SmokeVerdict:
+    """W3 三段裁决（阶段 1.1）：started/triggered/restored 分别判定。
+
+    verdict：三段皆 ok → pass(0)；started ok 且 triggered fail 且按键可用
+    → fail(1)（真死代码/卡场景）；其余 → unverified(2)（未能验证，可重跑）。
+    """
+    started: str      # ok / fail / skipped
+    triggered: str    # ok / fail / skipped
+    restored: str     # ok / fail
+    keys_ok: bool = True
+    reason: str = ""
+
+    @property
+    def verdict(self) -> str:
+        if self.started == "ok" and self.triggered == "ok" and self.restored == "ok":
+            return "pass"
+        if self.restored == "fail":
+            return "fail"  # 恢复失败是真失败，不是"未能验证"
+        if self.started == "ok" and self.triggered == "fail" and self.keys_ok:
+            return "fail"
+        return "unverified"
+
+    @property
+    def ok(self) -> bool:
+        return self.verdict == "pass"
+
+
 def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torielroom",
                    obj_name: str = "obj_cactus", x: int = 160, y: int = 150,
-                   timeout: int = 120, send_keys: str = "external") -> None:
+                   timeout: int = 120, send_keys: str = "external") -> "SmokeVerdict":
     """W3：游戏内冒烟测试（半自动，≈90 秒/次，验证级别 in-game）。
 
-    流程：备份三件 → 注入"扁平触发块 + 标记文件写入"到 obj 的 Step 事件 →
-    写 file0 Room 传送到目标房 → 提交真实文件（本命令是唯一内建 --commit 流）
-    → steam://run 启动 → 轮询存档目录的 zcode_smoke_marker.txt（可选盲发 Z）
-    → 断言 → pkill 游戏 → 全量恢复（MD5 校验）。
-
-    标记由游戏内 file_text_open_write 写出（探针已证实函数存在且写往存档目录）。
-    PASS = 触发块在游戏内真实执行过。这是第五层验证（游戏内）的自动化。
-    FAIL 时退出码 1；成功自动清理备份，失败保留供取证。
-
-    ⚠️ 环境敏感性：external 按键模式下，若游戏停在开场/菜单等 Z 或窗口失焦，
-    无人值守可能假阴性 FAIL（12:13 PASS / 12:56 FAIL 实例）——无人值守推荐
-    `--keys osascript`（需辅助功能权限），或人工按键配合 `--timeout` 放宽。
+    阶段 1.1 重设计（AUDIT 02/03）：三段裁决模型——
+      started   游戏进程在轮询期内真实出现过（pgrep Mac_Runner ≥1 次命中；
+                steam://run 的返回码只表示 URL 已递给 Steam，不作数）。
+                编辑目标 ≠ Steam 安装路径时拒绝启动（started=skipped，注入+恢复
+                照常作演练）；DETERLINE_SMOKE_ALLOW_NONSTEAM=1 显式豁免。
+      triggered 本 run 唯一标记文件出现且正文三字段（run/room/inst）与本次
+                运行完全一致——文件名与内容双钥，旧标记/伪造正文无法误判；
+                标记只认存档目录一个落点（候选目录探测已删除：无内容校验的
+                多候选是假 PASS 洞）。
+      restored  pkill 后轮询进程真正消失（SIGTERM 回写竞态）再全量恢复，
+                game.ios/file0/undertale.ini 三件 MD5 与运行前一致。
+    verdict：三段皆 ok → PASS(0)；started ok 而 triggered fail → FAIL(1)
+    （真死代码或卡场景）；其余（启动失败/skipped/按键不可用）→ UNVERIFIED(2)
+    （未能验证，可重跑）。报告含机器可读行
+    SMOKE_RESULT: started=… triggered=… restored=… verdict=… reason=…
     """
-    import time as _time
-    import subprocess as _sp
+    import os as _os
 
-    ts = _time.strftime("%Y%m%d_%H%M%S")
-    marker_name = "zcode_smoke_marker.txt"
-    marker = save_dir / marker_name
+    if state.PREVIEW or state.WORKSPACE:
+        raise errors.ValidationError(
+            "smoke-test 内建提交流，不得与 --preview / --workspace 组合")
+
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    run_id = f"{ts}_{_os.getpid()}"
+    marker_name = f"zcode_smoke_{run_id}.txt"
     game_exe_running = lambda: _sp.run(["pgrep", "-x", "Mac_Runner"],
                                        capture_output=True).returncode == 0
     if game_exe_running():
         raise errors.ValidationError("检测到 Undertale 正在运行——smoke-test 需要游戏处于关闭状态（请先退出游戏）")
-    # 记录运行前已存在的 .bak.*（运行后新增的属于本次、成功后清理，防 ≈250MB/次 堆盘）
     pre_baks = set(p.name for p in game_file.parent.glob("game.ios.bak.*"))
 
-    text_key = f"smoke_test_{ts}"
-    print(f"--- smoke-test (W3) ts={ts} ---")
+    text_key = f"smoke_test_{run_id}"
+    print(f"--- smoke-test (W3) run={run_id} ---")
     print(f"  房间: {room_name} @ ({x},{y})  对象: {obj_name}")
+
+    # ── 0. 加载路径一致性（阶段 1.1）──
+    launch_allowed, launch_reason = _check_launch_path(game_file)
+    if not launch_allowed:
+        print("  ⚠️ 拒绝启动（注入+恢复作演练）：", launch_reason, sep="\n     ")
+        if _os.environ.get("DETERLINE_SMOKE_ALLOW_NONSTEAM") == "1":
+            launch_allowed = True
+            print("     DETERLINE_SMOKE_ALLOW_NONSTEAM=1 —— 显式豁免，照常启动。")
 
     # ── 1. 备份三件 ──
     f0 = save_dir / "file0"
@@ -86,26 +129,26 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
     md5_before = utmt._md5_file(game_file)
     print(f"  备份: {b_game.name} / {b_f0.name} / {b_ini.name}")
 
-    # ── 2. 注入（本命令是内建 commit 流：直写真实文件；任何失败都走 finally 恢复）──
-    passed = False
-    marker_content = ""
-    previous_policy = state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC
+    started, triggered, content, keys_ok = "fail", "skipped", "", True
     try:
+        previous_policy = state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC
         state.COMMIT_ACTIVE = True
         state.SANDBOX_ACTIVE = False
         state.NO_STEAM_SYNC = True
-        with utmt.game_edit("smoke-test"):
-            dialogue.cmd_textdata_add(game_file, text_key, f"* SMOKE OK {ts}/%%")
-            new_id = room._spawn_obj_internal(game_file, room_name, obj_name, x, y, quiet=True)
-            if new_id is None:
-                raise RuntimeError("smoke-test: 生成实例失败")
-            print(f"  实例: [{new_id}]")
-
-            info = npc._query_npc_target(game_file, obj_name)
-            if info is None:
-                raise RuntimeError(f"smoke-test: 对象未找到 {obj_name}")
-            # 触发块 = 已验证扁平形态 + 标记写入（同为块内单层语句）
-            block = f"""if (id == {new_id} && !instance_exists(obj_dialoguer) && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
+        # ── 2. 注入（内建 commit 流；run_id/inst 写进标记正文）──
+        try:
+            with utmt.game_edit("smoke-test"):
+                dialogue.cmd_textdata_add(game_file, text_key, f"* SMOKE OK {run_id}/%%")
+                new_id = room._spawn_obj_internal(game_file, room_name, obj_name, x, y, quiet=True)
+                if new_id is None:
+                    raise RuntimeError("smoke-test: 生成实例失败")
+                print(f"  实例: [{new_id}]")
+                info = npc._query_npc_target(game_file, obj_name)
+                if info is None:
+                    raise RuntimeError(f"smoke-test: 对象未找到 {obj_name}")
+                marker_body = (f"SMOKE_OK|run={run_id}|room={room_name}"
+                               f"|inst={new_id}")
+                block = f"""if (id == {new_id} && !instance_exists(obj_dialoguer) && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
     {{
         if (distance_to_object(obj_mainchara) < 50)
         {{
@@ -117,62 +160,38 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
             global.msg[1] = "%%%";
             instance_create(0, 0, obj_dialoguer);
             var smokefile = file_text_open_write("{marker_name}");
-            file_text_write_string(smokefile, "SMOKE_OK id={new_id} t=" + string(current_time));
+            file_text_write_string(smokefile, "{marker_body}|t=" + string(current_time));
             file_text_close(smokefile);
         }}
     }}
-    """
-            step_code = info["step_code"]
-            if step_code:
-                code._append_to_code(game_file, step_code, block)
-            else:
-                code.cmd_create_script(game_file, f"gml_Object_{info['obj']}_Step_0", block)
-            if info["native"] and info["alarm_code"]:
-                npc._guard_alarm_for_instance(game_file, info["alarm_code"], new_id)
+"""
+                step_code = info["step_code"]
+                if step_code:
+                    code._append_to_code(game_file, step_code, block)
+                else:
+                    code.cmd_create_script(game_file, f"gml_Object_{info['obj']}_Step_0", block)
+                if info["native"] and info["alarm_code"]:
+                    npc._guard_alarm_for_instance(game_file, info["alarm_code"], new_id)
+            # ── 3. 传送到目标房（内部名 → 数字 ID）──
+            room_id = utmt._room_id_by_name(game_file, room_name)
+            inifile.cmd_ini_set(save_dir, "General", "Room", room_id)
+        finally:
+            state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC = previous_policy
 
-        # ── 3. 传送到目标房（内部名 → 数字 ID；resolve_room 不认内部名）──
-        room_id = utmt._room_id_by_name(game_file, room_name)
-        inifile.cmd_ini_set(save_dir, "General", "Room", room_id)
-
-        # ── 4. 清理旧标记 + 启动 + 轮询 ──
-        marker.unlink(missing_ok=True)
-        print(f"  启动游戏 (steam://run/391540)... 轮询标记 ≤{timeout}s（按键模式: {send_keys}）")
-        _sp.run(["open", "steam://run/391540"], check=False)
-        start = _time.time()
-        key_count = 0
-        while _time.time() - start < timeout:
-            _time.sleep(2)
-            if send_keys == "osascript" and key_count < 40:
-                _sp.run(["osascript", "-e",
-                         'tell application "System Events" to keystroke "z"'],
-                        capture_output=True)
-                key_count += 1
-            if marker.exists():
-                passed = True
-                try:
-                    marker_content = marker.read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    marker_content = "(读取失败)"
-                break
-        if not passed:
-            # 多候选探测：file_text_open_write 的落点可能是存档目录或游戏目录
-            for cand in (game_file.parent / marker_name,
-                         Path.cwd() / marker_name,
-                         Path.home() / marker_name):
-                if cand.exists():
-                    passed = True
-                    marker = cand
-                    try:
-                        marker_content = cand.read_text(encoding="utf-8", errors="replace")
-                    except OSError:
-                        marker_content = "(读取失败)"
-                    print(f"  ℹ️  标记出现在备选位置: {cand}")
-                    break
+        # ── 4. 清理旧标记（卫生，非判据）+ 启动 + 轮询 ──
+        for stale in save_dir.glob("zcode_smoke_*.txt"):
+            stale.unlink(missing_ok=True)
+        started, triggered, content, keys_ok, elapsed = _launch_and_poll(
+            save_dir, timeout, send_keys, run_id, new_id, marker_name,
+            launch_allowed=launch_allowed, game_exe_running=game_exe_running)
     finally:
         # ── 5. 全量恢复（任何路径：PASS/FAIL/异常 都恢复）──
         state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC = previous_policy
         _sp.run(["pkill", "-x", "Mac_Runner"], capture_output=True)
-        _time.sleep(2)
+        for _ in range(8):  # 轮询进程真正消失（SIGTERM 回写竞态，复核席 3）
+            time.sleep(1)
+            if not game_exe_running():
+                break
         transactions.write_many({target: snapshot for snapshot, target in backups.items()},
                                 backup=False)
         f0_ok = not b_f0.exists() or utmt._md5_file(f0) == utmt._md5_file(b_f0)
@@ -183,7 +202,6 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
         print(f"  恢复: game.ios {'✅ MD5 一致' if md5_after == md5_before else '❌ 不一致'}"
               f" | file0 {'✅' if f0_ok else '❌'} | ini {'✅' if ini_ok else '❌'}")
         if restored:
-            # 恢复成功 → 清理本轮快照与 .bak 时间戳备份；失败则保留供取证
             b_game.unlink(missing_ok=True)
             b_f0.unlink(missing_ok=True)
             b_ini.unlink(missing_ok=True)
@@ -191,20 +209,99 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
                 if p_.name not in pre_baks:
                     p_.unlink(missing_ok=True)
 
-    elapsed = _time.time() - start if 'start' in dir() else -1
-    if passed:
-        print(f"\n✅ smoke-test PASS（{elapsed:.0f}s，验证级别: in-game）")
-        print(f"   标记内容: {marker_content}")
-        print("   触发块在游戏内真实执行（标记文件由游戏写出）")
-    else:
-        print(f"\n❌ smoke-test FAIL（{elapsed:.0f}s 内未出现标记）")
+    verdict = SmokeVerdict(started, triggered,
+                           "ok" if restored else "fail", keys_ok=keys_ok)
+    # elapsed 由 _launch_and_poll 返回（未启动 = 0）
+    reason = verdict.reason
+    print(f"\n{'✅' if verdict.verdict == 'pass' else '⚠️' if verdict.verdict == 'unverified' else '❌'}"
+          f" smoke-test {verdict.verdict.upper()}（{elapsed:.0f}s，验证级别: "
+          f"{'in-game' if verdict.verdict != 'unverified' else '未能验证'}）")
+    if triggered == "ok":
+        print(f"   标记内容: {content}")
+    if verdict.verdict == "unverified":
+        print(f"   未能验证原因: {reason}")
+    elif verdict.verdict == "fail":
         print("   排查: 1) 游戏是否停在开场/菜单等 Z（external 模式无人按键——无人值守建议 --keys osascript）")
         print("         2) 游戏窗口是否失焦（失焦时 Undertale 会暂停）")
-        print("         3) 玩家出生点与 NPC 距离 >50px?")
-        print("   （环境已恢复原状，可重跑）")
-    return passed
+        print("         3) 玩家出生点与 NPC 距离 >50px? 或触发块真死代码（域F 矩阵）")
+    print(f"   SMOKE_RESULT: started={verdict.started} triggered={verdict.triggered}"
+          f" restored={verdict.restored} verdict={verdict.verdict} reason={reason}")
+    return verdict
 
 
+def _check_launch_path(game_file: Path) -> tuple[bool, str]:
+    """编辑目标必须与 Steam 启动器实际加载路径一致（阶段 1.1）。
+
+    smoke-test 经 steam://run 启动——游戏加载的是 Steam 安装副本；编辑目标
+    不一致时，注入码永远到不了被启动的游戏（必然假 FAIL）。
+    """
+    steam_path = paths.steam_game_file()
+    allowed = (steam_path is not None
+               and game_file.resolve() == steam_path.resolve())
+    reason = "" if allowed else (
+        f"编辑目标 {game_file} ≠ Steam 启动器加载路径 "
+        f"{steam_path or '(本机未找到 Steam 安装)'}")
+    return allowed, reason
+
+
+def _launch_and_poll(save_dir: Path, timeout: int, send_keys: str, run_id: str,
+                     new_id: str, marker_name: str, *, launch_allowed: bool,
+                     game_exe_running) -> tuple[str, str, str, bool, float]:
+    """启动 + 轮询唯一标记（文件名+内容双钥）。返回 (started, triggered,
+    content, keys_ok, elapsed)。"""
+    marker = save_dir / marker_name
+    if not launch_allowed:
+        print("  注入+恢复演练完成（未启动游戏）。")
+        return "skipped", "skipped", "", True, 0.0
+    print(f"  启动游戏 (steam://run/391540)... 轮询标记 ≤{timeout}s（按键模式: {send_keys}）")
+    _sp.run(["open", "steam://run/391540"], check=False)
+    start = time.time()
+    saw_game = False
+    key_count = 0
+    osascript_failures = 0
+    osascript_sends = 0
+    mismatch = ""
+    while time.time() - start < timeout:
+        time.sleep(2)
+        if not saw_game:
+            saw_game = game_exe_running()
+        if send_keys == "osascript" and key_count < 40 and saw_game:
+            osascript_sends += 1
+            proc = _sp.run(["osascript", "-e",
+                            'tell application "System Events" to keystroke "z"'],
+                           capture_output=True)
+            if proc.returncode != 0:
+                osascript_failures += 1
+            key_count += 1
+        if marker.is_file():
+            ok, content = _accept_marker(marker, run_id, str(new_id))
+            if ok:
+                return ("ok" if saw_game else "fail", "ok", content, True,
+                        time.time() - start)
+            mismatch = content[:60]
+            print(f"  ⚠️ 标记出现但内容不符（{mismatch}…），继续轮询")
+    keys_ok = not (send_keys == "osascript" and osascript_sends > 0
+                   and osascript_failures == osascript_sends)
+    return ("ok" if saw_game else "fail", "fail", mismatch, keys_ok,
+            time.time() - start)
+
+
+def _accept_marker(path: Path, run_id: str, new_id: str) -> tuple[bool, str]:
+    """读取并校验标记正文（文件名+内容双钥；阶段 1.1）。
+
+    返回 (ok, content)。ok 要求：正文以 SMOKE_OK| 开头且 run/inst 字段与
+    本次运行完全一致；读取失败返回 unreadable。
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"  ⚠️ 标记读取失败: {exc}", file=sys.stderr)
+        return False, f"(unreadable: {exc})"
+    if not text.startswith("SMOKE_OK|"):
+        return False, text
+    if f"run={run_id}" not in text or f"inst={new_id}" not in text:
+        return False, text
+    return True, text
 def _dump_structure_signature(game_file: Path) -> dict:
     """单次只读 UTMT 遍历，输出结构签名（供快照 diff）。"""
     out = utmt._run_utmt(_DIFF_SNAPSHOT_CSX, game_file, save=False)

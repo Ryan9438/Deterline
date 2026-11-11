@@ -44,6 +44,16 @@ def find_save_dir(override: str | None = None) -> Path:
     )
 
 
+def steam_game_file() -> Path | None:
+    """Steam 安装的 game.ios（启动器实际加载的文件）；不存在时 None。
+
+    阶段 1.1：smoke-test 用它做"编辑目标 = 启动器加载路径"一致性判定。
+    """
+    p = Path("~/Library/Application Support/Steam/steamapps/common/"
+             "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
+    return p if p.is_file() else None
+
+
 def find_game_data_file(override: str | None = None) -> Path:
     """Locate game.ios or data.win (for dialogue editing)."""
     if override:
@@ -52,9 +62,8 @@ def find_game_data_file(override: str | None = None) -> Path:
             return p
         raise FileNotFoundError(f"游戏数据文件不存在: {override}")
     # Priority 1: Steam app bundle (game reads from here on Steam launch)
-    p = Path("~/Library/Application Support/Steam/steamapps/common/"
-             "Undertale/UNDERTALE.app/Contents/Resources/game.ios").expanduser()
-    if p.is_file():
+    p = steam_game_file()
+    if p is not None:
         return p
     # Priority 2: data.win in Steam bundle
     p2 = p.with_name("data.win")

@@ -29,6 +29,7 @@ from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "tests"))
 
 import modify_save as ms  # noqa: E402
 import fixtures_save  # noqa: E402  # 阶段 0.3 共享存档夹具
@@ -67,7 +68,6 @@ ALLOWLIST: dict[str, str] = {
     "room-objects": "读式诊断",
     "search-sctext": "读式搜索（_fail_if_no_match 退出码 3 已测）",
     "search-sprite": "读式搜索",
-    "smoke-test": "重游戏依赖（按键驱动全链）——它本身就是验收工具",
     "verify-code": "verify 域；cmd_cjk_font 五步管线的收尾步每轮实测",
 }
 
