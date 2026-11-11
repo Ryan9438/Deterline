@@ -87,4 +87,9 @@ def remove_workspace(copy: Path) -> None:
     copy.unlink()
     _manifest(copy).unlink(missing_ok=True)
     if copy.parent.parent.parent.name == ".deterline":
-        copy.parent.rmdir()
+        copy.parent.rmdir()  # <文件名>/default 工作区层
+        # 清理空目录链（审核席 B P2-1：唯一工作区移除后 .deterline/<名>/ 与
+        # .deterline/ 会残留）；rmdir 仅在空目录时成功，非空即保留
+        file_layer = copy.parent.parent
+        file_layer.rmdir()
+        file_layer.parent.rmdir()

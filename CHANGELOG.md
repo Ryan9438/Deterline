@@ -19,6 +19,13 @@
 - 真机（tmp 副本 + 真实 UTMT）：`--preview` 零写盘；工作区创建 + manifest + 编辑历史；旧 `.sandbox` 兼容优先；基线漂移拒绝；**cjk-font 五步管线产出的工作区 md5 与 v2.3.3 时代 A3 快照逐字节一致**（行为等价的最强证据）。
 - 仓库 game.ios / Steam 副本 / 真实 file0 的 md5 全程未变。
 
+### 输出形态与行为面变化（复核席补记，2026-11-11 交叉审核 A/B）
+
+- 写入回执的"应用:/退路:"两行提示移除（回执主体目标+MD5+范围保留）；`--no-steam-sync` 场景范围标签简化为"真实文件"。
+- 备份归档命名 `.bak.{ts}` → `.bak.{ts}_{纳秒}`（防同秒碰撞）；`undo --backup`/list-backups 兼容实测。
+- `ini set Love/Kills/Room` 的 file0 回执并入单行（成组提交）；reset-flags 的 file0 同步失败由告警改为硬失败。
+- INI 序列化经 StringIO 恒为 LF（Windows 上重写 ini 将从 CRLF 变 LF——归入 Windows 待验证项）；verify-code 在批次内验证的是待提交暂存字节（与最终提交内容自洽）。
+
 ### 已知限制（待验证清单）
 
 - file0 新行尾（`\r\n`）未经游戏内读档验证——下一个实机窗口的首要核对项。

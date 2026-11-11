@@ -21,10 +21,8 @@ __pycache__/
 game.ios
 file0
 undertale.ini
-*.sandbox
 *.bak*
 *.snap*
-__pycache__/
 
 # C3b vendor font binaries (OFL; download via assets/fonts/vendor, never commit)
 assets/fonts/vendor/
