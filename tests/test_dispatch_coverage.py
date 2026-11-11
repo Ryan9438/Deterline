@@ -31,6 +31,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 
 import modify_save as ms  # noqa: E402
+import fixtures_save  # noqa: E402  # 阶段 0.3 共享存档夹具
 import deterline.paths  # noqa: E402
 
 # 覆盖豁免清单：{action: 理由}（复核 P1-2 修正后按 AST 精确分支归属实测）。
@@ -141,19 +142,18 @@ class TestDispatchCoverageRatchet(unittest.TestCase):
 
 
 class _SaveDirBase(unittest.TestCase):
-    """tmp 存档目录夹具：全冒烟零真实路径接触。"""
+    """tmp 存档目录夹具：全冒烟零真实路径接触。
+
+    阶段 0.3 起复用共享存档夹具 fixtures_save（标准库，含旧格式行尾兼容件）。
+    """
 
     def setUp(self):
-        d = tempfile.mkdtemp(prefix="dispatch_cov_test_")
-        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
-        self.save_dir = Path(d)
-        self._write_file0([0] * 80 + [1] * 10)  # name=Freddy; flag 域占位
+        self.save_dir = fixtures_save.make_save_dir()
+        self.addCleanup(shutil.rmtree, str(self.save_dir), ignore_errors=True)
 
-    def _write_file0(self, numbers: list[int], name: str = "Freddy"):
-        with open(self.save_dir / "file0", "w", encoding="utf-8", newline="\r\n") as f:
-            f.write(name + "\r\n")
-            for n in numbers:
-                f.write(f"{n} \r\n")
+    def _write_file0(self, numbers: list[int], name: str = fixtures_save.SAMPLE_FILE0_NAME):
+        (self.save_dir / "file0").write_bytes(
+            fixtures_save.serialize_file0(name, numbers))
 
     def _read_file0(self) -> list[int]:
         _, nums = ms._parse_file0(self.save_dir / "file0")
@@ -361,3 +361,23 @@ class TestDoctorSmoke(_SaveDirBase):
                 with _ctxlib.redirect_stdout(_io.StringIO()):
                     ms.cmd_doctor(self.save_dir)
         self.assertEqual(cm.exception.code, 1)  # ✗ 降级，非裸异常
+
+
+class TestSaveFixtures(unittest.TestCase):
+    """阶段 0.3：共享夹具与解析器的行尾兼容契约（新/旧两种 file0）。"""
+
+    def test_stdlib_fixture_roundtrip_through_parser(self):
+        import fixtures_save
+        d = fixtures_save.make_save_dir()
+        self.addCleanup(shutil.rmtree, str(d), ignore_errors=True)
+        nums = fixtures_save.read_file0_numbers(d / "file0")
+        self.assertEqual(len(nums), len(fixtures_save.SAMPLE_FILE0_NUMBERS))
+
+    def test_legacy_double_cr_still_parses(self):
+        import fixtures_save
+        import tempfile
+        d = Path(tempfile.mkdtemp(prefix="fixtures_legacy_"))
+        self.addCleanup(shutil.rmtree, str(d), ignore_errors=True)
+        (d / "file0").write_bytes(fixtures_save.serialize_file0_legacy())
+        self.assertEqual(len(fixtures_save.read_file0_numbers(d / "file0")),
+                         len(fixtures_save.SAMPLE_FILE0_NUMBERS))
