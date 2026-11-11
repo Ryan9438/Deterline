@@ -353,14 +353,19 @@ def _build_cjk_trigger_csx(room_name: str, obj_name: str, x: int, y: int,
         raise RuntimeError("text 含真实换行——多行对话请用 writer 硬换行标记 & 或拆多条触发块")
     if "\t" in text:
         raise RuntimeError("text 含制表符——writer 无此字形，请改空格")
-    # 终止符摘出（折行不得劈开 "/%%"），中部 writer 专用字符校验
+    # 终止符/页分隔（阶段 1.5 扩展：至多一个中部 "/%%" = 两页消息表）
     terminator = ""
     if text.endswith("/%%"):
         text, terminator = text[:-3], "/%%"
-    for ch in ("/", "%"):
-        if ch in text:
-            raise RuntimeError(f"text 含 writer 专用字符 {ch!r}（halt/翻页语义）——"
-                               f"请改写文本（百分号用中文表述）")
+    pages = text.split("/%%")
+    if len(pages) > 2:
+        raise RuntimeError("text 含多于一个页分隔 \"/%%\"（当前生成器支持至多两页）"
+                           "——更多页请拆多条触发块")
+    for pi, page in enumerate(pages):
+        for ch in ("/", "%"):
+            if ch in page:
+                raise RuntimeError(f"text 第 {pi + 1} 页含 writer 专用字符 {ch!r}"
+                                   f"（halt/翻页语义）——请改写文本（百分号用中文表述）")
     if wrap:
         spacing, wxend = CJK_TYPER_TABLE[typer]
         if width_room_px is None:
@@ -368,11 +373,16 @@ def _build_cjk_trigger_csx(room_name: str, obj_name: str, x: int, y: int,
             width_room_px = 202
         if 0 < wxend < 9000:                       # 引擎会按 wxend 二次折行 → 预折行不超它
             width_room_px = min(width_room_px, wxend)
-        text = cjk_wrap_text(text, max(1, width_room_px // spacing))
-    text = text + terminator
-    if not text.endswith("/%%"):
-        text = text + "/%%"
-    gml_text = _csx_escape(_gml_escape(text))
+        pages = [cjk_wrap_text(pg, max(1, width_room_px // spacing)) for pg in pages]
+    # 消息表形态（B4）：末页不带终止符、以 "%%%" 收口；非末页各带 "/%%" 翻页
+    if len(pages) == 2:
+        msg_lines = [pages[0] + "/%%", pages[1] + "/%%", "%%%"]
+    else:
+        msg_lines = [pages[0] + "/%%", "%%%"]
+    gml_lines = [_csx_escape(_gml_escape(ml)) for ml in msg_lines]
+    msg_lines_csx = "\n".join(
+        f'        + "        global.msg[{idx}] = \\"{gl}\\";\\n"'
+        for idx, gl in enumerate(gml_lines))
     step_name = f"gml_Object_{obj_name}_Step_1"
     return f'''// C3b S6 cjk-trigger：CJK 对话触发块（B4 实证全形态）
 using System;
@@ -404,8 +414,7 @@ try {{
         + "        global.msc = 0;\\n"
         + "        global.typer = {typer};\\n"
         + "        global.facechoice = 3;\\n        global.faceemotion = 0;\\n"
-        + "        global.msg[0] = \\"{gml_text}\\";\\n"
-        + "        global.msg[1] = \\"%%%\\";\\n"
+{msg_lines_csx}
         + "        instance_create(0, 0, obj_dialoguer);\\n"
         + "    }}\\n"
         + "}}\\n"

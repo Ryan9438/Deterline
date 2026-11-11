@@ -129,3 +129,35 @@ class TestCjkTriggerBuilder(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTwoPageTrigger(unittest.TestCase):
+    """阶段 1.5：cjk-trigger 两页扩展的校验矩阵。"""
+
+    def test_two_page_msg_table_shape(self):
+        csx = ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 220, 330,
+                                        31, "* 第一页/%%* 第二页", wrap=False)
+        # CSX 内 GML 字符串带反斜杠转义（\"）——与 B4 形态一致
+        self.assertIn('global.msg[0] = \\"* 第一页/%%\\";', csx)
+        self.assertIn('global.msg[1] = \\"* 第二页/%%\\";', csx)
+        self.assertIn('global.msg[2] = \\"%%%\\";', csx)
+        self.assertNotIn("global.msg[3]", csx)
+
+    def test_single_page_shape_unchanged(self):
+        csx = ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 220, 330,
+                                        31, "* 单页", wrap=False)
+        self.assertIn('global.msg[0] = \\"* 单页/%%\\";', csx)
+        self.assertIn('global.msg[1] = \\"%%%\\";', csx)
+        self.assertNotIn("global.msg[2]", csx)
+
+    def test_three_pages_rejected(self):
+        with self.assertRaises(RuntimeError):
+            ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 220, 330,
+                                      31, "* 一/%%* 二/%%* 三", wrap=False)
+
+    def test_two_page_wrap_independent(self):
+        csx = ms._build_cjk_trigger_csx(
+            "room_ruins1", "obj_cactus", 220, 330, 31,
+            "* 第一页内容比较长需要折行处理测试/%%* 第二页也要折行", wrap=True)
+        self.assertIn("global.msg[0]", csx)
+        self.assertIn("global.msg[1]", csx)

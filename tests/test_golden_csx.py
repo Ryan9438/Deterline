@@ -216,6 +216,15 @@ class TestGoldenCjkFont(unittest.TestCase):
                           "room_ruins1", "obj_cactus", 220, 330, 31,
                           "* 托丽尔你好，这里是中文测试。第二行内容稍微长一些需要折行。")])
 
+    def test_cjk_trigger_two_page_csx(self):
+        """阶段 1.5：两页形态钉形（中部 "/%%" 页分隔 → msg[0]/msg[1] 各带翻页、
+        msg[2]="%%%" 收口）。"""
+        _check_golden(self, "cjk_trigger_twopage",
+                      [ms._build_cjk_trigger_csx(
+                          "room_ruins1", "obj_cactus", 220, 330, 31,
+                          "* 托丽尔你好，这是中文样例第一页。&CJK 12px + ASCII 123 mixed。"
+                          "/%%* 第二页：翻页、头像与退出对话测试。")])
+
 
 # ============================================================
 # D0 清偿日补齐（风险审计派 A3 + 全量实测盘点）：
