@@ -429,6 +429,8 @@ class TestBackupIndexSmoke(_SaveDirBase):
     with_hash = False
 
     def test_lists_bak_snap_workspace_and_legacy(self):
+        """提示文本断言（审核席 A/B：提示列是本切片唯一交付物，须与
+        cmd_undo/cmd_experiment_restore 的 key/tag 语义精确对齐）。"""
         import json as _json
         game = self.save_dir / "game.ios"
         game.write_bytes(b"FAKE-GAME")
@@ -436,6 +438,8 @@ class TestBackupIndexSmoke(_SaveDirBase):
         (self.save_dir / "game.ios.bak.20261112_000000_1").write_bytes(b"b")
         (self.save_dir / "game.ios.snap.demo").write_bytes(b"c")
         (self.save_dir / "file0.bak").write_bytes(b"d")
+        (self.save_dir / "undertale.ini.bak.20261112_010101").write_bytes(b"e")
+        (self.save_dir / "undertale.ini.snap.t1").write_bytes(b"f")
         ws = self.save_dir / ".deterline" / "game.ios" / "cjk_sample"
         ws.mkdir(parents=True)
         (ws / "game.ios").write_bytes(b"WS")
@@ -449,6 +453,20 @@ class TestBackupIndexSmoke(_SaveDirBase):
         self.assertIn("workspace-copy", out)
         self.assertIn("history=2", out, "manifest history 摘要")
         self.assertNotIn("workspace-legacy", out, "无 .sandbox 时不出现 legacy 行")
+        # 提示语义对齐（P1-1/2/3 回归钉）
+        self.assertIn("undo --value game.ios\t", out, "game 侧 latest 合法 key")
+        self.assertIn("undo --value game.ios --backup 20261112_000000_1", out,
+                      "archive 行须带 --backup tag")
+        self.assertIn("experiment-restore --value demo", out,
+                      "snap 行须剥前缀取 tag（P1-1）")
+        self.assertIn("undo --value file0", out)
+        self.assertIn("undo --value ini --backup 20261112_010101", out,
+                      "ini 的合法 key 是 ini（P1-3）")
+        self.assertIn("experiment-restore --value t1", out,
+                      "ini snap tag 须剥 undertale.ini.snap. 前缀（P1-2）")
+        self.assertNotIn("undo --value undertale.ini", out, "非法 key 不得出现")
+        self.assertNotIn("experiment-restore --value game.ios.snap", out,
+                         "双前缀 tag 不得出现")
 
     def test_legacy_sandbox_row(self):
         (self.save_dir / "game.ios.sandbox").write_bytes(b"sandbox")
@@ -479,13 +497,31 @@ class TestBackupIndexSmoke(_SaveDirBase):
         self.assertIn("manifest损坏", out, "损坏 manifest 容错不崩溃")
 
     def test_missing_locations_degrade(self):
+        """双定位失败 → 降级提示行（含断言；审核席 B P2-4：原版零断言且
+        find_game_data_file 的 FileNotFoundError 降级分支零覆盖）。"""
         import io as _io
         import contextlib as _ctxlib
-        empty = Path(tempfile.mkdtemp(prefix="o5_empty_"))
-        self.addCleanup(shutil.rmtree, str(empty), ignore_errors=True)
+        buf = _io.StringIO()
         with mock.patch.object(deterline.paths, "find_game_data_file",
-                               return_value=empty / "none.ios"), \
+                               side_effect=FileNotFoundError("游戏数据目录未定位")), \
              mock.patch.object(deterline.paths, "find_save_dir",
                                side_effect=FileNotFoundError("无存档目录")):
-            with _ctxlib.redirect_stdout(_io.StringIO()):
-                ms.cmd_backup_index(None, None)  # 双定位失败 → 降级行不崩溃
+            with _ctxlib.redirect_stdout(buf):
+                ms.cmd_backup_index(None, None)
+        out = buf.getvalue()
+        self.assertIn("游戏数据目录未定位", out)
+        self.assertIn("存档目录未定位", out)
+        self.assertIn("索引完成", out)
+
+    def test_ini_snapshot_and_archive_hints(self):
+        """P1-2/P2-b 回归：undertale.ini 的 snap tag 与 archive --backup。"""
+        import io as _io
+        import contextlib as _ctxlib
+        (self.save_dir / "undertale.ini").write_text("[General]\n", encoding="utf-8")
+        (self.save_dir / "undertale.ini.bak.20261112_010101").write_bytes(b"x")
+        (self.save_dir / "undertale.ini.snap.t1").write_bytes(b"y")
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE")
+        out = self._index_output(game)
+        self.assertIn("experiment-restore --value t1", out)
+        self.assertIn("undo --value ini --backup 20261112_010101", out)

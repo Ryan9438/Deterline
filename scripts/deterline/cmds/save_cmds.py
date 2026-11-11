@@ -368,46 +368,70 @@ def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
     import time as _time
 
     def row(kind: str, path: Path, restore_hint: str) -> None:
-        st = path.stat()
+        try:
+            st = path.stat()
+        except OSError as exc:
+            print(f"{kind}\t{path}\t→ (不可stat: {exc})")
+            return
         mtime = _time.strftime("%Y-%m-%d %H:%M:%S", _time.localtime(st.st_mtime))
         size_mb = st.st_size / 1e6
         line = (f"{kind}\t{path}\t→ {restore_hint}\t{mtime}\t{size_mb:.1f}MB")
         if with_hash:
-            line += f"\tsha256={_sha256_file(path)}"
+            try:
+                line += f"\tsha256={_sha256_file(path)}"
+            except OSError as exc:
+                line += f"\tsha256=(不可读: {exc})"
         print(line)
 
     print("--- backup-index（只读索引） ---")
-    located_any = False
+    print("  提示列按当前定位文件生成；重放 undo/experiment-restore 请保持同一 --dir。")
 
     # ── 游戏数据旁（game.ios/data.win 所在目录）──
+    # 提示列与 undo/experiment-restore 的 key/tag 语义对齐（审核席 B P1-1/2/3：
+    # game.ios/data.win ∈ GAME_BACKUP_KEYS；ini → "ini"；snap 行须剥
+    # ".snap." 前缀取 tag——完整文件名会使 restore 拼出双重前缀）
     try:
         game_file = paths.find_game_data_file(dir_override)
-        located_any = True
         gparent = game_file.parent
-        for p in sorted(gparent.glob("game.ios.bak*")) + sorted(gparent.glob("data.win.bak*")):
-            kind = "bak-latest" if p.name.endswith(".bak") else "bak-archive"
-            row(kind, p, f"undo --value {game_file.name}")
-        for p in sorted(gparent.glob("*.snap.*")):
-            row("named-snapshot", p, f"experiment-restore --value {p.name}")
+        undo_key = {".ios": "game.ios", ".win": "data_win"}.get(
+            game_file.suffix.lower(), game_file.name)
+        bak_prefix = game_file.name + ".bak."  # paths.backup_file 归档命名
+        for p in sorted(gparent.glob(f"*{game_file.suffix}.bak*")):
+            if p.name == game_file.name + ".bak":
+                row("bak-latest", p, f"undo --value {undo_key}")
+            else:
+                ts = p.name[len(bak_prefix):]
+                row("bak-archive", p, f"undo --value {undo_key} --backup {ts}")
+        snap_prefix = game_file.name + ".snap."
+        for p in sorted(gparent.glob(f"{snap_prefix}*")):
+            tag = p.name[len(snap_prefix):]
+            row("named-snapshot", p, f"experiment-restore --value {tag}")
         for p in sorted(gparent.glob("*.sandbox")):
             row("workspace-legacy", p, "sandbox-restore")
         ws_root = gparent / ".deterline"
         if ws_root.is_dir():
             for ws in sorted(ws_root.rglob("*")):
                 if ws.is_file() and not ws.name.endswith(".json"):
+                    ws_name = ws.parent.name
                     row("workspace-copy", ws,
-                        f"sandbox-restore --workspace {ws.parent.name} | {_manifest_summary(ws)}")
+                        f"sandbox-restore --workspace {ws_name} | {_manifest_summary(ws)}")
     except FileNotFoundError as e:
         print(f"（游戏数据目录未定位：{e}）")
 
     # ── 存档目录旁 ──
     if save_dir is not None:
-        for base in ("file0", "undertale.ini"):
+        for base, key in (("file0", "file0"), ("undertale.ini", "ini")):
+            bak_prefix = base + ".bak."
             for p in sorted(save_dir.glob(f"{base}.bak*")):
-                kind = "bak-latest" if p.name.endswith(base + ".bak") else "bak-archive"
-                row(kind, p, f"undo --value {base}")
-            for p in sorted(save_dir.glob(f"{base}.snap.*")):
-                row("named-snapshot", p, f"experiment-restore --value {p.name.split('.', 2)[-1]}")
+                if p.name == f"{base}.bak":
+                    row("bak-latest", p, f"undo --value {key}")
+                else:
+                    ts = p.name[len(bak_prefix):]
+                    row("bak-archive", p, f"undo --value {key} --backup {ts}")
+            snap_prefix = base + ".snap."
+            for p in sorted(save_dir.glob(f"{snap_prefix}*")):
+                tag = p.name[len(snap_prefix):]
+                row("named-snapshot", p, f"experiment-restore --value {tag}")
     else:
         print("（存档目录未定位——undo/list-backups 需 --dir）")
 
