@@ -353,15 +353,16 @@ def _build_cjk_trigger_csx(room_name: str, obj_name: str, x: int, y: int,
         raise RuntimeError("text 含真实换行——多行对话请用 writer 硬换行标记 & 或拆多条触发块")
     if "\t" in text:
         raise RuntimeError("text 含制表符——writer 无此字形，请改空格")
-    # 终止符/页分隔（阶段 1.5 扩展：至多一个中部 "/%%" = 两页消息表）
-    terminator = ""
+    # 页分隔（阶段 1.5 扩展：至多一个中部 "/%%" = 两页消息表）
     if text.endswith("/%%"):
-        text, terminator = text[:-3], "/%%"
+        text = text[:-3]
     pages = text.split("/%%")
     if len(pages) > 2:
         raise RuntimeError("text 含多于一个页分隔 \"/%%\"（当前生成器支持至多两页）"
                            "——更多页请拆多条触发块")
     for pi, page in enumerate(pages):
+        if not page.strip():
+            raise RuntimeError(f"text 第 {pi + 1} 页为空（页分隔 \"/%%\" 前后需有内容）")
         for ch in ("/", "%"):
             if ch in page:
                 raise RuntimeError(f"text 第 {pi + 1} 页含 writer 专用字符 {ch!r}"

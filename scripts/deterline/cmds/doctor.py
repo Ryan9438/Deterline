@@ -10,7 +10,7 @@
 """
 
 import configparser
-import json as _json
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -38,11 +38,11 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None) -> None:
           str(save_dir) if save_dir is not None else "")
 
     # 1. rooms.json（路径复用 rooms_data 单点，不新增模块路径位点）
-    rooms_json = rooms_data._rooms_json_path()
+    rooms_json = rooms_data._rooms_json_path()  # noqa: 私有复用（同包）
     try:
         # 直接 json.load 判定（rooms_data._load_rooms 会把损坏吞成空表，
         # 复核 P2-1：损坏文件误报"✓ 0 条"）；解析成功后再经 _load_rooms 供后续
-        raw = _json.loads(rooms_json.read_text(encoding="utf-8")) if rooms_json.exists() else {}
+        raw = json.loads(rooms_json.read_text(encoding="utf-8")) if rooms_json.exists() else {}
         n = len(raw) if isinstance(raw, dict) else 0
         check(f"rooms.json 可解析（{n} 条）", bool(raw), "" if raw else "文件缺失或内容为空")
         rooms_data._load_rooms()
@@ -122,8 +122,7 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None) -> None:
     # 7. CJK 字形表
     glyphs = _ROOT / "build" / "font_cjk" / "glyphs.json"
     try:
-        import json as _json
-        n = len(_json.loads(glyphs.read_text(encoding="utf-8")))
+        n = len(json.loads(glyphs.read_text(encoding="utf-8")))
         check(f"CJK 字形表（{n} 码点）", True,
               "full:false——二级字需 --full 重建（cjk-check 预检）")
     except FileNotFoundError:

@@ -381,3 +381,26 @@ class TestSaveFixtures(unittest.TestCase):
         (d / "file0").write_bytes(fixtures_save.serialize_file0_legacy())
         self.assertEqual(len(fixtures_save.read_file0_numbers(d / "file0")),
                          len(fixtures_save.SAMPLE_FILE0_NUMBERS))
+
+
+class TestDoctorPerItemChecks(_SaveDirBase):
+    """审核席 B P2-1：doctor 的单项检查必须有 ✓/✗ 断言（rooms 恒 ✗ 曾被
+    吞异常掩盖）。"""
+
+    def test_rooms_check_passes_on_valid_repo(self):
+        import io as _io
+        import contextlib as _ctxlib
+        (self.save_dir / "undertale.ini").write_text("[General]\nLove=1\n", encoding="utf-8")
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE")
+        buf = _io.StringIO()
+        err = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file", return_value=game):
+            with _ctxlib.redirect_stdout(buf), _ctxlib.redirect_stderr(err):
+                with self.assertRaises(SystemExit) as cm:
+                    ms.cmd_doctor(self.save_dir)
+        out = buf.getvalue()
+        # rooms.json 项必须 ✓（解析自仓库真实 rooms.json）
+        self.assertIn("✓ rooms.json", out)
+        self.assertNotIn("✗ rooms.json", out)
+        self.assertIn(cm.exception.code, (0, 1))

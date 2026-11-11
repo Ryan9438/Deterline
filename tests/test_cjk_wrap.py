@@ -161,3 +161,11 @@ class TestTwoPageTrigger(unittest.TestCase):
             "* 第一页内容比较长需要折行处理测试/%%* 第二页也要折行", wrap=True)
         self.assertIn("global.msg[0]", csx)
         self.assertIn("global.msg[1]", csx)
+        # 折行独立性：页1 的 & 硬换行不得渗入页2（每页独立折行）
+        import re as _re
+        m0 = _re.search(r'global\.msg\[0\] = \\"([^"]*)\\"', csx)
+        m1 = _re.search(r'global\.msg\[1\] = \\"([^"]*)\\"', csx)
+        self.assertIsNotNone(m0)
+        self.assertIsNotNone(m1)
+        self.assertIn("&", m0.group(1), "页1 长文本折行应产生 & 硬换行")
+        self.assertNotIn("&", m1.group(1), "页2 短文本不应有硬换行（独立性）")
