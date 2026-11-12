@@ -1,6 +1,6 @@
 
 string bgName = "bg_golden";
-string pngPath = @"/private/tmp/golden_test/bg_golden.png";
+string pngPath = @"<GOLDEN_TMP>/bg_golden.png";
 
 var existing = Data.Backgrounds.ByName(bgName);
 if (existing != null) {

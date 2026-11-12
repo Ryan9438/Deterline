@@ -44,16 +44,25 @@ def _golden_path(name: str) -> Path:
     return GOLDEN_DIR / f"{name}.csx"
 
 
+def _canonical_tmp(text: str) -> str:
+    """平台无关化（CI 修正）：/tmp 在 macOS resolve 成 /private/tmp、Linux
+    保持 /tmp——bg 资产 CSX 内嵌 resolve 后的真实路径，golden 只钉占位符。
+    先替换长路径再替换短路径（前者包含后者）。"""
+    real = str(Path("/tmp/golden_test").resolve())
+    return (text.replace(real, "<GOLDEN_TMP>")
+                .replace("/tmp/golden_test", "<GOLDEN_TMP>"))
+
+
 def _check_golden(testcase, name: str, captured):
     text = "\n=== CALL ===\n".join(captured)
     path = _golden_path(name)
     if os.environ.get("GOLDEN_UPDATE") == "1":
         GOLDEN_DIR.mkdir(exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        path.write_text(_canonical_tmp(text), encoding="utf-8")
     testcase.assertTrue(
         path.exists(), f"golden 缺失: {path}（跑 GOLDEN_UPDATE=1 生成）")
     expected = path.read_text(encoding="utf-8")
-    testcase.assertEqual(expected, text,
+    testcase.assertEqual(_canonical_tmp(expected), _canonical_tmp(text),
                          f"CSX 与 golden 不一致: {name}（有意变更则 GOLDEN_UPDATE=1 重录）")
 
 

@@ -23,7 +23,7 @@ ScriptMessage("EXISTS:" + (bg != null));
 === CALL ===
 
 string bgName = "bg_solid_0000ff";
-string pngPath = @"/private/tmp/golden_test/det_solid_fixed.png";
+string pngPath = @"<GOLDEN_TMP>/det_solid_fixed.png";
 
 var existing = Data.Backgrounds.ByName(bgName);
 if (existing != null) {
