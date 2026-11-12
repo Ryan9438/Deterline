@@ -1,0 +1,31 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    # 03 手册 2.5 首切片：无游戏资产的单元测试 + 文档生成检查（零敏感输入）
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      # 测试内 subprocess 全部 mock；仅需 _find_utmt_cli() 能解析到存在的路径
+      UTMT_CLI: /tmp/deterline-utmt-placeholder.dll
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # golden 由 3.14 生成（argparse 换行行为随解释器版本变化）
+          python-version: "3.14"
+      - name: 字体渲染测试依赖
+        run: python3 -m pip install --disable-pip-version-check pillow
+      - name: UTMT CLI 占位
+        run: touch "$UTMT_CLI"
+      - name: 全量单测（无游戏资产）
+        run: python3 -m unittest discover -s tests -v
+      - name: 文档生成检查
+        run: python3 tools/gen_docs.py --check
+      - name: diff 卫生
+        run: git diff --check && git diff --cached --check
