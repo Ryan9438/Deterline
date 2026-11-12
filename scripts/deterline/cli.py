@@ -134,7 +134,7 @@ def main():
                         help="INI 节名 (默认: General)")
     parser.add_argument("--file", choices=["ini", "file0", "data_win"], default="ini",
                         help="目标文件 (默认: ini)")
-    parser.add_argument("--dir", help="手动指定存档目录或游戏数据文件路径")
+    parser.add_argument("--dir", help="手动指定存档目录或游戏数据文件路径 (backup-index/recovery-scan 亦接受含 game.ios/data.win 的目录)")
     parser.add_argument("--limit", type=int, default=30,
                         help="最大显示条数 (默认: 30)")
     parser.add_argument("--offset", type=int, default=0,
@@ -191,7 +191,7 @@ def main():
     parser.add_argument("--show-diff", action="store_true",
                         help="替换代码时显示新旧 diff (replace-code 用)")
     parser.add_argument("--json", action="store_true",
-                        help="以 JSON 输出结构化结果 (backup-index 用; export-sprite 为附加元数据)")
+                        help="以 JSON 输出结构化结果 (backup-index/recovery-scan 用; export-sprite 为附加元数据)")
     parser.add_argument("--hue-from", type=str, default=None,
                         help="色相范围 \"min-max\" (colorize-sprite 用, 如 \"180-260\")")
     parser.add_argument("--hue-to", type=float, default=None,

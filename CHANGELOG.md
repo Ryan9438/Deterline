@@ -1,5 +1,32 @@
 # Changelog
 
+## v2.4.3 — 2026-11-13（阶段 2.2：恢复完整性——可恢复运行记录 + recovery-scan）
+
+**性质：03 手册 §6 阶段 2.2 交付；新增 `recovery-scan` 命令（88 命令）；无破坏性接口变化。**
+
+### 2.2a 故障矩阵（7f64ac7）
+
+- 五类故障全部有可复现测试：备份失败 / 后续替换失败（含回滚不完整保留恢复副本）/ 基线漂移 ×3 / 双进程竞争（真并发恰一胜者 + flock 移除变异敏感化）/ 工作区产物与清单不匹配（副本 sha ≠ 清单末条 → 拒绝应用，interlock 入 check_baseline）。
+- 畸形 manifest 容错：history 为 dict/int/None、副本丢失、空 sha 一律不逃逸（跳过或明确报错）。
+
+### 2.2b 可恢复运行记录（journal）
+
+- 每次多文件提交前在首个目标旁 `.deterline/journal/<id>.json` 落盘（mkstemp+fsync+os.replace 原子写）：预期目标 / before-after sha256 / staged 与回滚副本路径 / 状态机 pending→committing→(删除 | aborted-clean | aborted-partial)。
+- 成功后整目录摘除；失败路径 aborted-* 保留（含 error 聚合）；**SIGKILL 保留——216 次随机 kill + 3 个确定性窗口实验 0 违例**（目标内容恒 ∈ {before, after}，journal 全部可解析）。
+- 提交前检测同名目标未完结运行记录 → 拒绝并指引 recovery-scan（03"再次运行能识别"）。
+- 已知局限：跨目录混合提交崩溃后，只动另一目录的新提交看不到该记录（06 §4 登记；scan 三处兜底）。
+
+### 2.2c recovery-scan（新命令）
+
+- 只读扫描未完结记录 + 孤儿暂存 → 中断窗口分类（未开始 / 已全部写入 / 替换中断 / 存在外部修改 / aborted / 损坏 / 未知 state）+ 可预览恢复指引（interrupted 与 aborted-partial 档逐目标给出回滚或完成的 cp 命令）。
+- `--json`（deterline.recovery-scan/v1）；退出码 0/1/2（2=双侧定位失败，对齐 backup-index）；工作区层 journal（sandbox 默认写路径）一并扫描；孤儿判定 resolve 归一（/tmp vs /private/tmp 不误报恢复副本）。
+- 零写盘零 UTMT 零恢复执行——recovery-apply/clean（执行恢复/清理）留待下批。
+
+### 测试与文档
+
+- 336/336 绿（+28）；双席交叉审核 2 轮全清偿（orphan symlink 误报、工作区层 scan 盲区、pending 先落盘不变量测试、content sha 缓存等）。
+- 06-写入路径盘点 §1 补 journal 写入位点 #15、§4 风险表更新；help golden 重录（--json/--dir 文案）。
+
 ## v2.4.2 — 2026-11-12（并发审核修复：smoke 安全面 + backup-index 可用性 + 文档诚实性）
 
 **性质：对 v2.4.1/024e698 的独立交叉审核（4 席并发）修复批次；无新功能面。**

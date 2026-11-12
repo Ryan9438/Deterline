@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 from . import config, file0, inifile, paths, sandbox, state, transactions, utmt
-from .cmds import cjk, code, dialogue, doctor, door, npc, room, save_cmds, sprite, verify
+from .cmds import cjk, code, dialogue, doctor, door, npc, recovery, room, save_cmds, sprite, verify
 
 
 def _backup_index(args, parser, target):
@@ -20,6 +20,22 @@ def _backup_index(args, parser, target):
         json_out=bool(getattr(args, "json", False)))
     if code:
         sys.exit(code)  # 两侧定位均失败 = 2（可区分空索引与路径错误）
+
+
+def _recovery_scan(args, parser, target):
+    # --dir 语义与 backup-index 一致：文件/目录均接受，游戏侧用
+    # resolve_game_data_file（recovery 内部调用），存档侧 find_save_dir。
+    json_out = bool(getattr(args, "json", False))
+    try:
+        save_dir = paths.find_save_dir(args.dir)
+    except FileNotFoundError as exc:
+        # --json 模式警告进 JSON warnings（stdout 纯度），不进 stderr（B P3-1）
+        if not json_out:
+            print(f"（存档目录未定位：{exc}）", file=sys.stderr)
+        save_dir = None
+    code = recovery.cmd_recovery_scan(save_dir, args.dir, json_out=json_out)
+    if code:
+        sys.exit(code)  # 1 = 发现未完结运行记录/孤儿暂存；2 = 两侧定位均失败
 
 
 def _doctor(args, parser, target):
@@ -764,6 +780,7 @@ COMMANDS = {
     "cjk-trigger": {"data_win": _cjk_trigger_data_win},
     "cjk-check": {"data_win": _cjk_check_data_win},
     "doctor": {"any": _doctor},
+    "recovery-scan": {"any": _recovery_scan},
     "md5": {"any": _md5},
 }
 

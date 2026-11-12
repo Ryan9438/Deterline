@@ -1,7 +1,10 @@
 """Failure-path tests runnable with the standard library."""
 
+import json
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -9,6 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from deterline import file0, sandbox, transactions
+from deterline.cmds import recovery
 
 
 class TransactionTests(unittest.TestCase):
@@ -269,6 +273,393 @@ class RecoveryMatrixTests(unittest.TestCase):
             copy.unlink()
             with self.assertRaisesRegex(RuntimeError, "副本已丢失"):
                 sandbox.check_baseline(game, copy)
+
+
+def _redirect(buffer):
+    import contextlib
+    return contextlib.redirect_stdout(buffer)
+
+
+class TestRunJournal(unittest.TestCase):
+    """03 §2.2b：可恢复运行记录（journal）生命周期。"""
+
+    def _targets(self, directory):
+        targets = [Path(directory) / f"t{i}.bin" for i in range(3)]
+        for t in targets:
+            t.write_bytes(b"OLD-" + t.name.encode())
+        return targets
+
+    def test_success_removes_journal_and_dirs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            targets = self._targets(directory)
+            transactions.write_many({t: b"NEW" for t in targets})
+            self.assertFalse(transactions.journal_dir_for(targets[0]).exists(),
+                             "成功提交后 journal 目录必须整体摘除")
+
+    def test_baseline_reject_marks_aborted_clean(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "t0.bin"
+            target.write_bytes(b"OLD")
+            plan = transactions.EditPlan(
+                (transactions.FileEdit.prepare(target, b"NEW"),))
+            target.write_bytes(b"EXTERNAL")
+            with self.assertRaisesRegex(RuntimeError, "已变化"):
+                plan.commit()
+            journals = list(transactions.journal_dir_for(target).glob("*.json"))
+            self.assertEqual(len(journals), 1, "失败路径必须保留运行记录")
+            record = json.loads(journals[0].read_text(encoding="utf-8"))
+            self.assertEqual(record["state"], "aborted-clean")
+            self.assertIn("已变化", record["error"])
+
+    def test_rollback_failure_marks_aborted_partial(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = Path(directory) / "a.txt"
+            second = Path(directory) / "b.txt"
+            first.write_bytes(b"ini-old")
+            second.write_bytes(b"f0-old")
+            real_replace = transactions.os.replace
+            state = {"replaced": False}
+
+            def fail_replace(src, dst):
+                if Path(dst) == second.resolve():
+                    raise OSError("injected failure")
+                if Path(dst) == first.resolve():
+                    if state["replaced"]:
+                        raise OSError("rollback failure")
+                    result = real_replace(src, dst)
+                    state["replaced"] = True
+                    return result
+                return real_replace(src, dst)
+
+            with patch("deterline.transactions.os.replace",
+                       side_effect=fail_replace):
+                with self.assertRaisesRegex(RuntimeError, "回滚不完整"):
+                    transactions.write_many({first: b"a-new",
+                                             second: b"b-new"})
+            journals = list(transactions.journal_dir_for(first).glob("*.json"))
+            record = json.loads(journals[0].read_text(encoding="utf-8"))
+            self.assertEqual(record["state"], "aborted-partial")
+            self.assertIn("rollback failure", record["error"],
+                          "error 字段必须记录恢复失败原因（回滚不完整聚合前）")
+            rollback_path = record["targets"][0]["rollback"]
+            self.assertTrue(rollback_path and Path(rollback_path).exists(),
+                            "aborted-partial 记录的恢复副本必须真实存在")
+
+    def test_preview_writes_no_journal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "t0.bin"
+            target.write_bytes(b"OLD")
+            plan = transactions.EditPlan(
+                (transactions.FileEdit.prepare(target, b"NEW"),))
+            plan.preview()
+            self.assertFalse(transactions.journal_dir_for(target).exists(),
+                             "预览零写盘——不得创建运行记录")
+
+    def test_pending_journal_written_before_first_stage(self):
+        """核心不变量（审核席 A P2-3）：首个暂存文件产生前，pending 记录
+        必须已在盘上——否则 staging 窗口的 SIGKILL 完全不可识别。"""
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "t0.bin"
+            target.write_bytes(b"OLD")
+            real_stage = transactions._stage
+            observed = {}
+
+            def spy_stage(stage_target, content, mode):
+                if not observed:
+                    journals = list(transactions.journal_dir_for(
+                        target).glob("*.json"))
+                    self.assertEqual(len(journals), 1,
+                                     "首个 staged 产生前 journal 必须已落盘")
+                    record = json.loads(journals[0].read_text(encoding="utf-8"))
+                    self.assertEqual(record["state"], "pending")
+                    observed["ok"] = True
+                return real_stage(stage_target, content, mode)
+
+            with patch("deterline.transactions._stage",
+                       side_effect=spy_stage):
+                transactions.write_one(target, b"NEW")
+            self.assertTrue(observed, "spy 未被触发（patch 目标错误？）")
+
+    def test_refuses_when_unfinished_journal_exists(self):
+        """再次运行识别（03 §2.2c）：同名目标存在未完结记录 → 拒绝并指引。"""
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "t0.bin"
+            target.write_bytes(b"OLD")
+            journal_root = transactions.journal_dir_for(target)
+            journal_root.mkdir(parents=True)
+            (journal_root / "stale.json").write_text(json.dumps({
+                "schema": transactions.JOURNAL_SCHEMA, "id": "stale",
+                "state": "pending",
+                "targets": [{"path": str(target)}],
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "运行记录"):
+                transactions.write_one(target, b"NEW")
+            self.assertEqual(target.read_bytes(), b"OLD", "拒绝时零写入")
+            (journal_root / "stale.json").unlink()
+            transactions.write_one(target, b"NEW")
+            self.assertEqual(target.read_bytes(), b"NEW")
+
+
+class TestRecoveryScan(unittest.TestCase):
+    """03 §2.2c：recovery-scan 窗口分类（合成 journal，零 UTMT）。"""
+
+    def _scan(self, root, json_out=False):
+        import io as _io
+        import contextlib as _ctxlib
+        buf = _io.StringIO()
+        with _ctxlib.redirect_stdout(buf):
+            code = recovery.cmd_recovery_scan(root, str(root),
+                                              json_out=json_out)
+        return buf.getvalue(), code
+
+    def _write_journal(self, root, jid, state, entries, extra=None):
+        journal_dir = root / ".deterline" / "journal"  # 扫描语义：root 即扫描根
+        journal_dir.mkdir(parents=True, exist_ok=True)
+        record = {"schema": transactions.JOURNAL_SCHEMA, "id": jid,
+                  "state": state, "targets": entries}
+        if extra:
+            record.update(extra)
+        path = journal_dir / f"{jid}.json"
+        path.write_text(json.dumps(record), encoding="utf-8")
+        return path
+
+    def test_no_findings_exit0_and_json_pure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out, code = self._scan(Path(directory))
+            self.assertEqual(code, 0)
+            self.assertIn("无未完结", out)
+            payload_buf, code2 = self._scan(Path(directory), json_out=True)
+            self.assertEqual(code2, 0)
+            payload = json.loads(payload_buf)
+            self.assertEqual(payload["schema"], "deterline.recovery-scan/v1")
+
+    def test_not_started_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "t0.bin"
+            target.write_bytes(b"OLD")
+            staged = root / ".t0.bin.x.new"
+            staged.write_bytes(b"NEW")
+            self._write_journal(root, "j1", "committing", [{
+                "path": str(target),
+                "before": transactions.fingerprint(target),
+                "after": transactions.fingerprint(staged),
+                "rollback": None, "staged": str(staged)}])
+            out, code = self._scan(root)
+            self.assertEqual(code, 1)
+            self.assertIn("目标未被触及", out)
+
+    def test_done_confirm_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "t0.bin"
+            target.write_bytes(b"NEW")
+            self._write_journal(root, "j1", "committing", [{
+                "path": str(target), "before": None,
+                "after": transactions.fingerprint(target),
+                "rollback": None, "staged": None}])
+            out, code = self._scan(root)
+            self.assertEqual(code, 1)
+            self.assertIn("全部目标已写入", out)
+
+    def test_interrupted_window_offers_both_directions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            done = root / "t0.bin"       # 已替换 → 可回滚
+            pending = root / "t1.bin"    # 未替换 → 可完成
+            done.write_bytes(b"NEW0")
+            pending.write_bytes(b"OLD1")
+            rollback_copy = root / ".t0.bin.r.new"
+            rollback_copy.write_bytes(b"OLD0")
+            staged_copy = root / ".t1.bin.s.new"
+            staged_copy.write_bytes(b"NEW1")
+            self._write_journal(root, "j1", "committing", [
+                {"path": str(done), "before": "00",
+                 "after": transactions.fingerprint(done),
+                 "rollback": str(rollback_copy), "staged": None},
+                {"path": str(pending), "before": transactions.fingerprint(pending),
+                 "after": transactions.fingerprint(staged_copy),
+                 "rollback": None, "staged": str(staged_copy)}])
+            out, code = self._scan(root)
+            self.assertEqual(code, 1)
+            self.assertIn("替换中断", out)
+            self.assertIn("回滚该目标", out)
+            self.assertIn("完成该目标", out)
+
+    def test_suspicious_external_modification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "t0.bin"
+            target.write_bytes(b"NEITHER")
+            self._write_journal(root, "j1", "committing", [{
+                "path": str(target), "before": "aa", "after": "bb",
+                "rollback": None, "staged": None}])
+            out, code = self._scan(root)
+            self.assertEqual(code, 1)
+            self.assertIn("外部修改", out)
+
+    def test_corrupt_and_alien_journals_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            journal_dir = root / ".deterline" / "journal"
+            journal_dir.mkdir(parents=True, exist_ok=True)
+            (journal_dir / "bad.json").write_text("{not json", encoding="utf-8")
+            (journal_dir / "alien.json").write_text(
+                json.dumps({"schema": "other/v9"}), encoding="utf-8")
+            out, code = self._scan(root)
+            self.assertEqual(code, 1)
+            self.assertIn("corrupt-journal", out)
+
+    def test_orphan_staged_listed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            orphan = root / ".mystery.bin.xyz.new"
+            orphan.write_bytes(b"junk")
+            journal_tmp = root / ".journal.tmp.new"   # journal 自身暂存，忽略
+            journal_tmp.write_bytes(b"x")
+            out, code = self._scan(root)
+            self.assertEqual(code, 1)
+            self.assertIn("orphan-staged", out)
+            self.assertIn("mystery", out)
+            self.assertNotIn("journal.tmp", out)
+
+    def test_both_locations_failed_exit2(self):
+        """审核席 B P3-2：双侧定位失败不得报"干净"（对齐 backup-index=2）。"""
+        import io as _io
+        import contextlib as _ctxlib
+        buf = _io.StringIO()
+        err = _io.StringIO()
+        with _ctxlib.redirect_stdout(buf), _ctxlib.redirect_stderr(err):
+            code = recovery.cmd_recovery_scan(
+                None, "/tmp/dl_missing_dir_9f3c1")
+        self.assertEqual(code, 2)
+        self.assertIn("未扫描任何目录", buf.getvalue())
+
+    def test_aborted_partial_offers_rollback_cp(self):
+        """审核席 A P3-1/B P3-4：aborted-partial 且回滚副本在盘 → 给 cp 出口。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "t0.bin"
+            target.write_bytes(b"NEW0")   # 已替换
+            rollback_copy = root / ".t0.bin.r.new"
+            rollback_copy.write_bytes(b"OLD0")
+            self._write_journal(root, "j1", "aborted-partial", [{
+                "path": str(target), "before": "aa",
+                "after": transactions.fingerprint(target),
+                "rollback": str(rollback_copy), "staged": None}],
+                extra={"error": "a.txt: 恢复副本 … (rollback failure)"})
+            out, code = self._scan(root)
+            self.assertEqual(code, 1)
+            self.assertIn("回滚该目标: cp", out)
+
+    def test_empty_targets_treated_as_corrupt(self):
+        """审核席 A P3-3：targets 缺失/空的畸形记录不得误判 done-confirm。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_journal(root, "j1", "committing", [])
+            out, code = self._scan(root)
+            self.assertEqual(code, 1)
+            self.assertIn("corrupt-journal", out)
+
+    def test_unknown_state_flagged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "t0.bin"
+            target.write_bytes(b"OLD")
+            self._write_journal(root, "j1", "weird-state", [{
+                "path": str(target),
+                "before": transactions.fingerprint(target),
+                "after": None, "rollback": None, "staged": None}])
+            out, code = self._scan(root)
+            self.assertEqual(code, 1)
+            self.assertIn("state 字段不在已知状态机内", out)
+
+
+class TestSigkillRecovery(unittest.TestCase):
+    """03 §2.2c：子进程强制中止中断点 → 再次运行识别未完成操作。
+
+    确定性设计：子进程在替换第二个目标前悬挂（patch os.replace），
+    父进程轮询到「journal=committing 且第 1 目标已替换」后 kill -9 ——
+    精确制造"部分替换"窗口，不靠时运。"""
+
+    CHILD_SCRIPT = """
+import sys, time
+from pathlib import Path
+sys.path.insert(0, r"{scripts}")
+from deterline import transactions
+root = Path(sys.argv[1])
+targets = [root / f"t{{i}}.bin" for i in range(3)]
+for t in targets:
+    t.write_bytes(b"OLD-" + t.name.encode())
+real_replace = transactions.os.replace
+
+def slow_replace(src, dst):
+    if Path(dst).name == "t1.bin":
+        time.sleep(30)  # 悬挂点：父进程必须在此窗口内 kill
+    return real_replace(src, dst)
+
+transactions.os.replace = slow_replace
+transactions.write_many({{t: (b"NEW-" + t.name.encode()) for t in targets}})
+"""
+
+    def test_kill_during_replace_is_identified(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = str((Path(__file__).resolve().parent.parent / "scripts"))
+            script = root / "child.py"
+            script.write_text(self.CHILD_SCRIPT.format(scripts=scripts),
+                              encoding="utf-8")
+            proc = subprocess.Popen([sys.executable, str(script), str(root)],
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+            try:
+                journal = None
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    journals = list(transactions.journal_dir_for(
+                        root / "t0.bin").glob("*.json"))
+                    if journals:
+                        record = json.loads(
+                            journals[0].read_text(encoding="utf-8"))
+                        if (record.get("state") == "committing"
+                                and (root / "t0.bin").read_bytes() == b"NEW-t0.bin"):
+                            journal = journals[0]
+                            break
+                    time.sleep(0.05)
+                self.assertIsNotNone(journal,
+                                     "20s 内未到达部分替换窗口（子进程卡死？）")
+                proc.kill()
+                proc.wait(timeout=10)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+
+            self.assertTrue(journal.exists(),
+                            "SIGKILL 后运行记录必须幸存（原子写 + fsync）")
+            payload, code = self._scan_json(root)
+            self.assertEqual(code, 1)
+            self.assertFalse(any(f["kind"] == "orphan-staged"
+                                 for f in payload["findings"]),
+                             "journal 引用的副本不得被误报为孤儿"
+                             "（/var 与 /private/var 拼写差，A/B P2-1）")
+            finding = next(f for f in payload["findings"]
+                           if f["kind"] == "run-journal")
+            self.assertEqual(finding["level"], "interrupted")
+            classes = {Path(t["path"]).name: t["class"]
+                       for t in finding["targets"]}
+            self.assertEqual(classes["t0.bin"], "after")
+            self.assertEqual(classes["t1.bin"], "before")
+            self.assertEqual(classes["t2.bin"], "before")
+            self.assertTrue(any("回滚该目标" in a for a in finding["actions"]),
+                            "已替换目标必须给出回滚指引（回滚副本幸存）")
+
+    def _scan_json(self, root):
+        import io as _io
+        import contextlib as _ctxlib
+        buf = _io.StringIO()
+        with _ctxlib.redirect_stdout(buf):
+            code = recovery.cmd_recovery_scan(root, str(root), json_out=True)
+        return json.loads(buf.getvalue()), code
 
 
 if __name__ == "__main__":

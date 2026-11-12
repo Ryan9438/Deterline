@@ -2,10 +2,12 @@
 
 import difflib
 import hashlib
+import json
 import os
 import shutil
 import stat
 import tempfile
+import time
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +15,47 @@ from pathlib import Path
 from . import paths, state
 
 Payload = bytes | Path
+
+# 运行记录（03 §2.2 可恢复 journal）：提交前落盘、成功后删除、SIGKILL 保留。
+# 状态机 pending → committing →（成功=删除 | aborted-clean | aborted-partial）。
+JOURNAL_SCHEMA = "deterline.run-journal/v1"
+JOURNAL_STATES = {"pending", "committing", "aborted-clean", "aborted-partial"}
+
+
+def journal_dir_for(target: Path) -> Path:
+    """运行记录目录：首个目标旁 `.deterline/journal/`（与工作区根同层）。"""
+    return target.parent / ".deterline" / "journal"
+
+
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _content_sha(content: Payload) -> str | None:
+    if isinstance(content, bytes):
+        return hashlib.sha256(content).hexdigest()
+    return fingerprint(content)
+
+
+def _write_json_atomic(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".journal.", suffix=".new", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(record, stream, ensure_ascii=False, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _rmdir_if_empty(path: Path) -> None:
+    try:
+        path.rmdir()
+    except OSError:
+        pass
 
 
 def fingerprint(path: Path) -> str | None:
@@ -118,26 +161,115 @@ class EditPlan:
                 locks.enter_context(_target_lock(target))
             self._commit_locked()
 
+    def _refuse_unfinished_journals(self, own_targets: set[Path]) -> None:
+        """再次运行识别未完结操作（03 §2.2）：同名目标存在未完结运行记录时
+        拒绝提交，指引 recovery-scan。
+        已知局限：运行记录落在该次提交首个目标的目录旁——跨目录混合提交
+        （如 game+ini）崩溃后，只动 ini 的新提交看不到那份记录；recovery-scan
+        会同时扫描 game/save 两侧目录兜底。"""
+        own_paths = {str(Path(t).resolve()) for t in own_targets}
+        roots = []
+        for target in own_targets:
+            root = journal_dir_for(target)
+            if root not in roots:
+                roots.append(root)
+        for journal_root in roots:
+            for path in sorted(journal_root.glob("*.json")):
+                try:
+                    record = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue  # 损坏记录交给 recovery-scan 报告，不在提交路径阻塞
+                if not isinstance(record, dict) or record.get("schema") != JOURNAL_SCHEMA:
+                    continue
+                if record.get("state") not in JOURNAL_STATES:
+                    continue
+                targets = record.get("targets") or []
+                overlap = any(
+                    isinstance(t, dict) and t.get("path")
+                    and str(Path(t["path"]).resolve()) in own_paths
+                    for t in targets)
+                if overlap:
+                    raise RuntimeError(
+                        f"检测到未完结的运行记录: {path}"
+                        f"（state={record.get('state')}）——先运行 recovery-scan "
+                        "查看可预览的恢复方式并处理，再重试本次写入")
+
+    def _journal_record(self, journal_id: str, created: str, state: str,
+                        staged: dict, rollback: dict, content_shas: dict,
+                        error: str | None = None) -> dict:
+        record = {
+            "schema": JOURNAL_SCHEMA,
+            "id": journal_id,
+            "state": state,
+            "pid": os.getpid(),
+            "created": created,
+            "updated": _now_iso(),
+            "targets": [{
+                "path": str(edit.target),
+                "before": edit.baseline,
+                "after": content_shas.get(edit.target),
+                "staged": (str(staged[edit.target])
+                           if edit.target in staged else None),
+                "rollback": (str(rollback[edit.target])
+                             if edit.target in rollback else None),
+                "backup": edit.backup,
+            } for edit in self.edits],
+        }
+        if error:
+            record["error"] = error
+        return record
+
+    def _journal_update(self, path: Path, journal_id: str, created: str,
+                        state: str, staged: dict, rollback: dict,
+                        content_shas: dict, error: str | None = None) -> None:
+        _write_json_atomic(path, self._journal_record(
+            journal_id, created, state, staged, rollback, content_shas, error))
+
     def _commit_locked(self) -> None:
         staged: dict[Path, Path] = {}
         rollback: dict[Path, Path] = {}
         completed: list[Path] = []
         preserve: set[Path] = set()
+        journal_path: Path | None = None
+        journal_id = (f"{time.strftime('%Y%m%d_%H%M%S')}"
+                      f"_{os.getpid()}_{os.urandom(3).hex()}")
+        created = _now_iso()
+        if not self.edits:
+            return  # 空方案（如 set-derived 无实际改动）：无目标即无记录
+        # 一次计算内容哈希，pending/committing/aborted-* 共享（B P3-7：
+        # Path 载荷 250MB 级时避免每次 update 全量重哈希）
+        content_shas = {edit.target: _content_sha(edit.content)
+                        for edit in self.edits}
         try:
-            for edit in self.edits:
-                target = edit.target
-                self._check_baseline(edit)
-                exists = edit.baseline is not None
-                mode = stat.S_IMODE(target.stat().st_mode) if exists else None
-                staged[target] = _stage(target, edit.content, mode)
-                if exists:
-                    rollback[target] = _stage(target, target, mode)
-                    if fingerprint(rollback[target]) != edit.baseline:
-                        raise RuntimeError(f"生成回滚副本时文件已变化: {target}")
-            for edit in self.edits:
-                self._check_baseline(edit)
-                if edit.backup and edit.baseline is not None:
-                    paths.backup_file(edit.target, required=True)
+            self._refuse_unfinished_journals({e.target for e in self.edits})
+            journal_path = (journal_dir_for(self.edits[0].target)
+                            / f"{journal_id}.json")
+            self._journal_update(journal_path, journal_id, created, "pending",
+                                 staged, rollback, content_shas)
+            try:
+                for edit in self.edits:
+                    target = edit.target
+                    self._check_baseline(edit)
+                    exists = edit.baseline is not None
+                    mode = stat.S_IMODE(target.stat().st_mode) if exists else None
+                    staged[target] = _stage(target, edit.content, mode)
+                    if exists:
+                        rollback[target] = _stage(target, target, mode)
+                        if fingerprint(rollback[target]) != edit.baseline:
+                            raise RuntimeError(f"生成回滚副本时文件已变化: {target}")
+                for edit in self.edits:
+                    self._check_baseline(edit)
+                    if edit.backup and edit.baseline is not None:
+                        paths.backup_file(edit.target, required=True)
+            except BaseException as failure:
+                # 暂存/备份阶段失败：目标零替换，回滚语义已由 finally 完成
+                # （staged/rollback 暂存删除）——记录 aborted-clean 供 scan 归类
+                self._journal_update(journal_path, journal_id, created,
+                                     "aborted-clean", staged, rollback,
+                                     content_shas, error=str(failure))
+                raise
+            self._journal_update(journal_path, journal_id, created,
+                                 "committing", staged, rollback, content_shas)
             try:
                 for edit in self.edits:
                     self._check_baseline(edit)
@@ -157,6 +289,13 @@ class EditPlan:
                             recovery_errors.append(f"{target}: 恢复副本 {rollback[target]} ({exc})")
                         else:
                             recovery_errors.append(f"{target}: 删除本次新建文件失败 ({exc})")
+                journal_state = ("aborted-partial" if recovery_errors
+                                 else "aborted-clean")
+                self._journal_update(journal_path, journal_id, created,
+                                     journal_state, staged, rollback,
+                                     content_shas,
+                                     error="; ".join(recovery_errors)
+                                     or str(failure))
                 if recovery_errors:
                     raise RuntimeError("写入失败且回滚不完整: " + "; ".join(recovery_errors)) from failure
                 raise
@@ -164,6 +303,12 @@ class EditPlan:
             for temporary in (*staged.values(), *rollback.values()):
                 if temporary not in preserve:
                     temporary.unlink(missing_ok=True)
+        # 全部目标替换成功：记录使命完成（删除前记录已在盘上——SIGKILL 窗口
+        # 只会留下"已全部写入"的记录，scan 据此给确认清理指引）
+        if journal_path is not None:
+            journal_path.unlink(missing_ok=True)
+            _rmdir_if_empty(journal_path.parent)
+            _rmdir_if_empty(journal_path.parent.parent)  # .deterline 空则摘除
 
     @staticmethod
     def _check_baseline(edit: FileEdit) -> None:

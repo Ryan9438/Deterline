@@ -86,6 +86,26 @@ def find_game_data_file(override: str | None = None) -> Path:
     )
 
 
+def resolve_game_data_file(override: str | None = None) -> Path:
+    """--dir 兼容文件与目录两种输入：文件直用；目录内探测 game.ios/data.win。
+
+    显式 override 无效时**不得回退默认定位**（否则会把真实 Steam 安装当成
+    操作对象——backup-index/recovery-scan 共用语义）。
+    """
+    if override:
+        p = Path(override).expanduser()
+        if p.is_file():
+            return p
+        if p.is_dir():
+            for name in ("game.ios", "data.win"):
+                candidate = p / name
+                if candidate.is_file():
+                    return candidate
+            raise FileNotFoundError(f"目录内未找到 game.ios/data.win: {p}")
+        raise FileNotFoundError(f"路径不存在: {p}")
+    return find_game_data_file()
+
+
 def backup_file(path: Path, *, required: bool = False) -> None:
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     latest = path.with_suffix(path.suffix + ".bak")
@@ -93,7 +113,11 @@ def backup_file(path: Path, *, required: bool = False) -> None:
     for backup in (archive, latest):
         temporary = None
         try:
-            with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".new", delete=False) as stream:
+            # 前导点 + 目标名前缀：SIGKILL 残留可被 recovery-scan 的孤儿
+            # 扫描（.{name}.*.new）识别，不产生 tmpXXXX.new 盲区（B P3-5）
+            with tempfile.NamedTemporaryFile(
+                    dir=path.parent, prefix=f".{path.name}.",
+                    suffix=".new", delete=False) as stream:
                 temporary = Path(stream.name)
             shutil.copy2(path, temporary)
             with temporary.open("rb") as stream:

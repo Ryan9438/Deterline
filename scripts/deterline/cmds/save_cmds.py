@@ -444,23 +444,7 @@ def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
         print(line)
 
     def resolve_game_file() -> Path:
-        """--dir 既可能是游戏文件、也可能是含游戏文件的目录（P2-2）。
-
-        显式 --dir 无效时**不得回退默认定位**（否则会把真实 Steam 目录
-        当成索引对象——审核席 D P1-2 的同型风险）。
-        """
-        if dir_override:
-            p = Path(dir_override).expanduser()
-            if p.is_file():
-                return p
-            if p.is_dir():
-                for name in ("game.ios", "data.win"):
-                    candidate = p / name
-                    if candidate.is_file():
-                        return candidate
-                raise FileNotFoundError(f"目录内未找到 game.ios/data.win: {p}")
-            raise FileNotFoundError(f"路径不存在: {p}")
-        return paths.find_game_data_file()
+        return paths.resolve_game_data_file(dir_override)
 
     game_file: Path | None = None
     gparent: Path | None = None

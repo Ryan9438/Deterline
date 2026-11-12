@@ -12,4 +12,4 @@ O2 拆包（研讨会2/01 §2.1）：scripts/modify_save.py 逐步拆入本包�
 __version__ 单点：test_docs_lint 优先读本文件（O2-step0 地雷 #3）。
 """
 
-__version__ = "2.4.2"
+__version__ = "2.4.3"
