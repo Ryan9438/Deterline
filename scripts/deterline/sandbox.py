@@ -68,6 +68,25 @@ def check_baseline(game_file: Path, copy: Path) -> str:
         raise RuntimeError("工作区记录指向其他游戏文件")
     if not isinstance(expected, str) or transactions.fingerprint(game_file) != expected:
         raise RuntimeError("真实游戏文件在创建沙箱后已变化，已拒绝覆盖；请创建新工作区。")
+    # 工作区产物与清单不匹配（03 §2.2）：副本内容 ≠ 清单末条 sha → 副本被
+    # 外部改动过，应用它会静默带入被篡改内容——拒绝（record_edit 每次成功
+    # 编辑都会追加末条，正常流程恒一致；无 history 的新建工作区跳过）。
+    # history 畸形（dict/int 等）一律按"无记录"跳过——崩溃留给损坏分支，不逃逸。
+    raw_history = record.get("history")
+    history = raw_history if isinstance(raw_history, list) else []
+    if history:
+        last_sha = (history[-1].get("sha256")
+                    if isinstance(history[-1], dict) else None)
+        if isinstance(last_sha, str) and last_sha:
+            copy_sha = transactions.fingerprint(copy)
+            if copy_sha is None:
+                raise RuntimeError(
+                    "工作区副本已丢失——请用 --workspace 重建工作区。")
+            if copy_sha != last_sha:
+                raise RuntimeError(
+                    "工作区内容与清单末条记录不符——副本可能被外部修改，已拒绝应用"
+                    f"（记录 {last_sha[:12]}… / 实际 {copy_sha[:12]}…）"
+                    "。如确认副本内容可信，请重建工作区；勿手工覆盖真实文件。")
     return expected
 
 
