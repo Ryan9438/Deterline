@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.4.4 — 2026-11-13（阶段 2.4：保留策略预览 backup-prune）
+
+**性质：03 手册 §6 阶段 2.4 最小切片；新增 `backup-prune` 命令（89 命令）；只读零删除。**
+
+- `backup-prune`（只读零删除）：占盘统计 / sha256 内容重复分组 / 超窗归档清理建议（精确 rm 命令 + 可回收字节 + undo 失效提示）；`--keep-archives N`（默认 3，<1 拒绝）；`--json`（deterline.backup-prune/v1）；退出码 0/2。
+- 保留条件：bak-latest / 命名快照 / 工作区副本与 legacy / journal 引用文件（活动恢复记录，v2.4.3 journal 保护）/ 每目标最近 N 份归档（system_information_962/963 归档同受窗口管理）。
+- 损坏 journal → 显式警告（保护可能不完整；执行清理的前置条件 = recovery-scan 无 corrupt）。
+- 重构：backup-index 抽出共用扫描层 `_collect_backup_entries`（prune/index 同源；审核席 A 逐字节 diff 等价）+ transactions `journal_roots_for` / `journal_referenced_files` 公共助手（recovery 同源）。
+- 双席交叉审核清偿：`--dir "None"` 提示回归（save_dir=None 时省略 dir 键 + 防御性判值）、`--keep-archives 0` 静默吞参数、kept_shas 死代码与 bak-latest 白哈希、重复组可回收口径（只计删除集）、exit-2 JSON 键统一、rm 行 shell 特殊字符防护、夹具死分支、sanity 断言改 assertLess。
+- 真实数据预演（B 席只读）：59 项 / 1194 MB，唯一建议项与保留项及在用 game.ios 三者 md5 相同（删除零信息损失）；0.21s 完成；零写入。
+- 344/344 测试绿（+8）；zero-deletion 断言钉死（预览后目录快照逐字节一致）。
+
 ## v2.4.3 — 2026-11-13（阶段 2.2：恢复完整性——可恢复运行记录 + recovery-scan）
 
 **性质：03 手册 §6 阶段 2.2 交付；新增 `recovery-scan` 命令（88 命令）；无破坏性接口变化。**

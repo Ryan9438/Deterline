@@ -90,14 +90,7 @@ def cmd_recovery_scan(save_dir: Path | None, dir_override: str | None = None,
     # 工作区层 journal（审核席 A P2-2）：sandbox 写路径的记录落在
     # <game_dir>/.deterline/<file>/<ws>/.deterline/journal——顶层两处看不到，
     # 会造成"提交被拒 → scan 报干净"死胡同。
-    journal_roots: list[Path] = []
-    for root in roots:
-        journal_roots.append(root / ".deterline" / "journal")
-        ws_root = root / ".deterline"
-        if ws_root.is_dir():
-            for nested in sorted(ws_root.glob("*/*/.deterline/journal")):
-                if nested.is_dir() and nested not in journal_roots:
-                    journal_roots.append(nested)
+    journal_roots = transactions.journal_roots_for(roots)
 
     referenced: set[str] = set()   # resolve 归一（/tmp 与 /private/tmp 同形）
     orphan_dirs: list[Path] = []   # 孤儿暂存扫描目录：roots + 各目标 parent

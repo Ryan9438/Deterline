@@ -52,6 +52,7 @@ COMPAT_SURFACE = [
     "build_set_room_bg_stmts",
     "cjk_wrap_text",
     "cmd_backup_index",
+    "cmd_backup_prune",
     "cmd_batch_textdata",
     "cmd_smoke_test",
     "cmd_undo",

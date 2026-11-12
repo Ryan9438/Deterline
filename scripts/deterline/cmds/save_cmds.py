@@ -373,34 +373,24 @@ def _manifest_summary(copy: Path) -> tuple[str, int | None]:
         return f"损坏({type(e).__name__})", None
 
 
-def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
-                     with_hash: bool = False, json_out: bool = False) -> int:
-    """只读索引：备份/命名快照/工作区副本 → 类型/路径/恢复目标/mtime/大小。
+def _collect_backup_entries(save_dir: Path | None, dir_override: str | None = None,
+                            with_hash: bool = False,
+                            hash_kinds: set[str] | None = None):
+    """backup-index / backup-prune 共用的只读扫描层（O5/2.4 SSOT）。
 
-    零写盘、零 UTMT、零清理（O5 保留策略的前置证据面）。
-    --hash 追加每项 SHA-256（大文件逐项流式）。
-    定位失败降级为提示行，不崩溃（doctor 先例）。
-    返回 0=至少一侧定位成功；2=两侧均失败（自动化可区分"空索引"与"路径错"）。
+    返回 (entries, warnings, game_dir)。entry 与 backup-index --json 行同构：
+    kind/path/restore/mtime_*/size_bytes/sha256/manifest?/note?。
+    hash_kinds 非空时仅对命中 kind 计算内容哈希（prune 只需 bak 行，
+    避免 60MB 级工作区/快照无谓全量读）。
     """
     warnings: list[str] = []
     entries: list[dict] = []
+    game_dir: Path | None = None
 
-    def row(kind: str, path: Path, restore_cmd: str | None,
-            restore_value: str = "", restore_key: str = "value",
-            restore_backup: str | None = None,
-            restore_dir: str | None = None,
+    def add(kind: str, path: Path, restore: dict | None = None,
             manifest_status: str | None = None,
             manifest_history: int | None = None,
             note: str = "") -> None:
-        restore = None
-        if restore_cmd is not None:
-            restore = {"cmd": restore_cmd}
-            if restore_key:
-                restore[restore_key] = restore_value
-            if restore_backup is not None:
-                restore["backup"] = restore_backup
-            if restore_dir:
-                restore["dir"] = restore_dir
         entry = {"kind": kind, "path": str(path), "restore": restore,
                  "mtime_epoch": None, "mtime_iso": None, "size_bytes": None,
                  "sha256": None}
@@ -410,82 +400,58 @@ def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
             entry["mtime_iso"] = time.strftime(
                 "%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime))
             entry["size_bytes"] = st.st_size
-            if with_hash:
+            if with_hash and (hash_kinds is None or kind in hash_kinds):
                 entry["sha256"] = _sha256_file(path)
         except OSError as exc:
             entry["error"] = str(exc)
         if manifest_status is not None:
             entry["manifest"] = {"status": manifest_status,
                                  "history": manifest_history}
+        if note:
+            entry["note"] = note
         entries.append(entry)
-        if json_out:
-            return
-        if restore_cmd is None:
-            restore_hint = "—（不可单独恢复）"
-        else:
-            restore_hint = restore_cmd
-            if restore_key:
-                restore_hint += f" --{restore_key} {restore_value}"
-            if restore_backup is not None:
-                restore_hint += " --backup " + restore_backup
-            if restore_dir:
-                restore_hint += f' --dir "{restore_dir}"'
-        manifest_note = ""
-        if manifest_status is not None:
-            manifest_note = f" | {manifest_status}"
-            if manifest_history is not None:
-                manifest_note += f"={manifest_history}"
-        mtime = entry["mtime_iso"] or "?"
-        size = (entry["size_bytes"] or 0) / 1e6
-        line = (f"{kind}\t{path}\t→ {restore_hint}\t"
-                f"{mtime}\t{size:.1f}MB{manifest_note}{note}")
-        if with_hash and entry["sha256"]:
-            line += f"\tsha256={entry['sha256']}"
-        print(line)
 
-    def resolve_game_file() -> Path:
-        return paths.resolve_game_data_file(dir_override)
-
-    game_file: Path | None = None
-    gparent: Path | None = None
     try:
-        game_file = resolve_game_file()
-        gparent = game_file.parent
+        game_file = paths.resolve_game_data_file(dir_override)
+        game_dir = game_file.parent
         undo_key = {".ios": "game.ios", ".win": "data_win"}.get(
             game_file.suffix.lower(), game_file.name)
         bak_prefix = game_file.name + ".bak."
-        for p in sorted(gparent.glob(f"{game_file.name}.bak*")):
+        for p in sorted(game_dir.glob(f"{game_file.name}.bak*")):
             if not p.is_file():
                 continue
             if p.name == game_file.name + ".bak":
-                row("bak-latest", p, "undo", undo_key,
-                    restore_dir=str(game_file))
+                add("bak-latest", p, {"cmd": "undo", "value": undo_key,
+                                      "dir": str(game_file)})
             elif p.name.startswith(bak_prefix) and p.name[len(bak_prefix):]:
-                row("bak-archive", p, "undo", undo_key,
-                    restore_backup=p.name[len(bak_prefix):],
-                    restore_dir=str(game_file))
+                add("bak-archive", p, {"cmd": "undo", "value": undo_key,
+                                       "backup": p.name[len(bak_prefix):],
+                                       "dir": str(game_file)})
         # cmd_experiment_snapshot 固定写 game.ios.snap.*（Windows 亦然）
         snap_prefix = "game.ios.snap."
-        for p in sorted(gparent.glob(f"{snap_prefix}*")):
+        for p in sorted(game_dir.glob(f"{snap_prefix}*")):
             if not p.is_file():
                 continue
             tag = p.name[len(snap_prefix):]
             if tag:
-                row("named-snapshot", p, "experiment-restore", tag,
-                    restore_dir=str(save_dir) if save_dir is not None else None)
-        legacy = gparent / (game_file.name + ".sandbox")
+                restore = {"cmd": "experiment-restore", "value": tag}
+                if save_dir is not None:
+                    restore["dir"] = str(save_dir)
+                add("named-snapshot", p, restore)
+        legacy = game_dir / (game_file.name + ".sandbox")
         if legacy.is_file():
-            row("workspace-legacy", legacy, "sandbox-restore",
-                restore_key="", restore_dir=str(game_file))
-        ws_root = gparent / ".deterline" / game_file.name
+            add("workspace-legacy", legacy,
+                {"cmd": "sandbox-restore", "dir": str(game_file)})
+        ws_root = game_dir / ".deterline" / game_file.name
         if ws_root.is_dir():
             for copy in sorted(ws_root.glob(f"*/{game_file.name}")):
                 if not copy.is_file():
                     continue
                 ws_name = copy.parent.name
                 m_status, m_hist = _manifest_summary(copy)
-                row("workspace-copy", copy, "sandbox-restore", ws_name,
-                    restore_key="workspace", restore_dir=str(game_file),
+                add("workspace-copy", copy,
+                    {"cmd": "sandbox-restore", "workspace": ws_name,
+                     "dir": str(game_file)},
                     manifest_status=m_status, manifest_history=m_hist)
     except FileNotFoundError as e:
         warnings.append(f"游戏数据目录未定位: {e}")
@@ -498,24 +464,24 @@ def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
                 if not p.is_file():
                     continue
                 if p.name == sysname + ".bak":
-                    row("system-info", p, "undo", key,
-                        restore_dir=str(save_dir))
+                    add("system-info", p, {"cmd": "undo", "value": key,
+                                           "dir": str(save_dir)})
                 elif p.name.startswith(bak_prefix) and p.name[len(bak_prefix):]:
-                    row("system-info", p, "undo", key,
-                        restore_backup=p.name[len(bak_prefix):],
-                        restore_dir=str(save_dir))
+                    add("system-info", p, {"cmd": "undo", "value": key,
+                                           "backup": p.name[len(bak_prefix):],
+                                           "dir": str(save_dir)})
         for base, key in (("file0", "file0"), ("undertale.ini", "ini")):
             bak_prefix = base + ".bak."
             for p in sorted(save_dir.glob(f"{base}.bak*")):
                 if not p.is_file():
                     continue
                 if p.name == base + ".bak":
-                    row("bak-latest", p, "undo", key,
-                        restore_dir=str(save_dir))
+                    add("bak-latest", p, {"cmd": "undo", "value": key,
+                                          "dir": str(save_dir)})
                 elif p.name.startswith(bak_prefix) and p.name[len(bak_prefix):]:
-                    row("bak-archive", p, "undo", key,
-                        restore_backup=p.name[len(bak_prefix):],
-                        restore_dir=str(save_dir))
+                    add("bak-archive", p, {"cmd": "undo", "value": key,
+                                           "backup": p.name[len(bak_prefix):],
+                                           "dir": str(save_dir)})
             snap_prefix = base + ".snap."
             for p in sorted(save_dir.glob(f"{snap_prefix}*")):
                 if not p.is_file():
@@ -523,27 +489,241 @@ def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
                 tag = p.name[len(snap_prefix):]
                 if not tag:
                     continue
-                game_snap = (gparent / f"game.ios.snap.{tag}"
-                             if gparent is not None else None)
+                game_snap = (game_dir / f"game.ios.snap.{tag}"
+                             if game_dir is not None else None)
                 if game_snap is not None and game_snap.is_file():
-                    row("named-snapshot", p, "experiment-restore", tag,
-                        restore_dir=str(save_dir))
+                    add("named-snapshot", p, {
+                        "cmd": "experiment-restore", "value": tag,
+                        "dir": str(save_dir)})
                 else:
-                    row("orphan-snapshot", p, None,
+                    add("orphan-snapshot", p, None,
                         note=f"（孤儿：缺 game.ios.snap.{tag}，不可单独恢复）")
     else:
         warnings.append("存档目录未定位——undo/list-backups 需 --dir")
+    return entries, warnings, game_dir
 
+
+def _entry_restore_hint(entry: dict) -> str:
+    restore = entry.get("restore")
+    if restore is None:
+        return "—（不可单独恢复）"
+    hint = restore["cmd"]
+    for key in ("value", "workspace"):
+        if key in restore:
+            hint += f" --{key} {restore[key]}"
+            break
+    if "backup" in restore:
+        hint += " --backup " + restore["backup"]
+    if restore.get("dir"):
+        hint += f' --dir "{restore["dir"]}"'
+    return hint
+
+
+def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
+                     with_hash: bool = False, json_out: bool = False) -> int:
+    """只读索引：备份/命名快照/工作区副本 → 类型/路径/恢复目标/mtime/大小。
+
+    零写盘、零 UTMT、零清理（O5 保留策略的前置证据面）。
+    --hash 追加每项 SHA-256（大文件逐项流式）。
+    定位失败降级为提示行，不崩溃（doctor 先例）。
+    返回 0=至少一侧定位成功；2=两侧均失败（自动化可区分"空索引"与"路径错"）。
+    """
+    entries, warnings, game_dir = _collect_backup_entries(
+        save_dir, dir_override, with_hash=with_hash)
     if json_out:
         print(json.dumps({
             "schema": "deterline.backup-index/v1",
-            "game_dir": str(gparent) if gparent is not None else None,
+            "game_dir": str(game_dir) if game_dir is not None else None,
             "save_dir": str(save_dir) if save_dir is not None else None,
             "entries": entries,
             "warnings": warnings,
         }, ensure_ascii=False, indent=2))
     else:
+        for entry in entries:
+            manifest = entry.get("manifest")
+            manifest_note = ""
+            if manifest is not None:
+                manifest_note = f" | {manifest['status']}"
+                if manifest["history"] is not None:
+                    manifest_note += f"={manifest['history']}"
+            mtime = entry["mtime_iso"] or "?"
+            size = (entry["size_bytes"] or 0) / 1e6
+            line = (f"{entry['kind']}\t{entry['path']}\t"
+                    f"→ {_entry_restore_hint(entry)}\t"
+                    f"{mtime}\t{size:.1f}MB{manifest_note}"
+                    f"{entry.get('note', '')}")
+            if entry.get("sha256"):
+                line += f"\tsha256={entry['sha256']}"
+            print(line)
         for w in warnings:
             print(f"  ⚠️ {w}", file=sys.stderr)
         print("--- 索引完成 ---")
-    return 0 if (gparent is not None or save_dir is not None) else 2
+    return 0 if (game_dir is not None or save_dir is not None) else 2
+
+
+def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
+                     keep_archives: int = 3, json_out: bool = False) -> int:
+    """保留策略预览（03 §2.4，**只读零删除**）：重复内容/占盘统计 + 清理建议。
+
+    建议集 = 主文件（game.ios/data.win/file0/undertale.ini 及
+    system_information_962/963）的 .bak.<ts> 时间戳归档中超出
+    --keep-archives 窗口的部分；bak-latest / 命名快照 / 工作区副本
+    （含 legacy）/ journal 引用文件一律保留。重复内容按 sha256 分组统计（同组建议保留最新一份——超窗部分
+    已被删除集覆盖）。是否执行清理由用户根据预览决定（执行入口下批）。
+    返回 0=预览完成；2=两侧定位均失败。
+    """
+    entries, warnings, game_dir = _collect_backup_entries(
+        save_dir, dir_override, with_hash=True,
+        hash_kinds={"bak-archive"})
+    if game_dir is None and save_dir is None:
+        if json_out:
+            print(json.dumps({
+                "schema": "deterline.backup-prune/v1",
+                "keep_archives": keep_archives,
+                "stats": {}, "duplicate_groups": [], "deletions": [],
+                "kept_counts": {}, "journal_protected_skipped": 0,
+                "warnings": warnings,
+            }, ensure_ascii=False, indent=2))
+        else:
+            for w in warnings:
+                print(f"  ⚠️ {w}", file=sys.stderr)
+            print("--- 未扫描任何目录（退出码 2） ---")
+        return 2
+
+    # 活动恢复记录保护：journal 引用的文件永不进入建议集
+    roots = [r for r in (game_dir, save_dir) if r is not None]
+    protected = transactions.journal_referenced_files(roots)
+    # 损坏 journal = 保护可能不完整（B P3-3）：预览阶段给出显式信号
+    corrupt_count = 0
+    for journal_root in transactions.journal_roots_for(roots):
+        for path in sorted(journal_root.glob("*.json")):
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(record, dict):
+                    corrupt_count += 1
+            except (OSError, ValueError):
+                corrupt_count += 1
+    if corrupt_count:
+        warnings.append(
+            f"发现 {corrupt_count} 个损坏/不可解析运行记录——journal 保护可能"
+            "不完整；先运行 recovery-scan 处理再做清理决定")
+
+    stats: dict[str, dict] = {}
+    total_bytes = 0
+    for entry in entries:
+        kind = entry["kind"]
+        bucket = stats.setdefault(kind, {"count": 0, "bytes": 0})
+        bucket["count"] += 1
+        bucket["bytes"] += entry.get("size_bytes") or 0
+        total_bytes += entry.get("size_bytes") or 0
+
+    # 归档按目标键分组（undo key + 作用域目录）
+    groups: dict[tuple, list[dict]] = {}
+    latest_rows: dict[tuple, dict] = {}
+    for entry in entries:
+        restore = entry.get("restore") or {}
+        if entry["kind"] == "bak-archive" or (
+                entry["kind"] == "system-info" and "backup" in restore):
+            key = (restore.get("value"), restore.get("dir"))
+            groups.setdefault(key, []).append(entry)
+        elif entry["kind"] == "bak-latest":
+            key = (restore.get("value"), restore.get("dir"))
+            latest_rows[key] = entry
+
+    deletions: list[dict] = []
+    duplicate_groups: list[dict] = []
+    protected_skipped = 0
+    for key, rows in sorted(groups.items(), key=lambda kv: str(kv[0])):
+        rows = sorted(rows, key=lambda e: e.get("mtime_epoch") or 0,
+                      reverse=True)
+        # 内容重复统计（同组 sha 相同，保留最新一份）
+        by_sha: dict[str, list[dict]] = {}
+        for row in rows:
+            sha = row.get("sha256")
+            if sha:
+                by_sha.setdefault(sha, []).append(row)
+        for sha, same in by_sha.items():
+            if len(same) > 1:
+                deletion_paths = {d["path"] for d in deletions}
+                duplicate_groups.append({
+                    "key": key[0], "sha256": sha[:16] + "…",
+                    "count": len(same),
+                    # 只计真正进入删除集的份数（A P3-2：窗口内重复不虚报）
+                    "reclaimable_bytes": sum(r.get("size_bytes") or 0
+                                             for r in same[1:]
+                                             if r["path"] in deletion_paths),
+                    "keep_path": same[0]["path"],
+                })
+        for index, row in enumerate(rows):
+            if index < max(int(keep_archives), 1):
+                continue
+            if str(Path(row["path"]).resolve()) in protected:
+                protected_skipped += 1
+                continue
+            deletions.append({
+                "path": row["path"], "key": key[0], "dir": key[1],
+                "backup_ts": (row.get("restore") or {}).get("backup"),
+                "size_bytes": row.get("size_bytes") or 0,
+                "sha256": row.get("sha256"),
+                "reason": (f"超出 --keep-archives {keep_archives} 窗口"
+                           f"（第 {index + 1} 新）"),
+            })
+
+    kept_counts = {}
+    for kind in ("bak-latest", "named-snapshot", "workspace-copy",
+                 "workspace-legacy", "orphan-snapshot", "system-info"):
+        if kind in stats:
+            kept_counts[kind] = stats[kind]["count"]
+
+    reclaimable = sum(d["size_bytes"] for d in deletions)
+    if json_out:
+        print(json.dumps({
+            "schema": "deterline.backup-prune/v1",
+            "keep_archives": keep_archives,
+            "stats": {"total_items": len(entries),
+                      "total_bytes": total_bytes,
+                      "by_kind": stats},
+            "duplicate_groups": duplicate_groups,
+            "deletions": deletions,
+            "kept_counts": kept_counts,
+            "journal_protected_skipped": protected_skipped,
+            "warnings": warnings,
+        }, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"--- backup-prune（只读预览，零删除） ---")
+    print(f"  统计: {len(entries)} 项 / {total_bytes / 1e6:.0f} MB")
+    for kind, bucket in sorted(stats.items()):
+        print(f"    {kind}: {bucket['count']} 项 / "
+              f"{bucket['bytes'] / 1e6:.0f} MB")
+    if duplicate_groups:
+        print(f"  重复内容: {len(duplicate_groups)} 组"
+              f"（组内 sha 相同；超窗部分已入删除集）")
+        for group in duplicate_groups[:10]:
+            print(f"    {group['key']} sha={group['sha256']}"
+                  f" ×{group['count']} 保留最新 {group['keep_path']}"
+                  f"（可回收 {group['reclaimable_bytes'] / 1e6:.0f} MB）")
+    if deletions:
+        print(f"  建议删除 {len(deletions)} 项，可回收 "
+              f"{reclaimable / 1e6:.0f} MB（保留条件：bak-latest / 命名快照 / "
+              f"工作区 / journal 引用 / 每目标最近 {keep_archives} 份归档）:")
+        for d in deletions:
+            target_text = d["path"]
+            if any(ch in target_text for ch in ('"', "'", "$", "`")):
+                print(f"    （路径含 shell 特殊字符，请手动处理）{target_text}")
+            else:
+                print(f'    rm "{target_text}"')
+            print(f"      {d['reason']} | {d['size_bytes'] / 1e6:.0f}MB"
+                  f" sha={_fmt_short_sha(d['sha256'])}"
+                  f" | undo --value {d['key']} --backup {d['backup_ts']} "
+                  f"将随之失效")
+    else:
+        print("  无超窗归档——无可清理建议")
+    if protected_skipped:
+        print(f"  journal 保护跳过 {protected_skipped} 项（活动恢复记录引用）")
+    print("--- 预览完成（是否执行由用户决定；执行入口下批） ---")
+    return 0
+
+
+def _fmt_short_sha(sha: str | None) -> str:
+    return f"{sha[:12]}…" if sha else "<未计算>"

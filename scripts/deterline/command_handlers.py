@@ -22,6 +22,23 @@ def _backup_index(args, parser, target):
         sys.exit(code)  # 两侧定位均失败 = 2（可区分空索引与路径错误）
 
 
+def _backup_prune(args, parser, target):
+    save_dir = None
+    try:
+        save_dir = paths.find_save_dir(args.dir)
+    except FileNotFoundError as exc:
+        print(f"（存档目录未定位：{exc}）", file=sys.stderr)
+    raw = getattr(args, "keep_archives", 3)
+    keep_archives = 3 if raw is None else int(raw)
+    if keep_archives < 1:
+        parser.error(f"--keep-archives 必须 ≥ 1（收到 {keep_archives}）")
+    code = save_cmds.cmd_backup_prune(
+        save_dir, args.dir, keep_archives=keep_archives,
+        json_out=bool(getattr(args, "json", False)))
+    if code:
+        sys.exit(code)  # 2 = 两侧定位均失败
+
+
 def _recovery_scan(args, parser, target):
     # --dir 语义与 backup-index 一致：文件/目录均接受，游戏侧用
     # resolve_game_data_file（recovery 内部调用），存档侧 find_save_dir。
@@ -775,6 +792,7 @@ COMMANDS = {
     "smoke-test": {"data_win": _smoke_test_data_win},
     "diff-snapshots": {"data_win": _diff_snapshots_data_win},
     "backup-index": {"any": _backup_index},
+    "backup-prune": {"any": _backup_prune},
     "set-derived": {"any": _set_derived},
     "cjk-font": {"data_win": _cjk_font_data_win},
     "cjk-trigger": {"data_win": _cjk_trigger_data_win},

@@ -27,6 +27,51 @@ def journal_dir_for(target: Path) -> Path:
     return target.parent / ".deterline" / "journal"
 
 
+def journal_roots_for(roots) -> list[Path]:
+    """给定扫描根（game 目录/存档目录），枚举全部 journal 目录：
+    `<root>/.deterline/journal/` + 工作区层 `<root>/.deterline/*/*/.deterline/
+    journal/`（sandbox 写路径的记录落在工作区副本旁，顶层看不到）。
+    recovery-scan 与 backup-prune（活动恢复记录保护）共用。"""
+    out: list[Path] = []
+    for root in roots:
+        if root is None:
+            continue
+        journal_root = Path(root) / ".deterline" / "journal"
+        if journal_root not in out:
+            out.append(journal_root)
+        ws_root = Path(root) / ".deterline"
+        if ws_root.is_dir():
+            for nested in sorted(ws_root.glob("*/*/.deterline/journal")):
+                if nested.is_dir() and nested not in out:
+                    out.append(nested)
+    return out
+
+
+def journal_referenced_files(roots) -> set[str]:
+    """全部未完结运行记录引用的文件（目标 + staged + 回滚副本），resolve
+    归一字符串集合。损坏记录跳过（保护宁缺毋滥——clean 批次再收口）。"""
+    protected: set[str] = set()
+    for journal_root in journal_roots_for(roots):
+        for path in sorted(journal_root.glob("*.json")):
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(record, dict):
+                continue
+            for entry in record.get("targets") or []:
+                if not isinstance(entry, dict):
+                    continue
+                for key in ("path", "staged", "rollback"):
+                    raw = entry.get(key)
+                    if raw:
+                        try:
+                            protected.add(str(Path(raw).resolve()))
+                        except OSError:
+                            protected.add(raw)
+    return protected
+
+
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S")
 

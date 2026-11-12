@@ -403,6 +403,137 @@ class TestDoctorPerItemChecks(_SaveDirBase):
         self.assertIn(cm.exception.code, (0, 1))
 
 
+class TestBackupPrune(_SaveDirBase):
+    """backup-prune 冒烟（03 §2.4 最小切片）：只读预览，零删除。"""
+
+    def _prune(self, keep_archives=3, json_out=False):
+        import io as _io
+        import contextlib as _ctxlib
+        game = self.save_dir / "game.ios"
+        buf = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=game):
+            with _ctxlib.redirect_stdout(buf):
+                code = ms.cmd_backup_prune(self.save_dir, None,
+                                           keep_archives=keep_archives,
+                                           json_out=json_out)
+        return buf.getvalue(), code
+
+    def _make_archives(self, count, dup_oldest=0):
+        """count 份归档，mtime 递增；最旧 dup_oldest 份内容与最新一份重复。"""
+        import time as _time
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"GAME")
+        # 每份独立内容；最旧 dup_oldest 份改写为与最新一份相同（重复组）
+        contents = [f"ARCH-{i}".encode() for i in range(count)]
+        for i in range(dup_oldest):
+            contents[i] = contents[-1]
+        for i, content in enumerate(contents):
+            archive = self.save_dir / f"game.ios.bak.2026111{i}_000000_{i}"
+            archive.write_bytes(content)
+            stamp = _time.time() - (count - i) * 100
+            import os as _os
+            _os.utime(archive, (stamp, stamp))
+        (self.save_dir / "game.ios.snap.keepme").write_bytes(b"SNAP")
+        (self.save_dir / "game.ios.bak").write_bytes(b"LATEST")
+
+    def test_preview_deletes_nothing_and_suggests_beyond_window(self):
+        self._make_archives(5)
+        files_before = sorted(p.name for p in self.save_dir.iterdir())
+        out, code = self._prune(keep_archives=3)
+        files_after = sorted(p.name for p in self.save_dir.iterdir())
+        self.assertEqual(files_before, files_after,
+                         "预览模式必须零删除（03 §2.4：由用户决定）")
+        self.assertEqual(code, 0)
+        self.assertIn("backup-prune（只读预览，零删除）", out)
+        self.assertIn("建议删除 2 项", out, "5 份归档 - 窗口 3 = 2 份超窗")
+        self.assertIn('rm "', out)
+        self.assertNotIn("game.ios.snap.keepme", out.split("建议删除")[1],
+                         "命名快照永不入删除集")
+        # 顺序不变量：undo --backup 后果提示只出现在"保留条件"头之后
+        # （删除集行内）；统计/重复组段不得出现（B P3-8 改写）
+        self.assertLess(out.index("保留条件"), out.index("undo --value"),
+                        "undo 后果提示必须位于删除集段内")
+
+    def test_duplicate_group_reported(self):
+        self._make_archives(4, dup_oldest=2)
+        out, _ = self._prune(keep_archives=3)
+        self.assertIn("重复内容", out)
+        self.assertIn("×3", out, "2 份重复归档 + 最新 1 份同内容")
+
+    def test_json_schema_and_purity(self):
+        import json as _json
+        self._make_archives(4)
+        out, code = self._prune(json_out=True)
+        payload = _json.loads(out)
+        self.assertEqual(payload["schema"], "deterline.backup-prune/v1")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(payload["deletions"]), 1,
+                         "4 份 - 窗口 3 = 1 份超窗")
+        self.assertGreaterEqual(len(payload["duplicate_groups"]), 0)
+        for key in ("stats", "duplicate_groups", "deletions", "kept_counts"):
+            self.assertIn(key, payload)
+
+    def test_journal_protected_archive_skipped(self):
+        import json as _json
+        self._make_archives(5)
+        oldest = sorted(self.save_dir.glob("game.ios.bak.2026*"))[0]
+        journal_dir = self.save_dir / ".deterline" / "journal"
+        journal_dir.mkdir(parents=True)
+        (journal_dir / "active.json").write_text(json.dumps({
+            "schema": "deterline.run-journal/v1", "id": "j", "state": "committing",
+            "targets": [{"path": str(oldest), "before": None, "after": None,
+                         "rollback": None, "staged": None}],
+        }), encoding="utf-8")
+        out, _ = self._prune(keep_archives=3)
+        self.assertNotIn(f'rm "{oldest}"', out,
+                         "journal 引用的归档必须被保护跳过")
+        self.assertIn("journal 保护跳过 1 项", out)
+
+    def test_keep_archives_zero_rejected(self):
+        """审核席 A P2-2：--keep-archives 0 不得被静默吞成默认 3。"""
+        import types as _types
+        import deterline.command_handlers as _ch
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"G")
+
+        class _Parser:
+            def error(self, msg):
+                raise SystemExit(2)
+
+        args = _types.SimpleNamespace(dir=str(self.save_dir), json=False,
+                                      keep_archives=0)
+        with mock.patch.object(deterline.paths, "find_save_dir",
+                               return_value=self.save_dir), \
+             mock.patch.object(deterline.paths, "resolve_game_data_file",
+                               return_value=game):
+            with self.assertRaises(SystemExit) as cm:
+                _ch._backup_prune(args, _Parser(), None)
+        self.assertEqual(cm.exception.code, 2)
+
+    def test_system_info_archives_within_window(self):
+        """P3-5B：system-info 归档同样受 --keep-archives 窗口管理。"""
+        import time as _time
+        import os as _os
+        for i in range(5):
+            p = self.save_dir / f"system_information_962.bak.2026111{i}_00000_{i}"
+            p.write_bytes(f"SYS-{i}".encode())
+            stamp = _time.time() - (5 - i) * 100
+            _os.utime(p, (stamp, stamp))
+        out, _ = self._prune(keep_archives=2)
+        self.assertIn("建议删除 3 项", out, "5 份 sysinfo 归档 - 窗口 2 = 3")
+
+    def test_missing_locations_exit2(self):
+        import io as _io
+        import contextlib as _ctxlib
+        buf = _io.StringIO()
+        with mock.patch.object(deterline.paths, "resolve_game_data_file",
+                               side_effect=FileNotFoundError("无游戏")):
+            with _ctxlib.redirect_stdout(buf):
+                code = ms.cmd_backup_prune(None, "/tmp/dl_missing_9f3c2")
+        self.assertEqual(code, 2)
+
+
 class TestBackupIndexSmoke(_SaveDirBase):
     """backup-index 冒烟（O5 最小切片）：只读索引，全 tmp 隔离。
 
@@ -533,6 +664,29 @@ class TestBackupIndexSmoke(_SaveDirBase):
             ms.cmd_undo(self.save_dir, "962")
         self.assertEqual((self.save_dir / "system_information_962").read_bytes(),
                          b"pre", "undo 962 应从 .bak 恢复")
+
+    def test_no_save_dir_hint_has_no_none_dir(self):
+        """审核席 A/B P2-1 回归钉：存档侧未定位时，游戏侧提示不得出现
+        --dir "None"（粘贴即错）；JSON restore 不得带 dir:null 键。"""
+        import json as _json
+        import io as _io
+        import contextlib as _ctxlib
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE")
+        (self.save_dir / "game.ios.snap.demo").write_bytes(b"s")
+        buf = _io.StringIO()
+        payload_buf = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_save_dir",
+                               side_effect=FileNotFoundError("无存档目录")):
+            with _ctxlib.redirect_stdout(buf):
+                ms.cmd_backup_index(None, None)
+            with _ctxlib.redirect_stdout(payload_buf):
+                ms.cmd_backup_index(None, None, json_out=True)
+        self.assertNotIn('--dir "None"', buf.getvalue())
+        payload = _json.loads(payload_buf.getvalue())
+        snap = next(e for e in payload["entries"]
+                    if e["kind"] == "named-snapshot")
+        self.assertNotIn("dir", snap["restore"])
 
     def test_missing_locations_degrade(self):
         """双定位失败 → 降级提示行（含断言；审核席 B P2-4：原版零断言且
