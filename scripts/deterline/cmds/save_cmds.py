@@ -5,7 +5,7 @@ experiment-*。跨模块一律模块属性形式：errors./paths./inifile./file0
 （运行时查找，保 mock 与旗标写入可见——研讨会2/01 风险 #1 铁律）。
 """
 
-import json
+import hashlib
 import json
 import os
 import random
@@ -252,9 +252,25 @@ def cmd_create_system_info(save_dir: Path, value: str) -> None:
 # Experiment Management (snapshot/restore for isolation)
 # ============================================================
 
+def _experiment_game_file() -> Path:
+    """experiment-* 的游戏文件定位：显式 DETERLINE_GAME_FILE 优先于 Steam。
+
+    默认定位优先级 1 是 Steam 安装（game 实际加载路径），但实验命令若在
+    副本上演练，必须能用 env 明确隔离——否则会命中真实 Steam 目录
+    （审核席 D P1-2；与 v2.3.2 事故同型）。
+    """
+    override = os.environ.get("DETERLINE_GAME_FILE", "")
+    if override:
+        path = Path(override).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"DETERLINE_GAME_FILE 不存在: {path}")
+        return path
+    return paths.find_game_data_file()
+
+
 def cmd_experiment_snapshot(save_dir: Path, tag: str | None = None) -> None:
     """Create a named snapshot of game.ios and file0 for experiment isolation."""
-    game_file = paths.find_game_data_file()
+    game_file = _experiment_game_file()
     ts = time.strftime("%Y%m%d_%H%M%S")
     label = tag or f"exp_{ts}"
     _validate_snapshot_tag(label)
@@ -276,7 +292,7 @@ def cmd_experiment_snapshot(save_dir: Path, tag: str | None = None) -> None:
 
 def cmd_experiment_list(save_dir: Path | None = None) -> None:
     """List all experiment snapshots."""
-    game_file = paths.find_game_data_file()
+    game_file = _experiment_game_file()
     parent = game_file.parent
     snaps = sorted(parent.glob("game.ios.snap.*"))
     if not snaps:
@@ -300,7 +316,7 @@ def _validate_snapshot_tag(tag: str) -> None:
 
 def cmd_experiment_restore(save_dir: Path, tag: str) -> None:
     """Restore game.ios and file0 from a named experiment snapshot."""
-    game_file = paths.find_game_data_file()
+    game_file = _experiment_game_file()
     parent = game_file.parent
     _validate_snapshot_tag(tag)
     snap_game = parent / f"game.ios.snap.{tag}"
@@ -337,8 +353,7 @@ def cmd_experiment_restore(save_dir: Path, tag: str) -> None:
 # ============================================================
 
 def _sha256_file(path: Path) -> str:
-    import hashlib as _hl
-    h = _hl.sha256()
+    h = hashlib.sha256()
     with open(str(path), "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
@@ -359,118 +374,186 @@ def _manifest_summary(copy: Path) -> tuple[str, int | None]:
 
 
 def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
-                     with_hash: bool = False, json_out: bool = False) -> None:
+                     with_hash: bool = False, json_out: bool = False) -> int:
     """只读索引：备份/命名快照/工作区副本 → 类型/路径/恢复目标/mtime/大小。
 
     零写盘、零 UTMT、零清理（O5 保留策略的前置证据面）。
     --hash 追加每项 SHA-256（大文件逐项流式）。
     定位失败降级为提示行，不崩溃（doctor 先例）。
+    返回 0=至少一侧定位成功；2=两侧均失败（自动化可区分"空索引"与"路径错"）。
     """
-    import time as _time
-
-    # --json（阶段 5.1 首切片）：schema deterline.backup-index/v1 结构化输出；
-    # 默认人读输出逐字节不变。降级信息进 warnings 字段（stdout 保持纯 JSON）。
     warnings: list[str] = []
     entries: list[dict] = []
 
-    def row(kind: str, path: Path, restore_cmd: str,
-            restore_value: str, restore_backup: str | None = None,
+    def row(kind: str, path: Path, restore_cmd: str | None,
+            restore_value: str = "", restore_key: str = "value",
+            restore_backup: str | None = None,
+            restore_dir: str | None = None,
             manifest_status: str | None = None,
-            manifest_history: int | None = None) -> None:
-        entry = {"kind": kind, "path": str(path),
-                 "restore": {"cmd": restore_cmd, "value": restore_value}}
-        if restore_backup is not None:
-            entry["restore"]["backup"] = restore_backup
-        if manifest_status is not None:
-            entry["manifest"] = {"status": manifest_status,
-                                 "history": manifest_history}
+            manifest_history: int | None = None,
+            note: str = "") -> None:
+        restore = None
+        if restore_cmd is not None:
+            restore = {"cmd": restore_cmd}
+            if restore_key:
+                restore[restore_key] = restore_value
+            if restore_backup is not None:
+                restore["backup"] = restore_backup
+            if restore_dir:
+                restore["dir"] = restore_dir
+        entry = {"kind": kind, "path": str(path), "restore": restore,
+                 "mtime_epoch": None, "mtime_iso": None, "size_bytes": None,
+                 "sha256": None}
         try:
             st = path.stat()
             entry["mtime_epoch"] = int(st.st_mtime)
-            entry["mtime_iso"] = _time.strftime(
-                "%Y-%m-%dT%H:%M:%S", _time.localtime(st.st_mtime))
+            entry["mtime_iso"] = time.strftime(
+                "%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime))
             entry["size_bytes"] = st.st_size
             if with_hash:
                 entry["sha256"] = _sha256_file(path)
         except OSError as exc:
             entry["error"] = str(exc)
+        if manifest_status is not None:
+            entry["manifest"] = {"status": manifest_status,
+                                 "history": manifest_history}
         entries.append(entry)
-        restore_hint = restore_cmd + " --value " + restore_value
-        if restore_backup is not None:
-            restore_hint += " --backup " + restore_backup
+        if json_out:
+            return
+        if restore_cmd is None:
+            restore_hint = "—（不可单独恢复）"
+        else:
+            restore_hint = restore_cmd
+            if restore_key:
+                restore_hint += f" --{restore_key} {restore_value}"
+            if restore_backup is not None:
+                restore_hint += " --backup " + restore_backup
+            if restore_dir:
+                restore_hint += f' --dir "{restore_dir}"'
         manifest_note = ""
         if manifest_status is not None:
             manifest_note = f" | {manifest_status}"
             if manifest_history is not None:
                 manifest_note += f"={manifest_history}"
+        mtime = entry["mtime_iso"] or "?"
+        size = (entry["size_bytes"] or 0) / 1e6
         line = (f"{kind}\t{path}\t→ {restore_hint}\t"
-                f"{entry.get('mtime_iso', '?')}\t"
-                f"{entry.get('size_bytes', 0) / 1e6:.1f}MB{manifest_note}")
-        if with_hash and "sha256" in entry:
+                f"{mtime}\t{size:.1f}MB{manifest_note}{note}")
+        if with_hash and entry["sha256"]:
             line += f"\tsha256={entry['sha256']}"
         print(line)
 
-    # ── 游戏数据旁（game.ios/data.win 所在目录）──
-    # 提示列与 undo/experiment-restore 的 key/tag 语义对齐（审核席 B P1-1/2/3：
-    # game.ios/data.win ∈ GAME_BACKUP_KEYS；ini → "ini"；snap 行须剥
-    # ".snap." 前缀取 tag——完整文件名会使 restore 拼出双重前缀）
+    def resolve_game_file() -> Path:
+        """--dir 既可能是游戏文件、也可能是含游戏文件的目录（P2-2）。
+
+        显式 --dir 无效时**不得回退默认定位**（否则会把真实 Steam 目录
+        当成索引对象——审核席 D P1-2 的同型风险）。
+        """
+        if dir_override:
+            p = Path(dir_override).expanduser()
+            if p.is_file():
+                return p
+            if p.is_dir():
+                for name in ("game.ios", "data.win"):
+                    candidate = p / name
+                    if candidate.is_file():
+                        return candidate
+                raise FileNotFoundError(f"目录内未找到 game.ios/data.win: {p}")
+            raise FileNotFoundError(f"路径不存在: {p}")
+        return paths.find_game_data_file()
+
+    game_file: Path | None = None
+    gparent: Path | None = None
     try:
-        game_file = paths.find_game_data_file(dir_override)
+        game_file = resolve_game_file()
         gparent = game_file.parent
         undo_key = {".ios": "game.ios", ".win": "data_win"}.get(
             game_file.suffix.lower(), game_file.name)
-        bak_prefix = game_file.name + ".bak."  # paths.backup_file 归档命名
-        for p in sorted(gparent.glob(f"*{game_file.suffix}.bak*")):
+        bak_prefix = game_file.name + ".bak."
+        for p in sorted(gparent.glob(f"{game_file.name}.bak*")):
+            if not p.is_file():
+                continue
             if p.name == game_file.name + ".bak":
-                row("bak-latest", p, "undo", undo_key)
-            else:
-                ts = p.name[len(bak_prefix):]
-                row("bak-archive", p, "undo", undo_key, restore_backup=ts)
-        snap_prefix = game_file.name + ".snap."
+                row("bak-latest", p, "undo", undo_key,
+                    restore_dir=str(game_file))
+            elif p.name.startswith(bak_prefix) and p.name[len(bak_prefix):]:
+                row("bak-archive", p, "undo", undo_key,
+                    restore_backup=p.name[len(bak_prefix):],
+                    restore_dir=str(game_file))
+        # cmd_experiment_snapshot 固定写 game.ios.snap.*（Windows 亦然）
+        snap_prefix = "game.ios.snap."
         for p in sorted(gparent.glob(f"{snap_prefix}*")):
+            if not p.is_file():
+                continue
             tag = p.name[len(snap_prefix):]
-            row("named-snapshot", p, "experiment-restore", tag)
-        for p in sorted(gparent.glob("*.sandbox")):
-            row("workspace-legacy", p, "sandbox-restore", "")
-        ws_root = gparent / ".deterline"
+            if tag:
+                row("named-snapshot", p, "experiment-restore", tag,
+                    restore_dir=str(save_dir) if save_dir is not None else None)
+        legacy = gparent / (game_file.name + ".sandbox")
+        if legacy.is_file():
+            row("workspace-legacy", legacy, "sandbox-restore",
+                restore_key="", restore_dir=str(game_file))
+        ws_root = gparent / ".deterline" / game_file.name
         if ws_root.is_dir():
-            for ws in sorted(ws_root.rglob("*")):
-                if ws.is_file() and not ws.name.endswith(".json"):
-                    ws_name = ws.parent.name
-                    m_status, m_hist = _manifest_summary(ws)
-                    row("workspace-copy", ws, "sandbox-restore", ws_name,
-                        manifest_status=m_status, manifest_history=m_hist)
-        game_dir_found = True
+            for copy in sorted(ws_root.glob(f"*/{game_file.name}")):
+                if not copy.is_file():
+                    continue
+                ws_name = copy.parent.name
+                m_status, m_hist = _manifest_summary(copy)
+                row("workspace-copy", copy, "sandbox-restore", ws_name,
+                    restore_key="workspace", restore_dir=str(game_file),
+                    manifest_status=m_status, manifest_history=m_hist)
     except FileNotFoundError as e:
-        game_dir_found = False
         warnings.append(f"游戏数据目录未定位: {e}")
 
-    # ── 存档目录旁 ──
     if save_dir is not None:
         for sysname in ("system_information_962", "system_information_963"):
-            p = save_dir / sysname
-            if p.is_file():
-                row("system-info", p, "undo",
-                    sysname.split("_")[-1])
+            key = sysname.split("_")[-1]
+            bak_prefix = sysname + ".bak."
+            for p in sorted(save_dir.glob(f"{sysname}.bak*")):
+                if not p.is_file():
+                    continue
+                if p.name == sysname + ".bak":
+                    row("system-info", p, "undo", key,
+                        restore_dir=str(save_dir))
+                elif p.name.startswith(bak_prefix) and p.name[len(bak_prefix):]:
+                    row("system-info", p, "undo", key,
+                        restore_backup=p.name[len(bak_prefix):],
+                        restore_dir=str(save_dir))
         for base, key in (("file0", "file0"), ("undertale.ini", "ini")):
             bak_prefix = base + ".bak."
             for p in sorted(save_dir.glob(f"{base}.bak*")):
-                if p.name == f"{base}.bak":
-                    row("bak-latest", p, "undo", key)
-                else:
-                    ts = p.name[len(bak_prefix):]
-                    row("bak-archive", p, "undo", key, restore_backup=ts)
+                if not p.is_file():
+                    continue
+                if p.name == base + ".bak":
+                    row("bak-latest", p, "undo", key,
+                        restore_dir=str(save_dir))
+                elif p.name.startswith(bak_prefix) and p.name[len(bak_prefix):]:
+                    row("bak-archive", p, "undo", key,
+                        restore_backup=p.name[len(bak_prefix):],
+                        restore_dir=str(save_dir))
             snap_prefix = base + ".snap."
             for p in sorted(save_dir.glob(f"{snap_prefix}*")):
+                if not p.is_file():
+                    continue
                 tag = p.name[len(snap_prefix):]
-                row("named-snapshot", p, "experiment-restore", tag)
-    elif save_dir is None:
+                if not tag:
+                    continue
+                game_snap = (gparent / f"game.ios.snap.{tag}"
+                             if gparent is not None else None)
+                if game_snap is not None and game_snap.is_file():
+                    row("named-snapshot", p, "experiment-restore", tag,
+                        restore_dir=str(save_dir))
+                else:
+                    row("orphan-snapshot", p, None,
+                        note=f"（孤儿：缺 game.ios.snap.{tag}，不可单独恢复）")
+    else:
         warnings.append("存档目录未定位——undo/list-backups 需 --dir")
 
     if json_out:
         print(json.dumps({
             "schema": "deterline.backup-index/v1",
-            "game_dir": str(gparent) if game_dir_found else None,
+            "game_dir": str(gparent) if gparent is not None else None,
             "save_dir": str(save_dir) if save_dir is not None else None,
             "entries": entries,
             "warnings": warnings,
@@ -479,3 +562,4 @@ def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
         for w in warnings:
             print(f"  ⚠️ {w}", file=sys.stderr)
         print("--- 索引完成 ---")
+    return 0 if (gparent is not None or save_dir is not None) else 2

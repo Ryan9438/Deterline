@@ -9,7 +9,7 @@
     },
     "invariants": "action 集合必须与 modify_save.py --action choices 完全一致（test_docs_lint 校验）。新增命令流程：注册 command_handlers.py 路由 → 加本文件条目（含 golden test / doctor 项）→ python3 tools/gen_docs.py。"
   },
-  "version": "2.4.1",
+  "version": "2.4.2",
   "groups": [
     {
       "id": "save",
@@ -751,11 +751,13 @@
       "action": "backup-index",
       "group": "save",
       "verify": "static",
-      "summary": "恢复资产只读索引（O5 最小切片）：.bak/.snap/.sandbox/.deterline 工作区 → 类型/路径/恢复目标/mtime/大小（--hash 追加 SHA-256）；零写盘零 UTMT",
+      "summary": "恢复资产只读索引（O5 最小切片）：.bak/.snap/.sandbox/.deterline 工作区 → 类型/路径/恢复目标/mtime/大小（--hash 追加 SHA-256；--json 输出 deterline.backup-index/v1）；零写盘零 UTMT",
       "example": "backup-index --hash",
       "notes": [
-        "覆盖 game 旁（game.ios/data.win.bak*.snap*、.deterline 工作区、legacy .sandbox）与存档目录（file0/undertale.ini 的 bak/snap）",
+        "覆盖 game 旁（game.ios/data.win.bak*、game.ios.snap*、.deterline 工作区、legacy .sandbox）与存档目录（file0/undertale.ini/system_information_962/963 的 bak/snap）",
+        "工作区行恢复提示用 --workspace；legacy 行不带参数；所有提示带 --dir 作用域，可直接粘贴执行",
         "工作区行尾附 manifest history 摘要；损坏 manifest 容错（标 manifest损坏 不崩溃）",
+        "--json：stdout 纯 JSON（schema=deterline.backup-index/v1）；两侧定位均失败退出码 2",
         "恢复入口：undo / experiment-restore / sandbox-restore（本命令零恢复零清理）"
       ]
     }

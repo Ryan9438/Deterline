@@ -5,12 +5,14 @@ Phase1 新命令域的正式边界。跨模块一律模块属性形式：
 utmt./state./dialogue./room./inifile./errors.
 """
 
-import json
+import shutil
 import subprocess as _sp
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote as _unquote
 
 from .. import errors, inifile, paths, state, transactions, utmt
 from . import code, dialogue, npc, room
@@ -19,6 +21,7 @@ _DIFF_SNAPSHOT_CSX = """
 // O7: 结构签名 dump（只读）——房间摘要 + 代码条目长度 + 计数 + 资源级明细
 using System.Security.Cryptography;
 using System.Text;
+string Esc(string s) {{ return s == null ? "?" : System.Uri.EscapeDataString(s); }}
 ScriptMessage("LASTOBJ:" + Data.GeneralInfo.LastObj);
 ScriptMessage("STRGCOUNT:" + Data.Strings.Count);
 ScriptMessage("CODECOUNT:" + Data.Code.Count);
@@ -32,26 +35,26 @@ foreach (var room in Data.Rooms) {{
     string bgs = "";
     for (int i = 0; i < room.Backgrounds.Count; i++)
         if (room.Backgrounds[i].Enabled && room.Backgrounds[i].BackgroundDefinition != null)
-            bgs += room.Backgrounds[i].BackgroundDefinition.Name.Content + ",";
-    ScriptMessage("ROOM|" + room.Name.Content + "|" + room.Width + "x" + room.Height
+            bgs += Esc(room.Backgrounds[i].BackgroundDefinition.Name.Content) + ",";
+    ScriptMessage("ROOM|" + Esc(room.Name.Content) + "|" + room.Width + "x" + room.Height
         + "|inst=" + room.GameObjects.Count + "|tiles=" + room.Tiles.Count
         + "|bg=" + bgs);
 }}
 foreach (var c in Data.Code)
-    ScriptMessage("CODE|" + c.Name.Content + "|" + c.Instructions.Count);
+    ScriptMessage("CODE|" + Esc(c.Name.Content) + "|" + c.Instructions.Count);
 string Sha(string s){ return Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(s))).ToLowerInvariant(); }
 foreach (var s in Data.Strings)
     ScriptMessage("STR|" + Encoding.UTF8.GetByteCount(s.Content ?? "") + "|" + Sha(s.Content ?? ""));
 foreach (var room in Data.Rooms)
     foreach (var g in room.GameObjects) {
-        ScriptMessage("INST|" + room.Name.Content + "|" + g.InstanceID + "|"
-            + (g.ObjectDefinition != null ? g.ObjectDefinition.Name.Content : "?") + "|"
+        ScriptMessage("INST|" + Esc(room.Name.Content) + "|" + g.InstanceID + "|"
+            + Esc(g.ObjectDefinition != null ? g.ObjectDefinition.Name.Content : "?") + "|"
             + g.X.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|"
             + g.Y.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 foreach (var c in Data.Code) {
     var locals = Data.CodeLocals.ByName(c.Name.Content) ?? new UndertaleCodeLocals();
-    ScriptMessage("CODEF|" + c.Name.Content + "|" + c.Instructions.Count + "|"
+    ScriptMessage("CODEF|" + Esc(c.Name.Content) + "|" + c.Instructions.Count + "|"
         + Sha(c.Disassemble(Data.Variables, locals, true)));
 }
 foreach (var f in Data.Fonts) {
@@ -67,7 +70,7 @@ foreach (var f in Data.Fonts) {
             if (Data.EmbeddedTextures[ti] == f.Texture.TexturePage)
                 tex = ti;
     }
-    ScriptMessage("FONT|" + (f.Name != null ? f.Name.Content : "?") + "|" + f.Glyphs.Count
+    ScriptMessage("FONT|" + Esc(f.Name != null ? f.Name.Content : "?") + "|" + f.Glyphs.Count
         + "|" + tex + "|" + Sha(sb.ToString()));
 }
 """
@@ -101,7 +104,7 @@ class SmokeVerdict:
         return self.verdict == "pass"
 
 
-def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torielroom",
+def cmd_smoke_test(game_file: Path, save_dir: Path | None, room_name: str = "room_torielroom",
                    obj_name: str = "obj_cactus", x: int = 160, y: int = 150,
                    timeout: int = 120, send_keys: str = "external") -> "SmokeVerdict":
     """W3：游戏内冒烟测试（半自动，≈90 秒/次，验证级别 in-game）。
@@ -136,7 +139,6 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
                                        capture_output=True).returncode == 0
     if game_exe_running():
         raise errors.ValidationError("检测到 Undertale 正在运行——smoke-test 需要游戏处于关闭状态（请先退出游戏）")
-    pre_baks = set(p.name for p in game_file.parent.glob("game.ios.bak.*"))
 
     text_key = f"smoke_test_{run_id}"
     print(f"--- smoke-test (W3) run={run_id} ---")
@@ -150,7 +152,39 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
             launch_allowed = True
             print("     DETERLINE_SMOKE_ALLOW_NONSTEAM=1 —— 显式豁免，照常启动。")
 
-    # ── 1. 备份三件 ──
+    # ── 1. 存档作用域（审核席 A P1-2）──
+    # 演练（不启动）绝不碰真实存档：file0/ini 复制到临时目录，后续备份/改写
+    # 全部落临时目录；真实启动才必须使用游戏实际读取的存档目录。
+    rehearsal_dir: Path | None = None
+    if not launch_allowed:
+        rehearsal_dir = Path(tempfile.mkdtemp(prefix="deterline_smoke_save_"))
+        if save_dir is not None:
+            for name in ("file0", "undertale.ini"):
+                source = save_dir / name
+                if source.is_file():
+                    shutil.copy2(source, rehearsal_dir / name)
+        save_dir = rehearsal_dir
+    elif save_dir is None:
+        raise errors.ValidationError(
+            "smoke-test 需要存档目录（file0/undertale.ini）——未能定位；"
+            "请先确认 UNDERTALE 存档目录存在")
+
+    pre_baks = set(p.name for p in game_file.parent.glob(f"{game_file.name}.bak.*"))
+    pre_bak = game_file.with_name(game_file.name + ".bak")
+    pre_bak_existed = pre_bak.is_file()
+    preserve_bak: Path | None = None
+    if pre_bak_existed:
+        # 事务层会把稳定名 .bak 覆盖为本次运行前状态；先保存原内容，结束后还原
+        fd, preserve_name = tempfile.mkstemp(prefix="deterline_smoke_bak_")
+        _os.close(fd)
+        try:
+            shutil.copy2(pre_bak, preserve_name)
+        except OSError:
+            Path(preserve_name).unlink(missing_ok=True)
+        else:
+            preserve_bak = Path(preserve_name)
+
+    # ── 2. 备份三件 ──
     f0 = save_dir / "file0"
     ini = save_dir / "undertale.ini"
     b_game = game_file.with_name(f"game.ios.snap.smoke_{ts}")
@@ -161,7 +195,8 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
                     if target.is_file()})
     transactions.write_many(backups)
     md5_before = utmt._md5_file(game_file)
-    print(f"  备份: {b_game.name} / {b_f0.name} / {b_ini.name}")
+    print(f"  备份: {b_game.name} / {b_f0.name} / {b_ini.name}"
+          + (f"（演练存档: {rehearsal_dir}）" if rehearsal_dir else ""))
 
     started, triggered, content, keys_ok = "fail", "skipped", "", True
     marker = save_dir / marker_name  # P0-1：finally 引用——审核席 B 动态复现的 NameError
@@ -225,32 +260,52 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
                 stale.unlink(missing_ok=True)
         started, triggered, content, keys_ok, elapsed = _launch_and_poll(
             save_dir, timeout, send_keys, run_id, new_id, marker_name,
-            launch_allowed=launch_allowed, game_exe_running=game_exe_running)
+            launch_allowed=launch_allowed, game_exe_running=game_exe_running,
+            room_name=room_name)
     finally:
         # ── 5. 全量恢复（任何路径：PASS/FAIL/异常 都恢复）──
         state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE, state.NO_STEAM_SYNC, \
             state.AUTO_SNAPSHOT = previous_policy
-        _sp.run(["pkill", "-x", "Mac_Runner"], capture_output=True)
-        for _ in range(8):  # 轮询进程真正消失（SIGTERM 回写竞态，复核席 3）
-            time.sleep(1)
-            if not game_exe_running():
-                break
+        game_alive = False
+        if launch_allowed:
+            _sp.run(["pkill", "-x", "Mac_Runner"], capture_output=True)
+            for _ in range(8):  # 轮询进程真正消失（SIGTERM 回写竞态）
+                time.sleep(1)
+                if not game_exe_running():
+                    break
+            if game_exe_running():  # 8s 未退：升级 SIGKILL 再等 2s（审核席 A P2-2）
+                _sp.run(["pkill", "-9", "-x", "Mac_Runner"], capture_output=True)
+                for _ in range(4):
+                    time.sleep(0.5)
+                    if not game_exe_running():
+                        break
+            game_alive = game_exe_running()
         transactions.write_many({target: snapshot for snapshot, target in backups.items()},
                                 backup=False)
         f0_ok = not b_f0.exists() or utmt._md5_file(f0) == utmt._md5_file(b_f0)
         ini_ok = not b_ini.exists() or utmt._md5_file(ini) == utmt._md5_file(b_ini)
         marker.unlink(missing_ok=True)
         md5_after = utmt._md5_file(game_file)
-        restored = (md5_after == md5_before and f0_ok and ini_ok)
+        restored = (md5_after == md5_before and f0_ok and ini_ok
+                    and not game_alive)
         print(f"  恢复: game.ios {'✅ MD5 一致' if md5_after == md5_before else '❌ 不一致'}"
-              f" | file0 {'✅' if f0_ok else '❌'} | ini {'✅' if ini_ok else '❌'}")
+              f" | file0 {'✅' if f0_ok else '❌'} | ini {'✅' if ini_ok else '❌'}"
+              + (" | 进程 ❌ 仍在运行" if game_alive else ""))
         if restored:
             b_game.unlink(missing_ok=True)
             b_f0.unlink(missing_ok=True)
             b_ini.unlink(missing_ok=True)
-            for p_ in game_file.parent.glob("game.ios.bak.*"):
+            for p_ in game_file.parent.glob(f"{game_file.name}.bak.*"):
                 if p_.name not in pre_baks:
                     p_.unlink(missing_ok=True)
+        # 稳定名 .bak：运行前存在则还原原内容，不存在则删除本次新建
+        if preserve_bak is not None:
+            shutil.copy2(preserve_bak, pre_bak)
+            preserve_bak.unlink(missing_ok=True)
+        elif not pre_bak_existed:
+            pre_bak.unlink(missing_ok=True)
+        if rehearsal_dir is not None:
+            shutil.rmtree(rehearsal_dir, ignore_errors=True)
 
     if not restored:
         reason = "恢复校验失败——现场未完全还原（快照保留供取证）"
@@ -259,7 +314,10 @@ def cmd_smoke_test(game_file: Path, save_dir: Path, room_name: str = "room_torie
     elif started == "skipped":
         reason = "编辑目标非 Steam 安装路径——演练模式（未启动）"
     elif not keys_ok and triggered != "ok":
-        reason = "osascript 按键全部失败（辅助功能权限？）"
+        reason = ("external 模式未发送按键——无法区分未操作与触发未执行"
+                  "（可重跑或 --keys osascript）"
+                  if send_keys == "external"
+                  else "osascript 按键全部失败（辅助功能权限？）")
     elif triggered == "fail":
         reason = "标记未出现或内容不符（未进入可测试场景 / 触发未执行 / 卡场景）"
     else:
@@ -335,8 +393,11 @@ def _launch_and_poll(save_dir: Path, timeout: int, send_keys: str, run_id: str,
                         time.time() - start)
             mismatch = content[:60]
             print(f"  ⚠️ 标记出现但内容不符（{mismatch}…），继续轮询")
-    keys_ok = not (send_keys == "osascript" and osascript_sends > 0
-                   and osascript_failures == osascript_sends)
+    if send_keys == "external":
+        keys_ok = False  # 未发键：无法区分“人未操作”与“触发未执行”→ 未验证
+    else:
+        keys_ok = not (send_keys == "osascript" and osascript_sends > 0
+                       and osascript_failures == osascript_sends)
     return ("ok" if saw_game else "fail", "fail", mismatch, keys_ok,
             time.time() - start)
 
@@ -366,6 +427,11 @@ def _accept_marker(path: Path, run_id: str, new_id: str,
             or (room_name and fields.get("room") != room_name)):
         return False, text
     return True, text
+def _split_fields(line: str) -> list[str]:
+    """按 `|` 拆行并还原 CSX 的 Uri.EscapeDataString 编码（名称可含 |/换行）。"""
+    return [_unquote(part) for part in line.split("|")]
+
+
 def _dump_structure_signature(game_file: Path, timeout: int = 300) -> dict:
     """单次只读 UTMT 遍历，输出结构签名（供快照 diff）。
 
@@ -378,10 +444,10 @@ def _dump_structure_signature(game_file: Path, timeout: int = 300) -> dict:
            "strings": [], "instances": [], "codefp": {}, "fonts": {}}
     for line in utmt._parse_msg(out):
         if line.startswith("ROOM|"):
-            _, name, size, inst, tiles, bg = line.split("|", 5)
+            _, name, size, inst, tiles, bg = _split_fields(line)
             sig["rooms"][name] = (size, inst, tiles, bg)
         elif line.startswith("CODE|"):
-            _, name, n = line.split("|", 2)
+            _, name, n = _split_fields(line)
             sig["code"][name] = int(n)
         elif line.startswith(("LASTOBJ:", "STRGCOUNT:", "CODECOUNT:", "SPRCOUNT:", "TEXCOUNT:", "VARS:")):
             k, v = line.split(":", 1)
@@ -389,16 +455,16 @@ def _dump_structure_signature(game_file: Path, timeout: int = 300) -> dict:
         elif line.startswith("VARDETERLINE:"):
             sig["vardeterline"].append(line[len("VARDETERLINE:"):])
         elif line.startswith("STR|"):
-            _, ln, sha = line.split("|", 2)
+            _, ln, sha = _split_fields(line)
             sig["strings"].append((int(ln), sha))
         elif line.startswith("INST|"):
-            _, room_n, iid, obj, xx, yy = line.split("|", 5)
+            _, room_n, iid, obj, xx, yy = _split_fields(line)
             sig["instances"].append((room_n, int(iid), obj, int(xx), int(yy)))
         elif line.startswith("CODEF|"):
-            _, name, n, digest = line.split("|", 3)
+            _, name, n, digest = _split_fields(line)
             sig["codefp"][name] = (int(n), digest)
         elif line.startswith("FONT|"):
-            _, name, glyphs, tex, digest = line.split("|", 4)
+            _, name, glyphs, tex, digest = _split_fields(line)
             sig["fonts"][name] = (int(glyphs), int(tex), digest)
     return sig
 
@@ -430,19 +496,21 @@ def _diff_detail_resources(a: dict, b: dict) -> dict:
                 str_changes.append(("add", b["strings"][k]))
     out["strings"] = str_changes
 
-    inst_a = {(r, i, o, x, y) for r, i, o, x, y in a["instances"]}
-    inst_b = {(r, i, o, x, y) for r, i, o, x, y in b["instances"]}
-    removed = inst_a - inst_b
-    added = inst_b - inst_a
+    from collections import Counter as _Counter
+    inst_a = _Counter(a["instances"])
+    inst_b = _Counter(b["instances"])
+    removed = sorted((inst_a - inst_b).elements())
+    added = sorted((inst_b - inst_a).elements())
     moves = []
-    for (r1, i1, o1, x1, y1) in sorted(removed):
-        same_id = [t for t in added if t[1] == i1]
+    for item in list(removed):
+        same_id = [t for t in added if t[1] == item[1]]
         if same_id:
             t = same_id[0]
-            moves.append((t[0], i1, t[2], t[3], t[4], f"({x1},{y1})→({t[3]},{t[4]})"))
-            added.discard(t)
-            removed.discard((r1, i1, o1, x1, y1))
-    out["instances"] = {"added": sorted(added), "removed": sorted(removed),
+            moves.append((t[0], item[1], t[2], t[3], t[4],
+                          f"({item[3]},{item[4]})→({t[3]},{t[4]})"))
+            added.remove(t)
+            removed.remove(item)
+    out["instances"] = {"added": added, "removed": removed,
                         "moved": sorted(moves)}
 
     fp_a, fp_b = a["codefp"], b["codefp"]
@@ -458,6 +526,35 @@ def _diff_detail_resources(a: dict, b: dict) -> dict:
         "removed": sorted(f_a.keys() - f_b.keys()),
     }
     return out
+
+
+def _validate_expected(expected: dict) -> None:
+    """--expected 形状校验（审核席 B P3-1）：错形状干净报错，不抛 AttributeError。"""
+    if not isinstance(expected, dict):
+        raise errors.ValidationError(
+            '--expected 顶层必须是 JSON 对象（如 {"strings": "any"}）')
+    unknown = set(expected) - {"strings", "code", "instances", "fonts"}
+    if unknown:
+        raise errors.ValidationError(f"--expected 未知键: {sorted(unknown)}")
+    for key in ("strings", "code", "fonts"):
+        value = expected.get(key)
+        if value is None or value == "any":
+            continue
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise errors.ValidationError(
+                f'--expected.{key} 必须是 "any" 或字符串数组')
+    instances = expected.get("instances")
+    if instances is None:
+        return
+    if not isinstance(instances, dict):
+        raise errors.ValidationError(
+            '--expected.instances 必须是 {"房间名": ["add","remove","move"]} 对象')
+    for room, ops in instances.items():
+        if (not isinstance(room, str) or not isinstance(ops, list)
+                or not all(isinstance(o, str) and o in ("add", "remove", "move")
+                           for o in ops)):
+            raise errors.ValidationError(
+                f'--expected.instances["{room}"] 操作必须为 add/remove/move 数组')
 
 
 def _evaluate_expected(detail: dict, expected: dict) -> list[str]:
@@ -520,6 +617,8 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
         # fail-fast（审核席 B P2-2：库级直调可绕过适配器的 --expected⇒--detail
         # 守卫——范围判定基于资源级差异，非 detail 时 expected 静默失效 = 假绿）
         raise errors.ValidationError("--expected 需要 detail=True（范围判定基于资源级差异）")
+    if expected is not None:
+        _validate_expected(expected)
     for f in (file_a, file_b):
         if not f.exists():
             raise errors.NotFoundError(f"文件不存在: {f}")
@@ -532,14 +631,12 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
     # instances → 对应计数（STRGCOUNT/CODECOUNT/TEXCOUNT/LASTOBJ）可变
     derived_allowed = set()
     if expected:
-        if expected.get("strings") is not None:
-            derived_allowed.add("STRGCOUNT")
-        if expected.get("code") is not None:
-            derived_allowed.add("CODECOUNT")
-        if expected.get("fonts") is not None:
-            derived_allowed.add("TEXCOUNT")
-        if expected.get("instances") is not None:
-            derived_allowed.add("LASTOBJ")
+        for key, count in (("strings", "STRGCOUNT"), ("code", "CODECOUNT"),
+                           ("fonts", "TEXCOUNT"), ("instances", "LASTOBJ")):
+            value = expected.get(key)
+            # 空列表/空字典 = “什么都不允许”，不得整类豁免计数（审核席 B P2-1）
+            if value == "any" or (isinstance(value, (list, dict)) and value):
+                derived_allowed.add(count)
     for k in sorted(set(a["counts"]) | set(b["counts"])):
         va, vb = a["counts"].get(k), b["counts"].get(k)
         if va != vb:
@@ -574,7 +671,9 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
         size_b, inst_b, tiles_b, bg_b = rb
         room_scope = (inst_scope.get(name)
                       if name in inst_scope else inst_scope.get("any", []))
-        if inst_a != inst_b and room_scope:
+        # 计数变化只可能是 add/remove；仅声明 move 不得掩护计数变化（B P2-2）
+        count_projection = bool(set(room_scope or []) & {"add", "remove"})
+        if inst_a != inst_b and count_projection:
             print(f"  ROOM inst {name}: {inst_a} → {inst_b}"
                   f"（--expected 结构投影，允许）")
         elif inst_a != inst_b:
@@ -607,6 +706,16 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
 
     if detail:
         rd = _diff_detail_resources(a, b)
+        resource_diffs = (len(rd["strings"])
+                          + len(rd["instances"]["added"])
+                          + len(rd["instances"]["removed"])
+                          + len(rd["instances"]["moved"])
+                          + len(rd["code"]["changed"])
+                          + len(rd["code"]["added"])
+                          + len(rd["code"]["removed"])
+                          + len(rd["fonts"]["changed"])
+                          + len(rd["fonts"]["added"])
+                          + len(rd["fonts"]["removed"]))
         print("--- 资源级差异（--detail） ---")
         print(f"  字符串: {len(rd['strings'])} 处变化（add/change/remove，内容哈希锚定）")
         print(f"  实例: add={len(rd['instances']['added'])} "
@@ -628,11 +737,21 @@ def cmd_diff_snapshots(file_a: Path, file_b: Path, detail: bool = False,
             for v in violations[:20]:
                 print(f"    {v}")
             diffs += 1
+        elif expected is None and resource_diffs:
+            # 审核席 B P1-1：--detail 无 --expected 时资源级差异必须计入退出码
+            # （否则等指令数改代码/原地改台词在自动化里假绿）
+            print(f"  ⚠️ 资源级差异 {resource_diffs} 处（未提供 --expected，按差异计入退出码）")
+            diffs += resource_diffs
     if diffs == 0:
-        print("✅ 结构完全一致（0 差异；资源级明细见上）" if detail
-              else "✅ 结构完全一致（0 差异）")
+        if detail:
+            if expected is not None and resource_diffs:
+                print("✅ 结构 0 差异；资源级差异均在声明范围内")
+            else:
+                print("✅ 结构 0 差异；资源级 0 差异")
+        else:
+            print("✅ 结构完全一致（0 差异）")
     else:
-        print(f"\n⚠️ 共 {diffs} 处结构差异")
+        print(f"\n⚠️ 共 {diffs} 处差异" + ("（含资源级）" if detail else ""))
     return diffs
 
 

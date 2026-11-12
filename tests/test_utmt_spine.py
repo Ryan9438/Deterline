@@ -365,6 +365,18 @@ class TestSmokeVerdict(unittest.TestCase):
             marker_body=self._marker_body(inst="999"))
         self.assertEqual((started, triggered), ("ok", "fail"))
 
+    def test_run_prefix_not_accepted(self):
+        """字段级精确比对：run_id 前缀相同但更长不得接受（子串匹配变异钉）。"""
+        started, triggered, _, _, _ = self._poll(
+            marker_body=self._marker_body(run_id=self.RUN_ID + "4"))
+        self.assertEqual((started, triggered), ("ok", "fail"))
+
+    def test_inst_prefix_not_accepted(self):
+        """字段级精确比对：inst=70 不得被 inst=7 的子串匹配接受。"""
+        started, triggered, _, _, _ = self._poll(
+            marker_body=self._marker_body(inst="70"))
+        self.assertEqual((started, triggered), ("ok", "fail"))
+
     def test_unreadable_marker_degrades_to_fail(self):
         """复核席 3：读取失败不得当作通过（旧实现 exists 即 pass 的洞）。"""
         marker = self.save_dir / f"zcode_smoke_{self.RUN_ID}.txt"
@@ -381,6 +393,14 @@ class TestSmokeVerdict(unittest.TestCase):
         started, triggered, _, _, _ = self._poll()
         self.assertEqual((started, triggered), ("fail", "fail"))
         v = smoke_mod.SmokeVerdict(started, triggered, "ok")
+        self.assertEqual(v.verdict, "unverified")
+
+    def test_external_timeout_unverified(self):
+        """external 未发键：无法确认前台输入 → UNVERIFIED（02 手册语义）。"""
+        started, triggered, _, keys_ok, _ = self._poll()
+        self.assertEqual((started, triggered), ("ok", "fail"))
+        self.assertFalse(keys_ok)
+        v = smoke_mod.SmokeVerdict(started, triggered, "ok", keys_ok=keys_ok)
         self.assertEqual(v.verdict, "unverified")
 
     def test_keys_unavailable_unverified(self):
@@ -422,6 +442,26 @@ class TestSmokeVerdict(unittest.TestCase):
         self.assertIn("DETERLINE_SMOKE_ALLOW_NONSTEAM", src)
 
 
+class TestSmokeCliDefaults(unittest.TestCase):
+    """审核席 A P1-1：CLI 全局默认 320/240 不得覆盖 smoke 的 160/150。"""
+
+    def test_default_coordinates_reach_handler(self):
+        args = mock.Mock()
+        args.x, args.y = 320, 240          # cli.py 全局默认改写后的值
+        args.x_raw, args.y_raw = None, None
+        args.value, args.key = "room_torielroom", "obj_cactus"
+        args.timeout, args.keys = None, None
+        verdict = mock.Mock(verdict="pass")
+        with mock.patch.object(command_handlers_mod.verify,
+                               "cmd_smoke_test", return_value=verdict) as call, \
+             mock.patch.object(command_handlers_mod.paths, "find_save_dir",
+                               return_value=Path("/tmp/fake_save")):
+            command_handlers_mod._smoke_test_data_win(
+                args, None, Path("/tmp/fake_game.ios"))
+        self.assertEqual(call.call_args.kwargs["x"], 160)
+        self.assertEqual(call.call_args.kwargs["y"], 150)
+
+
 class TestSmokeOrchestrator(unittest.TestCase):
     """审核席 B P0-1 回归：cmd_smoke_test 编排层贯通测试（全 mock、零真实
     UTMT/零真实路径）——接缝级测试绿灯下 P0 NameError 曾静默存活。"""
@@ -431,14 +471,24 @@ class TestSmokeOrchestrator(unittest.TestCase):
         import io as _io
         save_dir = fixtures_save.make_save_dir()
         self.addCleanup(shutil.rmtree, str(save_dir), ignore_errors=True)
+        self._ini_dirs = []
+        self._before_policy = (state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE,
+                               state.NO_STEAM_SYNC, state.AUTO_SNAPSHOT)
         game = save_dir / "game.ios"
         game.write_bytes(b"FAKE-ORCHESTRATOR")
+        self._game = game
         before = {q.name: q.stat().st_mtime_ns for q in save_dir.iterdir()}
         buf = _io.StringIO()
+
+        def _mutate_game(game_file, *args, **kwargs):
+            # 真实改写：让 finally 的恢复写入成为可观测行为（变异 M3 钉）
+            game_file.write_bytes(game_file.read_bytes() + b"|SMOKE")
+
         # 全 mock：注入缝（6 个领域函数）+ game_edit + Steam 定位 + 启动器 + 假钟
         with mock.patch.object(smoke_mod.utmt, "game_edit",
                                side_effect=lambda *a, **k: _ctxlib.nullcontext()), \
-             mock.patch.object(smoke_mod.dialogue, "cmd_textdata_add"), \
+             mock.patch.object(smoke_mod.dialogue, "cmd_textdata_add",
+                               side_effect=_mutate_game), \
              mock.patch.object(smoke_mod.room, "_spawn_obj_internal",
                                return_value=1234), \
              mock.patch.object(smoke_mod.npc, "_query_npc_target",
@@ -447,7 +497,9 @@ class TestSmokeOrchestrator(unittest.TestCase):
              mock.patch.object(smoke_mod.code, "_append_to_code"), \
              mock.patch.object(smoke_mod.code, "cmd_create_script"), \
              mock.patch.object(smoke_mod.utmt, "_room_id_by_name", return_value="31"), \
-             mock.patch.object(smoke_mod.inifile, "cmd_ini_set"), \
+             mock.patch.object(smoke_mod.inifile, "cmd_ini_set",
+                               side_effect=lambda d, *a, **k:
+                               self._ini_dirs.append(Path(d))), \
              mock.patch.object(det_paths, "steam_game_file", return_value=None), \
              mock.patch.object(smoke_mod, "_sp", _FakeSp(self)), \
              mock.patch.object(smoke_mod, "time", _FakeClock()):
@@ -470,6 +522,16 @@ class TestSmokeOrchestrator(unittest.TestCase):
         new_names = set(after) - set(before)
         self.assertEqual(new_names, set(),
                          f"演练模式不得残留文件: {new_names}")
+        self.assertTrue(self._ini_dirs, "演练仍应走传送路径")
+        self.assertTrue(all(d != save_dir for d in self._ini_dirs),
+                        "审核席 A P1-2：演练不得改写调用方真实存档目录")
+        self.assertEqual(
+            (state.COMMIT_ACTIVE, state.SANDBOX_ACTIVE,
+             state.NO_STEAM_SYNC, state.AUTO_SNAPSHOT),
+            self._before_policy,
+            "四枚全局旗标必须在任何路径恢复（变异 M5 钉）")
+        self.assertEqual(self._game.read_bytes(), b"FAKE-ORCHESTRATOR",
+                         "finally 必须把真实注入改写的游戏文件恢复（变异 M3 钉）")
 
     def test_orchestrator_reason_populated(self):
         """审核席 A P2-1：reason 必须进入 SMOKE_RESULT（机器契约）。"""
@@ -526,6 +588,45 @@ class TestO7DetailDiff(unittest.TestCase):
         b = self._sig([], [], {}, {"fnt_main": (4064, 3, "g-digest-b")})
         rd = smoke_mod._diff_detail_resources(a, b)
         self.assertEqual(rd["fonts"]["changed"], ["fnt_main"])
+
+    def test_duplicate_instances_not_collapsed(self):
+        """精确重复实例必须按多重集计数（B P2-2：set 折叠会假绿）。"""
+        inst = ("r", 7, "o", 1, 1)
+        a = self._sig([], [inst, inst], {}, {})
+        b = self._sig([], [inst, inst, inst], {}, {})
+        rd = smoke_mod._diff_detail_resources(a, b)
+        self.assertEqual(len(rd["instances"]["added"]), 1)
+        self.assertEqual(rd["instances"]["removed"], [])
+
+    def test_dump_parses_uri_escaped_names(self):
+        """B P2-4：名称含 |/换行/非 ASCII 时行协议不得破坏。"""
+        out = "\n".join([
+            "ROOM|a%7Cb%0Ac|320x480|inst=1|tiles=0|bg=x%7Cy%2C",
+            "CODE|gml_x%7Cy|3",
+            "INST|a%7Cb%0Ac|7|obj%7Cz|1|2",
+            "CODEF|gml_x%7Cy|3|deadbeef",
+            "FONT|f%7Cn|1|0|abc",
+        ])
+        with mock.patch.object(smoke_mod.utmt, "_run_utmt", return_value=out):
+            sig = smoke_mod._dump_structure_signature(Path("/tmp/x.ios"))
+        self.assertIn("a|b\nc", sig["rooms"])
+        self.assertEqual(sig["rooms"]["a|b\nc"], ("320x480", "inst=1", "tiles=0",
+                                                  "bg=x|y,"))
+        self.assertEqual(sig["code"]["gml_x|y"], 3)
+        self.assertEqual(sig["instances"][0][0], "a|b\nc")
+        self.assertEqual(sig["instances"][0][2], "obj|z")
+        self.assertIn("gml_x|y", sig["codefp"])
+        self.assertIn("f|n", sig["fonts"])
+
+    def test_expected_shape_validation(self):
+        """B P3-1：顶层非对象必须干净报 ValidationError，不是 AttributeError。"""
+        with self.assertRaises(errors.ValidationError):
+            smoke_mod.cmd_diff_snapshots(Path("/tmp/a.ios"), Path("/tmp/b.ios"),
+                                         detail=True, expected=["x"])
+        with self.assertRaises(errors.ValidationError):
+            smoke_mod.cmd_diff_snapshots(Path("/tmp/a.ios"), Path("/tmp/b.ios"),
+                                         detail=True,
+                                         expected={"instances": "any"})
 
     def test_expected_scope_pass_and_violation(self):
         a = self._sig([(10, "old")], [("room_ruins1", 1, "obj_cactus", 1, 1)],
@@ -588,6 +689,37 @@ class TestO7Orchestrator(unittest.TestCase):
         out, code, ret = self._run_diff(sig, sig, detail=True)
         self.assertEqual(ret, 0)
         self.assertIn("资源级差异", out)
+
+    def test_detail_without_expected_counts_resource_diffs(self):
+        """B P1-1：--detail 无 --expected 时资源级差异必须进入退出码。"""
+        sig_a = self._canned_dump([(10, "old")], [],
+                                  {"gml_Script_x": (3, "d1")}, {})
+        sig_b = self._canned_dump([(10, "new")], [],
+                                  {"gml_Script_x": (3, "d2")}, {})
+        out, _, ret = self._run_diff(sig_a, sig_b, detail=True)
+        self.assertGreaterEqual(ret, 1, out)
+        self.assertIn("未提供 --expected", out)
+        self.assertNotIn("结构完全一致", out)
+
+    def test_empty_scope_does_not_allow_counts(self):
+        """B P2-1：空声明（[]/{}) 不得整类豁免 COUNT。"""
+        sig_a = self._canned_dump([], [], {}, {}, counts={"TEXCOUNT": 26})
+        sig_b = self._canned_dump([], [], {}, {}, counts={"TEXCOUNT": 27})
+        out, _, ret = self._run_diff(sig_a, sig_b, detail=True,
+                                     expected={"fonts": []})
+        self.assertGreaterEqual(ret, 1, out)
+
+    def test_room_inst_projection_requires_add_or_remove(self):
+        """B P2-2：仅声明 move 不得豁免房间实例计数变化。"""
+        sig_a = self._canned_dump([], [], {}, {}, counts={})
+        sig_a["rooms"]["room_ruins1"] = ("320x480", 61, 0, "")
+        sig_b = self._canned_dump([], [], {}, {}, counts={})
+        sig_b["rooms"]["room_ruins1"] = ("320x480", 62, 0, "")
+        out, _, ret = self._run_diff(
+            sig_a, sig_b, detail=True,
+            expected={"instances": {"room_ruins1": ["move"]}})
+        self.assertGreaterEqual(ret, 1, out)
+        self.assertNotIn("结构投影，允许", out)
 
     def test_out_of_scope_violation_bumps_diffs(self):
         """审核席 B P0 回归钉：范围外差异必须计入返回值（adapter 据以 exit 1）。"""

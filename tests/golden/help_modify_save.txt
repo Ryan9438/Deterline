@@ -84,7 +84,7 @@ options:
                         0 / export 全部帧到目录; export 时 --value 以 .png
                         结尾则默认单帧导出到该文件)
   --show-diff           替换代码时显示新旧 diff (replace-code 用)
-  --json                导出时同时输出 JSON 元数据 (export-sprite 用)
+  --json                以 JSON 输出结构化结果 (backup-index 用; export-sprite 为附加元数据)
   --hue-from HUE_FROM   色相范围 "min-max" (colorize-sprite 用, 如 "180-260")
   --hue-to HUE_TO       目标色相角度 0-360 (colorize-sprite 用)
   --workspace WORKSPACE

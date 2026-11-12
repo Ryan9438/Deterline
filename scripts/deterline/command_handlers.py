@@ -14,8 +14,12 @@ def _backup_index(args, parser, target):
         save_dir = paths.find_save_dir(args.dir)
     except FileNotFoundError as exc:
         print(f"（存档目录未定位：{exc}）", file=sys.stderr)
-    save_cmds.cmd_backup_index(save_dir, args.dir,
-                               with_hash=bool(getattr(args, "hash", False)))
+    code = save_cmds.cmd_backup_index(
+        save_dir, args.dir,
+        with_hash=bool(getattr(args, "hash", False)),
+        json_out=bool(getattr(args, "json", False)))
+    if code:
+        sys.exit(code)  # 两侧定位均失败 = 2（可区分空索引与路径错误）
 
 
 def _doctor(args, parser, target):
@@ -37,8 +41,11 @@ def _sandbox_restore(args, parser, target):
     copy = sandbox.sandbox_path(game_file)
     if not copy.is_file():
         raise FileNotFoundError(f"沙箱备份不存在: {copy}")
-    baseline = sandbox.check_baseline(game_file, copy)
-    transactions.EditPlan((transactions.FileEdit(game_file.resolve(), copy, baseline),)).apply()
+    # 工作区有 manifest → 保留来源漂移拒绝；legacy .sandbox 无 manifest，
+    # 无法做来源校验，按当前副本直恢复（EditPlan 仍会先备份目标）。
+    if copy.with_name(copy.name + ".json").is_file():
+        sandbox.check_baseline(game_file, copy)
+    transactions.EditPlan((transactions.FileEdit.prepare(game_file, copy),)).apply()
     if state.PREVIEW:
         return
     sandbox.remove_workspace(copy)
@@ -251,12 +258,19 @@ def _diff_snapshots_data_win(args, parser, game_file):
 
 
 def _smoke_test_data_win(args, parser, game_file):
-    # 注意: --dir 在 data_win 语境下是游戏数据文件；存档目录固定走默认定位
-    res = verify.cmd_smoke_test(game_file, paths.find_save_dir(None),
+    # 注意: --dir 在 data_win 语境下是游戏数据文件；存档目录走默认定位。
+    # 定位失败时传 None：演练模式用临时目录，真实启动则由库层报错。
+    try:
+        save_dir = paths.find_save_dir(None)
+    except FileNotFoundError:
+        save_dir = None
+    # x/y 用 CLI 保留的原始 None 判定（cli.py 已把全局默认改写成 320/240，
+    # 直接读 args.x 会让 smoke 的 160/150 默认永不生效）
+    res = verify.cmd_smoke_test(game_file, save_dir,
                    room_name=args.value or "room_torielroom",
                    obj_name=args.key or "obj_cactus",
-                   x=args.x if args.x is not None else 160,
-                   y=args.y if args.y is not None else 150,
+                   x=args.x_raw if args.x_raw is not None else 160,
+                   y=args.y_raw if args.y_raw is not None else 150,
                    timeout=args.timeout if args.timeout is not None else 120,
                    send_keys=args.keys or "external")
     # 阶段 1.1 三段裁决：pass=0 / fail=1 / unverified=2（未能验证，可重跑）

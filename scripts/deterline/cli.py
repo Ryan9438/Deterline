@@ -191,7 +191,7 @@ def main():
     parser.add_argument("--show-diff", action="store_true",
                         help="替换代码时显示新旧 diff (replace-code 用)")
     parser.add_argument("--json", action="store_true",
-                        help="导出时同时输出 JSON 元数据 (export-sprite 用)")
+                        help="以 JSON 输出结构化结果 (backup-index 用; export-sprite 为附加元数据)")
     parser.add_argument("--hue-from", type=str, default=None,
                         help="色相范围 \"min-max\" (colorize-sprite 用, 如 \"180-260\")")
     parser.add_argument("--hue-to", type=float, default=None,
@@ -348,7 +348,14 @@ def main():
         if "any" in routes:
             handler(args, parser, None)
         elif args.file == "data_win":
-            game_file = paths.find_game_data_file(args.dir)
+            try:
+                game_file = paths.find_game_data_file(args.dir)
+            except FileNotFoundError:
+                # diff-snapshots 的显式 A/B 输入不依赖默认游戏文件（B P2-3）；
+                # 显式 --dir 无效仍须报错，不得静默回退。
+                if args.action != "diff-snapshots" or args.dir:
+                    raise
+                game_file = None
             if args.action == "smoke-test":
                 handler(args, parser, game_file)
             else:

@@ -110,7 +110,6 @@ def backup_file(path: Path, *, required: bool = False) -> None:
 
 def list_backups(path: Path) -> list[dict[str, str]]:
     """List all backup files for a given path, sorted newest first."""
-    import time
     pattern = f"{path.name}.bak*"
     backups = []
     for p in sorted(path.parent.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True):

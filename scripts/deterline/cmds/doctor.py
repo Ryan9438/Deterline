@@ -15,7 +15,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from .. import errors, file0, inifile, paths, rooms_data, utmt
+from .. import file0, paths, rooms_data, utmt
 
 _ROOT = Path(__file__).resolve().parents[3]  # doctor: 仓库根（基线/字形表）
 

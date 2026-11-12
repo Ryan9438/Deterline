@@ -29,10 +29,14 @@ import deterline.errors as errors  # noqa: E402
 import deterline.paths as paths  # noqa: E402
 import deterline.state as state  # noqa: E402
 
-FLAGS = {
+# 兼容面（shim 按值 re-export）的 6 旗标；WORKSPACE/PREVIEW 仅在包内使用，
+# 不进 shim（按值 re-export 会成 stale 快照）。
+SHIM_FLAGS = {
     "SANDBOX_ACTIVE", "SANDBOX_ORIGINAL", "COMMIT_ACTIVE",
-    "NO_STEAM_SYNC", "AUTO_SNAPSHOT", "ALLOW_CJK", "_UTMT_CLI_PATH",
+    "NO_STEAM_SYNC", "AUTO_SNAPSHOT", "ALLOW_CJK",
 }
+# 扫描集合 = 兼容面 6 + 内部旗标（裸引用/global 一律禁止）。
+FLAGS = SHIM_FLAGS | {"_UTMT_CLI_PATH", "WORKSPACE", "PREVIEW"}
 
 
 def _iter_package_files():
@@ -195,9 +199,9 @@ class TestShimReexportsAreLiveBindings(unittest.TestCase):
                     and (node.module or "").endswith("deterline.state")
                     and node.level == 0):
                 imported.update(a.name for a in node.names)
-        # 期望 re-export 集合 = 兼容面 6 旗标；_UTMT_CLI_PATH 无兼容消费者
-        # （ms 内一律 state._UTMT_CLI_PATH），不在 re-export 集合
-        required = FLAGS - {"_UTMT_CLI_PATH"}
+        # 期望 re-export 集合 = 兼容面 6 旗标；_UTMT_CLI_PATH/WORKSPACE/
+        # PREVIEW 无兼容消费者（ms 内一律 state.X），不在 re-export 集合
+        required = SHIM_FLAGS
         missing = required - imported
         self.assertEqual(missing, set(),
                          f"ms 未从 deterline.state 导入旗标: {sorted(missing)}——"

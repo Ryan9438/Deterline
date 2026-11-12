@@ -263,9 +263,6 @@ class TestSaveDomainSmokes(_SaveDirBase):
             self.assertEqual(self._read_file0()[0], 0, "experiment-restore 应还原 file0")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestCjkCheckSmoke(_SaveDirBase):
     """cjk-check 冒烟（纯文本×JSON 运算，零游戏依赖）。"""
@@ -440,6 +437,7 @@ class TestBackupIndexSmoke(_SaveDirBase):
         (self.save_dir / "file0.bak").write_bytes(b"d")
         (self.save_dir / "undertale.ini.bak.20261112_010101").write_bytes(b"e")
         (self.save_dir / "undertale.ini.snap.t1").write_bytes(b"f")
+        (self.save_dir / "game.ios.snap.t1").write_bytes(b"g")  # 组快照存在才可恢复
         ws = self.save_dir / ".deterline" / "game.ios" / "cjk_sample"
         ws.mkdir(parents=True)
         (ws / "game.ios").write_bytes(b"WS")
@@ -454,11 +452,15 @@ class TestBackupIndexSmoke(_SaveDirBase):
         self.assertIn("ok=2", out, "manifest history 摘要")
         self.assertNotIn("workspace-legacy", out, "无 .sandbox 时不出现 legacy 行")
         # 提示语义对齐（P1-1/2/3 回归钉）
-        self.assertIn("undo --value game.ios\t", out, "game 侧 latest 合法 key")
+        self.assertIn("undo --value game.ios --dir", out, "game 侧 latest 合法 key")
         self.assertIn("undo --value game.ios --backup 20261112_000000_1", out,
                       "archive 行须带 --backup tag")
         self.assertIn("experiment-restore --value demo", out,
                       "snap 行须剥前缀取 tag（P1-1）")
+        self.assertIn("sandbox-restore --workspace cjk_sample", out,
+                      "工作区行必须用 --workspace（024e698 回退回归钉）")
+        self.assertNotIn("sandbox-restore --value cjk_sample", out,
+                         "工作区行不得再用 --value（会被静默忽略）")
         self.assertIn("undo --value file0", out)
         self.assertIn("undo --value ini --backup 20261112_010101", out,
                       "ini 的合法 key 是 ini（P1-3）")
@@ -474,6 +476,23 @@ class TestBackupIndexSmoke(_SaveDirBase):
         game.write_bytes(b"FAKE")
         out = self._index_output(game)
         self.assertIn("workspace-legacy", out)
+        self.assertIn("sandbox-restore --dir", out,
+                      "legacy 恢复不需要 --value（空值会令 argparse 报错）")
+        self.assertNotIn("sandbox-restore --value", out)
+
+    def test_legacy_sandbox_hint_restores(self):
+        """legacy .sandbox 无 manifest 也必须可恢复（提示列的唯一用途）。"""
+        import types as _types
+        import deterline.command_handlers as _ch
+        import deterline.state as _state
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"BASE")
+        (self.save_dir / "game.ios.sandbox").write_bytes(b"LEGACY")
+        with mock.patch.object(_state, "WORKSPACE", None), \
+             mock.patch.object(_state, "PREVIEW", False):
+            _ch._sandbox_restore(_types.SimpleNamespace(dir=str(game)),
+                                 None, None)
+        self.assertEqual(game.read_bytes(), b"LEGACY")
 
     def test_hash_flag_appends_sha256(self):
         game = self.save_dir / "game.ios"
@@ -527,8 +546,9 @@ class TestBackupIndexSmoke(_SaveDirBase):
              mock.patch.object(deterline.paths, "find_save_dir",
                                side_effect=FileNotFoundError("无存档目录")):
             with _ctxlib.redirect_stdout(buf), _ctxlib.redirect_stderr(err):
-                ms.cmd_backup_index(None, None)
+                code = ms.cmd_backup_index(None, None)
         out = buf.getvalue() + err.getvalue()
+        self.assertEqual(code, 2, "两侧定位均失败必须非零（可区分空索引与路径错）")
         self.assertIn("游戏数据目录未定位", out)
         self.assertIn("存档目录未定位", out)
         self.assertIn("索引完成", out)
@@ -540,8 +560,120 @@ class TestBackupIndexSmoke(_SaveDirBase):
         (self.save_dir / "undertale.ini").write_text("[General]\n", encoding="utf-8")
         (self.save_dir / "undertale.ini.bak.20261112_010101").write_bytes(b"x")
         (self.save_dir / "undertale.ini.snap.t1").write_bytes(b"y")
+        (self.save_dir / "game.ios.snap.t1").write_bytes(b"z")
         game = self.save_dir / "game.ios"
         game.write_bytes(b"FAKE")
         out = self._index_output(game)
         self.assertIn("experiment-restore --value t1", out)
         self.assertIn("undo --value ini --backup 20261112_010101", out)
+
+    def test_orphan_snapshot_not_recommended(self):
+        """save 侧孤儿快照（缺 game.ios.snap.<tag>）不得给出死命令提示。"""
+        (self.save_dir / "undertale.ini.snap.orphan").write_bytes(b"y")
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"FAKE")
+        out = self._index_output(game)
+        self.assertIn("orphan-snapshot", out)
+        self.assertNotIn("experiment-restore --value orphan", out)
+
+    def test_json_output_is_pure_and_complete(self):
+        """--json：stdout 必须是纯 JSON（不得混文本行），行键齐全。"""
+        import io as _io
+        import json as _json
+        import contextlib as _ctxlib
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"G")
+        (self.save_dir / "game.ios.bak").write_bytes(b"B")
+        (self.save_dir / "undertale.ini.snap.orphan").write_bytes(b"O")
+        ws = self.save_dir / ".deterline" / "game.ios" / "wsj"
+        ws.mkdir(parents=True)
+        (ws / "game.ios").write_bytes(b"WS")
+        (ws / "game.ios.json").write_text("{}", encoding="utf-8")
+        buf = _io.StringIO()
+        err = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=game):
+            with _ctxlib.redirect_stdout(buf), _ctxlib.redirect_stderr(err):
+                code = ms.cmd_backup_index(self.save_dir, None,
+                                           json_out=True)
+        self.assertEqual(code, 0)
+        payload = _json.loads(buf.getvalue())  # 纯 JSON：有文本行会直接抛错
+        self.assertEqual(payload["schema"], "deterline.backup-index/v1")
+        self.assertEqual(err.getvalue(), "")
+        kinds = {e["kind"] for e in payload["entries"]}
+        self.assertIn("bak-latest", kinds)
+        self.assertIn("orphan-snapshot", kinds)
+        for entry in payload["entries"]:
+            for key in ("kind", "path", "restore", "mtime_epoch",
+                        "mtime_iso", "size_bytes", "sha256"):
+                self.assertIn(key, entry)
+        ws_entry = next(e for e in payload["entries"]
+                        if e["kind"] == "workspace-copy")
+        self.assertEqual(ws_entry["restore"]["cmd"], "sandbox-restore")
+        self.assertEqual(ws_entry["restore"]["workspace"], "wsj")
+        self.assertNotIn("value", ws_entry["restore"])
+
+    def test_invalid_dir_never_falls_back_to_default(self):
+        """显式 --dir 无效时不得回退真实 Steam（D 席 P1-2 同型风险）。"""
+        import io as _io
+        import contextlib as _ctxlib
+        buf = _io.StringIO()
+        err = _io.StringIO()
+        missing = "/tmp/deterline_missing_dir_9f3c1"
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               side_effect=AssertionError("不得回退默认定位")):
+            with _ctxlib.redirect_stdout(buf), _ctxlib.redirect_stderr(err):
+                code = ms.cmd_backup_index(None, missing)
+        self.assertEqual(code, 2)
+        self.assertIn("路径不存在", err.getvalue())
+        self.assertNotIn("Steam", buf.getvalue())
+
+    def test_experiment_honors_env_override(self):
+        """experiment-* 必须能用 DETERLINE_GAME_FILE 隔离（不得恒走 Steam）。"""
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"G")
+        (self.save_dir / "file0").write_bytes(b"F")
+        with mock.patch.dict(os.environ, {"DETERLINE_GAME_FILE": str(game)}), \
+             mock.patch.object(deterline.paths, "find_game_data_file",
+                               side_effect=AssertionError("不应走默认定位")):
+            ms.cmd_experiment_snapshot(self.save_dir, "envtest")
+        self.assertTrue((self.save_dir / "game.ios.snap.envtest").is_file())
+        self.assertTrue((self.save_dir / "file0.snap.envtest").is_file())
+
+    def test_dir_override_directory_locates_both_sides(self):
+        """--dir 指向含 game.ios 的目录时，双侧都应索引。"""
+        game = self.save_dir / "game.ios"
+        game.write_bytes(b"G")
+        (self.save_dir / "game.ios.bak").write_bytes(b"B")
+        (self.save_dir / "file0.bak").write_bytes(b"F")
+        import io as _io
+        import contextlib as _ctxlib
+        buf = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               side_effect=AssertionError("不应回退默认定位")):
+            with _ctxlib.redirect_stdout(buf):
+                code = ms.cmd_backup_index(self.save_dir, str(self.save_dir))
+        out = buf.getvalue()
+        self.assertEqual(code, 0)
+        self.assertIn("game.ios.bak", out)
+        self.assertIn("file0.bak", out)
+
+class TestDiffSnapshotsDispatch(unittest.TestCase):
+    """B P2-3：显式 A/B 不应依赖默认游戏文件定位。"""
+
+    def test_explicit_ab_without_default_game(self):
+        import deterline.cli as cli_mod
+        from deterline.cmds import verify as verify_mod
+        argv = ["run.py", "--action", "diff-snapshots", "--file", "data_win",
+                "--key", "/tmp/a.ios", "--value", "/tmp/b.ios", "--detail"]
+        with mock.patch.object(sys, "argv", argv), \
+             mock.patch.object(cli_mod.paths, "find_game_data_file",
+                               side_effect=FileNotFoundError("no game")), \
+             mock.patch.object(verify_mod, "cmd_diff_snapshots",
+                               return_value=0) as call:
+            cli_mod.main()
+        self.assertTrue(call.called, "显式 A/B 不应依赖默认游戏文件")
+
+
+if __name__ == "__main__":
+    unittest.main()
