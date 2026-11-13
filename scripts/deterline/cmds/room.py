@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from .. import config, errors, rooms_data, utmt
+from .. import config, errors, rooms_data, transactions, utmt
 from . import code
 
 def _parse_layers(spec: str | None) -> list[int]:
@@ -1146,3 +1146,96 @@ def cmd_room_list(args_filter: str = "") -> None:
             else:
                 continue
         print(f"  [{rid:>3}] {name}")
+
+
+# ============================================================
+# rooms-scan（阶段 3.1 首切片，2026-11-13）：一次只读遍历统一来源
+# 原始观测 + 规则分类（A/B1/B2/D 候选）→ JSON（schema deterline.rooms-scan/v1）
+# CLI 化与 ROOMS_GUIDE 生成归 3.2（议会裁决：重生成须审批）
+# ============================================================
+
+_SCAN_ROOMS_CSX = """
+// 3.1: 房间统一扫描（只读）——尺寸/实例/Tile/启用背景/对象名集合
+using System.Text;
+string Esc(string s) { return s == null ? "?" : System.Uri.EscapeDataString(s); }
+foreach (var room in Data.Rooms) {
+    var objs = new System.Collections.Generic.HashSet<string>();
+    foreach (var g in room.GameObjects)
+        objs.Add(g.ObjectDefinition != null ? g.ObjectDefinition.Name.Content : "?");
+    var bgs = new System.Collections.Generic.List<string>();
+    foreach (var b in room.Backgrounds)
+        if (b.Enabled && b.BackgroundDefinition != null)
+            bgs.Add(b.BackgroundDefinition.Name.Content);
+    ScriptMessage("RS|" + Esc(room.Name.Content) + "|" + room.Width + "x" + room.Height
+        + "|inst=" + room.GameObjects.Count + "|tiles=" + room.Tiles.Count
+        + "|bgen=" + Esc(string.Join(",", bgs))
+        + "|objs=" + Esc(string.Join(",", objs)));
+}
+"""
+
+# D 候选启发式：≥2 启用背景层（原生多层视差特征）——人工例外带依据覆盖
+D_CANDIDATE_MIN_LAYERS = 2
+
+
+def _parse_rooms_scan(out: str) -> dict[str, dict]:
+    """解析 RS| 行（Uri 转义还原）→ 房间原始观测 dict。"""
+    from urllib.parse import unquote as _unquote
+    rooms: dict[str, dict] = {}
+    for line in utmt._parse_msg(out):
+        if not line.startswith("RS|"):
+            continue
+        parts = [_unquote(x) for x in line.split("|")]
+        if len(parts) != 7:
+            raise RuntimeError(f"rooms-scan 行解析失败（{len(parts)} 段）: {line[:80]}")
+        _, name, size, inst, tiles, bgen, objs = parts
+        # 对象名按 CSX HashSet 已去重；parse 层再保序去重一次（契约加固）
+        seen_objs: list[str] = []
+        for o in objs.split("=", 1)[1].split(","):
+            if o and o not in seen_objs:
+                seen_objs.append(o)
+        rooms[name] = {
+            "size": size,
+            "instances": int(inst.split("=", 1)[1]),
+            "tiles": int(tiles.split("=", 1)[1]),
+            "bg_enabled": [b for b in bgen.split("=", 1)[1].split(",") if b],
+            "objects": seen_objs,
+        }
+    return rooms
+
+
+def _classify_room(obs: dict) -> tuple[str, str]:
+    """规则分类（03 §3.1：保留原始观测与分类理由；D 候选带人工复核标记）。"""
+    has_bg = bool(obs["bg_enabled"])
+    has_backgrounder = any(o.startswith("obj_backgrounder")
+                           for o in obs["objects"])
+    if has_bg:
+        if len(obs["bg_enabled"]) >= D_CANDIDATE_MIN_LAYERS:
+            return "D-candidate", (f"启用背景 {len(obs['bg_enabled'])} 层"
+                                   "（≥2 层=多层视差候选，人工复核）")
+        return "B1", "数据驱动背景（启用层含 BackgroundDefinition）"
+    if has_backgrounder:
+        return "B2", "对象驱动背景（obj_backgrounder_* 实例）"
+    if obs["tiles"] > 0:
+        return "A", "纯 Tile（无启用背景、无 backgrounder）"
+    return "uncategorized", "无 Tile/背景/backgrounder 观测（记录待人工归类）"
+
+
+def scan_rooms_data(game_file: Path, timeout: int = 300) -> dict:
+    """单次只读遍历 → rooms-scan 结构（带 schema 版本与源哈希）。零写盘。"""
+    import hashlib as _hashlib
+    import time as _time
+    out = utmt._run_utmt(_SCAN_ROOMS_CSX, game_file, save=False,
+                         resolve_workspace=False, timeout=timeout)
+    rooms = _parse_rooms_scan(out)
+    for name, obs in rooms.items():
+        label, reason = _classify_room(obs)
+        obs["classification"] = label
+        obs["classification_reason"] = reason
+    return {
+        "schema": "deterline.rooms-scan/v1",
+        "source_md5": utmt._md5_file(game_file),
+        "source_sha256": transactions.fingerprint(game_file),
+        "captured_at": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "room_count": len(rooms),
+        "rooms": rooms,
+    }

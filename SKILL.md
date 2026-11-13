@@ -52,7 +52,7 @@ ASCII, ascii, 英文, 中文限制, 字体
 
 ## 技能版本
 
-2.5.1
+2.5.2
 
 ## 适用平台
 
@@ -146,7 +146,7 @@ deterline/
 ## 命令总览
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 89 个命令 · 版本 2.5.1 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 89 个命令 · 版本 2.5.2 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用

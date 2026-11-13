@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.5.2 — 2026-11-13（阶段 3.1 首切片：rooms-scan 统一扫描）
+
+**性质：03 手册 §7 条 3.1 首切片——库函数 + 工具 + 分类规则；ROOMS_GUIDE 重生成归 3.2（议会裁决：须审批）。373 测试（+12）。**
+
+- room.py 库层：`_SCAN_ROOMS_CSX`（单次只读遍历：尺寸/实例/Tile/启用背景/对象名集合，Uri 转义行协议）+ `_parse_rooms_scan`（解析层保序去重契约加固）+ `_classify_room`（A/B1/B2/D-candidate 规则 + 分类理由随行）+ `scan_rooms_data`（schema deterline.rooms-scan/v1：源 md5/sha256/时间戳/逐房观测+分类）。
+- `tools/scan_rooms.py`：CLI 包装（--game/--out/--timeout；分类统计摘要）。
+- **基线核对（RESCAN_PLAN §七，真实 UTMT 实测 2.1s）**：336 房 ✓、source md5 = 基线 ✓、tundra_town=B2 ✓；**分歧如实登记**：room_water_undynefinal / room_lastruins_corridor 按启发式（≥2 启用背景层）入 **D-candidate 人工复核**（旧标 B1/A 不强行复贴）——03 §3.1"人工例外带依据"工作面；uncategorized=53（intro/menu 等零观测房）。
+- gated 集成用例（DETERLINE_RUN_UTMT_INTEGRATION=1）钉住上述基线口径。
+
 ## v2.5.1 — 2026-11-13（凌晨批次：A8 强化 + dispatch 收编 + cjk-trigger 前置校验 + O3b 前置钉）
 
 **性质：议会三席裁决的凌晨自主批次（文档收口/执行入口另行记录于 06 §4 设计稿，未实现）。344→361 测试。**
