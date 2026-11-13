@@ -21,13 +21,13 @@ from deterline.cmds import room as room_mod  # noqa: E402
 
 
 def _rs_line(name="room_a", size="640x480", inst=3, tiles=10,
-             bgen="bg_wall", objs="obj_cactus"):
+             bgen="bg_wall", objs="obj_cactus", idx=0):
     from urllib.parse import quote
     sep = chr(31)  # 列表分隔符 = \u001f（资源名不可能含）
     bgen = sep.join(bgen.split(",")) if bgen else ""
     objs = sep.join(objs.split(",")) if objs else ""
     return ("RS|" + quote(name) + "|" + size + f"|inst={inst}"
-            f"|tiles={tiles}|bgen={quote(bgen)}|objs={quote(objs)}")
+            f"|tiles={tiles}|idx={idx}|bgen={quote(bgen)}|objs={quote(objs)}")
 
 
 class TestParseRoomsScan(unittest.TestCase):
@@ -35,6 +35,7 @@ class TestParseRoomsScan(unittest.TestCase):
         rooms = room_mod._parse_rooms_scan(_rs_line())
         self.assertEqual(set(rooms), {"room_a"})
         obs = rooms["room_a"]
+        self.assertEqual(obs["idx"], 0)
         self.assertEqual(obs["size"], "640x480")
         self.assertEqual(obs["instances"], 3)
         self.assertEqual(obs["tiles"], 10)

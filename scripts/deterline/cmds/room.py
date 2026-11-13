@@ -1158,7 +1158,8 @@ _SCAN_ROOMS_CSX = """
 // 3.1: 房间统一扫描（只读）——尺寸/实例/Tile/启用背景/对象名集合
 using System.Text;
 string Esc(string s) { return s == null ? "?" : System.Uri.EscapeDataString(s); }
-foreach (var room in Data.Rooms) {
+for (int i = 0; i < Data.Rooms.Count; i++) {
+    var room = Data.Rooms[i];
     var objs = new System.Collections.Generic.HashSet<string>();
     foreach (var g in room.GameObjects)
         objs.Add(g.ObjectDefinition != null ? g.ObjectDefinition.Name.Content : "?");
@@ -1168,6 +1169,7 @@ foreach (var room in Data.Rooms) {
             bgs.Add(b.BackgroundDefinition.Name.Content);
     ScriptMessage("RS|" + Esc(room.Name.Content) + "|" + room.Width + "x" + room.Height
         + "|inst=" + room.GameObjects.Count + "|tiles=" + room.Tiles.Count
+        + "|idx=" + i
         + "|bgen=" + Esc(string.Join("\u001f", bgs))
         + "|objs=" + Esc(string.Join("\u001f", objs)));
 }
@@ -1185,10 +1187,10 @@ def _parse_rooms_scan(out: str) -> dict[str, dict]:
         if not line.startswith("RS|"):
             continue
         parts = [_unquote(x) for x in line.split("|")]
-        if len(parts) != 7:
+        if len(parts) != 8:
             raise RuntimeError(f"rooms-scan 行解析失败（{len(parts)} 段）: {line[:80]}")
-        _, name, size, inst, tiles, bgen, objs = parts
-        for field in (inst, tiles, bgen, objs):
+        _, name, size, inst, tiles, idx, bgen, objs = parts
+        for field in (inst, tiles, idx, bgen, objs):
             if "=" not in field:
                 raise RuntimeError(f"rooms-scan 行字段缺 '=': {line[:80]}")
         # 对象名按 CSX HashSet 已去重；parse 层再保序去重一次（契约加固）。
@@ -1200,6 +1202,7 @@ def _parse_rooms_scan(out: str) -> dict[str, dict]:
             if o and o not in seen_objs:
                 seen_objs.append(o)
         rooms[name] = {
+            "idx": int(idx.split("=", 1)[1]),
             "size": size,
             "instances": int(inst.split("=", 1)[1]),
             "tiles": int(tiles.split("=", 1)[1]),

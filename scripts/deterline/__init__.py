@@ -12,7 +12,7 @@ O2 拆包（研讨会2/01 §2.1）：scripts/modify_save.py 逐步拆入本包�
 __version__ 单点：test_docs_lint 优先读本文件（O2-step0 地雷 #3）。
 """
 
-__version__ = "2.5.3"
+__version__ = "2.5.4"
 
 # Windows 控制台（cp1252 等）打印 ✓/中文会 UnicodeEncodeError——CLI 与测试
 # 的直 print 统一走 UTF-8（CI 2026-11-13 实证；errors="replace" 兜底）。
