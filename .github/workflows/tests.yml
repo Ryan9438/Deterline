@@ -16,8 +16,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       PYTHONDONTWRITEBYTECODE: "1"
-      # 测试内 subprocess 全部 mock；仅需 _find_utmt_cli() 能解析到存在的路径
-      UTMT_CLI: ${{ runner.temp }}/deterline-utmt-placeholder.dll
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,7 +26,10 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check pillow
       - name: UTMT CLI 占位
         shell: bash
-        run: mkdir -p "$(dirname "$UTMT_CLI")" && touch "$UTMT_CLI"
+        run: |
+          echo "UTMT_CLI=$RUNNER_TEMP/deterline-utmt-placeholder.dll" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP"
+          touch "$RUNNER_TEMP/deterline-utmt-placeholder.dll"
       - name: 全量单测（无游戏资产）
         run: python3 -m unittest discover -s tests -v
       - name: 文档生成检查
