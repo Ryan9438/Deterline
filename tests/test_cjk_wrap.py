@@ -128,10 +128,106 @@ class TestCjkTriggerBuilder(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "text 为空"):
             ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 100, 100, 31, "  ")
 
+
+
+
+class TestTwoPageTrigger(unittest.TestCase):
+    """阶段 1.5：cjk-trigger 两页扩展的校验矩阵。"""
+
+    def test_two_page_msg_table_shape(self):
+        csx = ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 220, 330,
+                                        31, "* 第一页/%%* 第二页", wrap=False)
+        # CSX 内 GML 字符串带反斜杠转义（\"）——与 B4 形态一致
+        self.assertIn('global.msg[0] = \\"* 第一页/%%\\";', csx)
+        self.assertIn('global.msg[1] = \\"* 第二页/%%\\";', csx)
+        self.assertIn('global.msg[2] = \\"%%%\\";', csx)
+        self.assertNotIn("global.msg[3]", csx)
+
+    def test_single_page_shape_unchanged(self):
+        csx = ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 220, 330,
+                                        31, "* 单页", wrap=False)
+        self.assertIn('global.msg[0] = \\"* 单页/%%\\";', csx)
+        self.assertIn('global.msg[1] = \\"%%%\\";', csx)
+        self.assertNotIn("global.msg[2]", csx)
+
+    def test_three_pages_rejected(self):
+        with self.assertRaises(RuntimeError):
+            ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 220, 330,
+                                      31, "* 一/%%* 二/%%* 三", wrap=False)
+
+    def test_two_page_wrap_independent(self):
+        csx = ms._build_cjk_trigger_csx(
+            "room_ruins1", "obj_cactus", 220, 330, 31,
+            "* 第一页内容比较长需要折行处理测试/%%* 第二页也要折行", wrap=True)
+        self.assertIn("global.msg[0]", csx)
+        self.assertIn("global.msg[1]", csx)
+        # 折行独立性：页1 的 & 硬换行不得渗入页2（每页独立折行）
+        import re as _re
+        m0 = _re.search(r'global\.msg\[0\] = \\"([^"]*)\\"', csx)
+        m1 = _re.search(r'global\.msg\[1\] = \\"([^"]*)\\"', csx)
+        self.assertIsNotNone(m0)
+        self.assertIsNotNone(m1)
+        self.assertIn("&", m0.group(1), "页1 长文本折行应产生 & 硬换行")
+        self.assertNotIn("&", m1.group(1), "页2 短文本不应有硬换行（独立性）")
+
+
+class TestCjkTriggerGlyphPreflight(unittest.TestCase):
+    """风险席切片 A（2026-11-13）：cjk-trigger 前置字形覆盖校验——
+    表外字符在任何 UTMT 调用/写盘前拒绝（"覆盖≠放行"缺口收口）。"""
+
+    FIXTURE = Path(__file__).resolve().parent / "fixtures" / "glyphs_min.json"
+
+    def _run(self, text, glyphs_json="NOT_SET"):
+        import io as _io
+        import contextlib as _ctxlib
+        from deterline.cmds import cjk as cjk_mod
+        game = self.FIXTURE  # 仅作路径参数（_run_utmt 已 mock，不触盘）
+        captured = _io.StringIO()
+        calls = []
+        gj = self.FIXTURE if glyphs_json == "NOT_SET" else glyphs_json
+        with mock.patch.object(cjk_mod.utmt, "_run_utmt",
+                               side_effect=lambda *a, **k:
+                               calls.append(a) or "CJK_TRIGGER_OK glyphs=1"), \
+             mock.patch.object(cjk_mod.verify, "cmd_verify_code",
+                               return_value=True):
+            with _ctxlib.redirect_stdout(captured):
+                try:
+                    cjk_mod.cmd_cjk_trigger(
+                        game, "room_ruins1", "obj_cactus", 220, 330,
+                        31, text, glyphs_json=gj)
+                    outcome = "ok"
+                except errors.ValidationError as exc:
+                    outcome = f"ValidationError: {exc}"
+        return outcome, captured.getvalue(), calls
+
+    def test_uncovered_char_rejected_before_any_utmt_call(self):
+        outcome, _, calls = self._run("* 你好，美。")
+        self.assertTrue(outcome.startswith("ValidationError"), outcome)
+        self.assertIn("字形表外字符", outcome)
+        self.assertIn("美", outcome)
+        self.assertEqual(calls, [], "拒绝必须发生在任何 UTMT 调用之前")
+
+    def test_covered_text_proceeds(self):
+        outcome, out, calls = self._run("* 你好，测试。")
+        self.assertEqual(outcome, "ok", out)
+        self.assertEqual(len(calls), 1)
+
+    def test_ascii_only_skips_glyph_lookup(self):
+        # 字形表路径不存在 + 纯 ASCII → 不降级告警、照常生成
+        outcome, out, calls = self._run("* hello 123.", glyphs_json=None)
+        self.assertEqual(outcome, "ok", out)
+        self.assertNotIn("字形表缺失", out)
+
+    def test_missing_glyph_table_degrades_with_notice(self):
+        import tempfile as _tf
+        missing = Path(_tf.mkdtemp()) / "missing_glyphs.json"  # 全新目录，恒不存在
+        outcome, out, calls = self._run("* 你好。", glyphs_json=missing)
+        self.assertEqual(outcome, "ok", out)
+        self.assertIn("字形表缺失", out, "缺表时降级为提示行照常生成")
+        self.assertEqual(len(calls), 1)
+
     def test_malformed_glyph_table_fail_closed(self):
-        """审核席 B P2-1：畸形码点（非 dict/非法整数）必须 fail-closed 并点名
-        表文件——此前 chr(c) 会 ValueError/TypeError 裸栈。"""
-        import json as _json
+        """审核席 B P2-1：畸形码点必须 fail-closed 并点名表文件（此前 chr(c) 裸栈）。"""
         import tempfile as _tf
         d = Path(_tf.mkdtemp())
         for bad in ('[1, 2, 3]', '[{"code": 999999999}]', '[{"code": "0x4f60"}]'):
@@ -143,8 +239,7 @@ class TestCjkTriggerBuilder(unittest.TestCase):
             self.assertEqual(calls, [], "坏表必须在 UTMT 之前拒绝")
 
     def test_cli_glyphs_string_path_wired(self):
-        """审核席 B P1 回归钉：CLI --glyphs 传原始 str 不得 AttributeError
-        （handler 层须 Path 化；此前单测全走函数级 Path 故未暴露）。"""
+        """审核席 B P1 回归钉：CLI --glyphs 传原始 str 不得 AttributeError。"""
         import io as _io
         import contextlib as _ctxlib
         import tempfile as _tf
