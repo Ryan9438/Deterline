@@ -687,10 +687,14 @@ class TestDispatchRemnantCmds(unittest.TestCase):
             game = Path(directory) / "game.ios"
             game.write_bytes(b"BASE")
             (Path(directory) / "game.ios.sandbox").write_bytes(b"LEGACY")
-            ms.cmd_sandbox_restore(game)
+            # 进程内其他测试可能残留 WORKSPACE——legacy 语义要求 None
+            with mock.patch.object(state, "WORKSPACE", None), \
+                 mock.patch.object(state, "PREVIEW", False):
+                ms.cmd_sandbox_restore(game)
             self.assertEqual(game.read_bytes(), b"LEGACY")
-            # legacy 无 manifest：恢复后可重复恢复（幂等）
-            ms.cmd_sandbox_restore(game)
+            # 恢复语义 = 消费副本（remove_workspace）：恢复后副本被删除
+            self.assertFalse((Path(directory) / "game.ios.sandbox").exists(),
+                             "sandbox-restore 单次语义——副本应被消费")
             _shutil.rmtree(directory, ignore_errors=True)
 
     def test_cmd_sandbox_restore_rejects_tampered_workspace(self):
