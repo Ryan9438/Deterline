@@ -57,13 +57,15 @@ def _recovery_scan(args, parser, target):
 
 def _doctor(args, parser, target):
     json_out = bool(getattr(args, "json", False))
+    save_dir_error = None
     try:
         save_dir = paths.find_save_dir(args.dir)
     except FileNotFoundError as exc:
         if not json_out:
             print(f"  ✗ 存档目录定位 — {exc}", file=sys.stderr)
-        save_dir = None
-    doctor.cmd_doctor(save_dir, args.dir, json_out=json_out)
+        save_dir, save_dir_error = None, str(exc)
+    doctor.cmd_doctor(save_dir, args.dir, json_out=json_out,
+                      save_dir_error=save_dir_error)
 
 
 def _md5(args, parser, target):

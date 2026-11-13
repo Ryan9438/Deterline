@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """ROOMS_GUIDE 草稿生成器（阶段 3.2 首切片，2026-11-13）。
 
-输入：rooms-scan JSON（tools/scan_rooms.py 产出，分类 SSOT）+ rooms.json
-映射。输出：**草稿** `ROOMS_GUIDE.draft.md`（绝不覆盖正式 ROOMS_GUIDE.md
-——重生成须审批，03 §3.2 / 议会裁决）。同一输入重跑输出逐字节稳定。
+输入：rooms-scan JSON（tools/scan_rooms.py 产出，分类 SSOT，schema
+deterline.rooms-scan/v2）+ rooms.json 映射。输出：**草稿**
+`ROOMS_GUIDE.draft.md`（审批闸门：--out 指向正式 ROOMS_GUIDE.md 一律
+拒绝——重生成须审批，03 §3.2 / 议会裁决）。同一输入重跑输出逐字节稳定。
 
 附带映射体检（03 §3.2）：rooms.json ID/中文名双射、rooms_reverse.json
 一致性、扫描房名覆盖率（未登记名单列出）。
@@ -11,6 +12,7 @@
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -33,6 +35,25 @@ def _sanitize(text: str) -> str:
             .replace(chr(96), chr(39)))
 
 
+def _is_forbidden_out(out: Path) -> bool:
+    """审批闸门（审核席 A P2-1 / B P1）：resolve 字面比较 + 大小写折叠
+    （macOS 卷不敏感可绕）+ samefile（硬链接别名）。任一命中即拒绝。"""
+    forbidden = (REPO / FORBIDDEN_OUT).resolve()
+    try:
+        target = out.expanduser().resolve()
+    except OSError:
+        target = out
+    if os.path.normcase(str(target)).casefold() == \
+            os.path.normcase(str(forbidden)).casefold():
+        return True
+    try:
+        if out.exists() and out.samefile(forbidden):
+            return True
+    except OSError:
+        pass
+    return False
+
+
 def validate_mapping(rooms: dict, reverse: dict) -> list[str]:
     """rooms.json（id→中文名）与 rooms_reverse.json（中文名→id）双向体检。"""
     problems = []
@@ -52,27 +73,33 @@ def validate_mapping(rooms: dict, reverse: dict) -> list[str]:
 
 
 def render_guide(data: dict, rooms: dict, problems: list[str]) -> str:
-    # 分类统计由 rooms 现算（人工改 classification 后 stale summary 曾自相矛盾）
+    # 分类统计由 rooms 现算（人工改 classification 后 stale summary 曾自相矛盾）。
+    # 归一化：非字符串标签（null/bool/数字）按 uncategorized 计——曾静默丢房（B P2）
+    def _norm_label(obs):
+        c = obs.get("classification", "uncategorized")
+        return c if isinstance(c, str) and c else "uncategorized"
+
     live_counts: dict[str, int] = {}
     for obs in data["rooms"].values():
-        c = obs.get("classification", "uncategorized")
+        c = _norm_label(obs)
         live_counts[c] = live_counts.get(c, 0) + 1
     lines = [
         "# ROOMS_GUIDE 草稿（自动生成——重生成须审批，勿直接覆盖正式文档）",
         "",
         f"- schema: {data['schema']}",
         f"- 源文件 md5: `{data['source_md5']}`",
-        f"- 采集时间: {data['captured_at']}",
+        f"- 采集时间: {_sanitize(data['captured_at'])}",
         f"- 房间总数: {data['room_count']}",
         f"- 分类统计: " + "、".join(
-            f"{k}={v}" for k, v in sorted(live_counts.items())),
+            f"{_sanitize(k)}={v}"
+            for k, v in sorted(live_counts.items(), key=lambda kv: str(kv[0]))),
         "",
         "## 映射体检（03 §3.2）",
         "",
     ]
     if problems:
         lines.append(f"⚠️ {len(problems)} 项问题：")
-        lines.extend(f"- {p}" for p in problems)
+        lines.extend(f"- {_sanitize(p)}" for p in problems)
     else:
         lines.append(f"✓ rooms.json ({len(rooms)} 条) 与 reverse 双射一致")
     lines.append("")
@@ -86,10 +113,10 @@ def render_guide(data: dict, rooms: dict, problems: list[str]) -> str:
     if unregistered:
         lines.append("")
         lines.append("未登记名单（前 20）：")
-        lines.extend(f"- {n}" for n in unregistered[:20])
+        lines.extend(f"- {_sanitize(n)}" for n in unregistered[:20])
     lines.append("")
 
-    # 未知标签兜底节（审核席 B P2-1：人工改 "D" 曾静默丢房）
+    # 未知标签兜底节（审核席 B P2-1：人工改 "D" 曾静默丢房；非字符串归一）
     known = set(SECTION_ORDER)
     unknown = {c for c in live_counts if c not in known}
     sections = SECTION_ORDER + [f"unknown:{c}" for c in sorted(unknown)]
@@ -98,7 +125,7 @@ def render_guide(data: dict, rooms: dict, problems: list[str]) -> str:
         if section.startswith("unknown:"):
             raw = section.split(":", 1)[1]
             members = sorted(n for n, o in data["rooms"].items()
-                             if o.get("classification") == raw)
+                             if _norm_label(o) == raw)
             lines.append(f"## 其他（人工标签 {raw!r}——不在规则集，请复核）"
                          f"（{len(members)}）")
             lines.append("")
@@ -108,8 +135,8 @@ def render_guide(data: dict, rooms: dict, problems: list[str]) -> str:
             lines.append("")
             continue
         members = sorted(n for n, o in data["rooms"].items()
-                         if o.get("classification") == section)
-        lines.append(f"## {SECTION_TITLES[section]}（{len(members)}）")
+                         if _norm_label(o) == section)
+        lines.append(f"## {SECTION_TITLES.get(section, section)}（{len(members)}）")
         lines.append("")
         if not members:
             lines.append("（无）")
@@ -147,9 +174,9 @@ def main():
     if not scan_path.is_file():
         print(f"错误: scan JSON 不存在: {scan_path}", file=sys.stderr)
         return 1
-    if Path(args.out).resolve() == (REPO / FORBIDDEN_OUT).resolve():
-        print(f"错误: --out 不得指向正式 {FORBIDDEN_OUT}（重生成须审批；"
-              "请用默认 ROOMS_GUIDE.draft.md 或显式草稿路径）", file=sys.stderr)
+    if _is_forbidden_out(Path(args.out)):
+        print(f"错误: --out 不得指向正式 {FORBIDDEN_OUT}（大小写/别名一律拒绝；"
+              "重生成须审批——请用默认 ROOMS_GUIDE.draft.md）", file=sys.stderr)
         return 1
     try:
         data = json.loads(scan_path.read_text(encoding="utf-8"))
@@ -157,8 +184,11 @@ def main():
         print(f"错误: scan JSON 不可解析: {scan_path}（{exc}）", file=sys.stderr)
         return 1
     if data.get("schema") != "deterline.rooms-scan/v2":
-        print(f"⚠️ scan schema={data.get('schema')!r} ≠ v2（旧协议 JSON 无 idx，"
-              "映射将全标未登记）——建议重扫（tools/scan_rooms.py）",
+        has_idx = any("idx" in o for o in data.get("rooms", {}).values()) \
+            if isinstance(data.get("rooms"), dict) else False
+        detail = ("带 idx 的 v1 旧稿——映射可用，建议重扫以对齐 v2" if has_idx
+                  else "旧协议无 idx——映射将全标未登记，请重扫")
+        print(f"⚠️ scan schema={data.get('schema')!r} ≠ v2（{detail}）",
               file=sys.stderr)
     rooms = json.loads((REPO / "scripts" / "rooms.json").read_text(encoding="utf-8"))
     reverse = json.loads((REPO / "scripts" / "rooms_reverse.json").read_text(encoding="utf-8"))
@@ -167,7 +197,7 @@ def main():
     try:
         text = render_guide(data, rooms, problems)
     except KeyError as exc:
-        print(f"错误: scan JSON 缺观测字段（旧协议？请重扫）: {exc}", file=sys.stderr)
+        print(f"错误: scan JSON 缺观测字段: {exc}", file=sys.stderr)
         return 1
     Path(args.out).write_text(text, encoding="utf-8")
     print(f"✓ 草稿 → {args.out}（{data['room_count']} 房；映射体检 "

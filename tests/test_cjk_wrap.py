@@ -236,6 +236,7 @@ class TestCjkTriggerGlyphPreflight(unittest.TestCase):
             outcome, _, calls = self._run("* 你好。", glyphs_json=f)
             self.assertTrue(outcome.startswith("ValidationError"), f"{bad}: {outcome}")
             self.assertIn("字形表", outcome)
+            self.assertIn(str(f), outcome, "消息必须点名表文件（审核席 B：曾无钉力）")
             self.assertEqual(calls, [], "坏表必须在 UTMT 之前拒绝")
 
     def test_cli_glyphs_string_path_wired(self):

@@ -867,6 +867,11 @@ class TestDoctorJson(unittest.TestCase):
         self.assertEqual(cm.exception.code, 1)
         payload = _json.loads(buf.getvalue())  # 纯 JSON
         self.assertEqual(payload["schema"], "deterline.doctor/v1")
+        first = next(i for i in payload["items"]
+                     if i["label"] == "存档目录定位")
+        if not first["ok"]:
+            self.assertTrue(first["detail"],
+                            "定位失败原因必须进 JSON detail（B P2：曾整体蒸发）")
         self.assertGreaterEqual(payload["fails"], 1,
                                 "JSON 模式 fails 必须与 ✗ 项一致（曾恒 0）")
         self.assertEqual(sum(1 for i in payload["items"] if not i["ok"]),

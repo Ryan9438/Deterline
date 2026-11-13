@@ -1150,7 +1150,7 @@ def cmd_room_list(args_filter: str = "") -> None:
 
 # ============================================================
 # rooms-scan（阶段 3.1 首切片，2026-11-13）：一次只读遍历统一来源
-# 原始观测 + 规则分类（A/B1/B2/D 候选）→ JSON（schema deterline.rooms-scan/v1）
+# 原始观测 + 规则分类（A/B1/B2/D 候选）→ JSON（schema deterline.rooms-scan/v2）
 # CLI 化与 ROOMS_GUIDE 生成归 3.2（议会裁决：重生成须审批）
 # ============================================================
 

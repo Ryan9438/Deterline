@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.5.5 — 2026-11-14（凌晨收口：批次 10/11 清偿 + doctor --json）
+
+**性质：双席交叉审核 2 轮清偿（批次 10 修复 + doctor --json）。382→386 测试（+4：闸门 2 + doctor JSON 2）。**
+
+### 批次 10 清偿（审核席 A/B）
+
+- **审批闸门三重判定**（P1/P2-2）：`--out` 指向正式 ROOMS_GUIDE.md 一律拒绝——resolve 字面 + **大小写折叠**（macOS 卷不敏感绕过，已实测覆盖正式文档后修复）+ **samefile**（硬链接别名）；回归钉 2 条。
+- **未知/非字符串分类兜底**（P2-1/P2）：未知标签落"其他（人工标签 …）"节（不丢房）；**非字符串标签归一 uncategorized**（null/bool/数字曾静默消失）；分类统计由 rooms 现算（stale summary 不再矛盾）；混合类型排序键 str 化（曾 TypeError 裸栈）；统计键过 _sanitize。
+- **rooms-scan schema 升 v2**（idx 字段入协议）；生成器对 v1 旧稿条件式警告（带 idx=v1 旧稿措辞如实）；JSON 损坏/缺观测字段干净报错（曾裸 traceback）；房行/理由/头部 _sanitize 净化（防 markdown 行裂/注入）。
+- scan_rooms.py docstring 如实化（original_* 字段从未实现——改为兜底节/现算口径）；room.py 分节注释 v1→v2、inst/tiles int 解析对齐干净报错。
+- CHANGELOG v2.5.4 定性修正：未登记 92 房 = 旧指南**无中文注**集合（含开发房与 room_battle/room_tundra_sanshouse 等真实房间），非"等开发房"。
+
+### doctor --json（v2.5.5 主特性，风险席填缝批）
+
+- `doctor --json`：stdout 纯 JSON（schema **deterline.doctor/v1**：save_dir/items{label,ok,detail}/fails）；人读输出逐字节零扰动（git archive 对照实测）；退出码语义不变（任一 ✗ → 1）。
+- **fails 计数自纠**：JSON 分支曾不计数（恒 0）——上移至统一入口，双回归钉（变异实验：移回旧位两用例必红）。
+- JSON 模式存档目录定位失败原因进 `items[0].detail`（此前 stderr 行蒸发、JSON 无原因）。
+- `--json` help 文案、commands.json doctor 条目同步。
+
+### 诚实记录
+
+- 6c52cba 推送 CI 红（windows cp1252：test_gen_rooms_guide e2e 的 subprocess 无 encoding + fixture 残留 v1 触发 stderr ⚠️——本版双修）；v2.5.1 记录更正为 4 次红（见 v2.5.3）。
+- 前向：doctor --dir 目录双形态（md5/undo 已接 resolve，doctor 未接）——归表驱动 dispatch 后续；SKILL"启动次数 11/13/15"三口径漂移未清（历史文本，挂文档复核）。
+
 ## v2.5.4 — 2026-11-14（阶段 3.2 首切片：ROOMS_GUIDE 草稿生成器 + 映射体检）
 
 **性质：03 手册 §7 条 3.2 首切片。375→382 测试（+7）。正式 ROOMS_GUIDE.md 零触碰（重生成须审批——议会裁决）。**

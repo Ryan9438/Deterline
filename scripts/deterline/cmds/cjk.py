@@ -476,7 +476,11 @@ def _load_glyph_codes(glyphs_json: Path | None = None) -> "tuple[set[int], Path]
     gj = glyphs_json or _default_glyphs_path()
     if not gj.exists():
         return None
-    glyphs = json.loads(gj.read_text(encoding="utf-8"))
+    try:
+        glyphs = json.loads(gj.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise errors.ValidationError(
+            f"字形表不可解析（非 JSON）: {gj}（{exc}）") from exc
     known: set[int] = set()
     for g in glyphs:
         # 畸形表 fail-closed 并点名记录（审核席 B P2-1：chr(c) 曾 ValueError/

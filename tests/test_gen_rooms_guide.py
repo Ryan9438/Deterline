@@ -17,7 +17,7 @@ import gen_rooms_guide  # noqa: E402
 
 def _scan_json(rooms: dict, source_md5="fc049850856dea4ef1427bbf5653fc47") -> dict:
     data = {
-        "schema": "deterline.rooms-scan/v1",
+        "schema": "deterline.rooms-scan/v2",
         "source_md5": source_md5,
         "source_sha256": "x" * 64,
         "captured_at": "2026-11-13T00:00:00",
@@ -105,6 +105,21 @@ class TestRenderGuide(unittest.TestCase):
         self.assertIn("登记 2 / 未登记 1", out, "idx=9999 不在 rooms.json")
 
 
+class TestApprovalGate(unittest.TestCase):
+    """审核席 A P2-1 / B P1：--out 指向正式 ROOMS_GUIDE.md 一律拒绝
+    （大小写变体/resolve 等价形态；同一文件硬链接走 samefile 分支）。"""
+
+    def test_gate_rejects_case_variants(self):
+        for name in ("ROOMS_GUIDE.md", "rooms_guide.md", "ROOMS_GUIDE.MD",
+                     "./ROOMS_GUIDE.md"):
+            out = REPO / name if "/" not in name else REPO / name
+            self.assertTrue(gen_rooms_guide._is_forbidden_out(out), name)
+
+    def test_gate_allows_draft(self):
+        self.assertFalse(gen_rooms_guide._is_forbidden_out(
+            REPO / "ROOMS_GUIDE.draft.md"))
+
+
 class TestMainEndToEnd(unittest.TestCase):
     """CLI 层：scan JSON → 草稿文件；正式 ROOMS_GUIDE.md 永不被触碰。"""
 
@@ -125,7 +140,8 @@ class TestMainEndToEnd(unittest.TestCase):
             out = Path(directory) / "draft.md"
             r = subprocess.run([sys.executable, str(REPO / "tools" / "gen_rooms_guide.py"),
                                 "--scan", str(scan), "--out", str(out)],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
             self.assertEqual(r.returncode, 0, r.stderr[-300:])
             draft = out.read_text(encoding="utf-8")
             self.assertIn("ROOMS_GUIDE 草稿", draft)

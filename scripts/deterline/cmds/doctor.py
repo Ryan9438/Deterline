@@ -21,7 +21,8 @@ _ROOT = Path(__file__).resolve().parents[3]  # doctor: 仓库根（基线/字形
 
 
 def cmd_doctor(save_dir: Path, dir_override: str | None = None,
-               json_out: bool = False) -> None:
+               json_out: bool = False,
+               save_dir_error: str | None = None) -> None:
     """聚合体检（全部只读）。--dir 走 find_save_dir 语义。
 
     --json（v2.5.5）：stdout 纯 JSON（schema deterline.doctor/v1，items 为
@@ -46,7 +47,7 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None,
 
     # 0. 存档目录定位（None = 定位失败，由调用方打印 ✗；此处跳过存档项）
     check("存档目录定位", save_dir is not None,
-          str(save_dir) if save_dir is not None else "")
+          str(save_dir) if save_dir is not None else (save_dir_error or ""))
 
     # 1. rooms.json（路径复用 rooms_data 单点，不新增模块路径位点）
     rooms_json = rooms_data._rooms_json_path()  # noqa: 私有复用（同包）
