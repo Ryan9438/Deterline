@@ -447,7 +447,7 @@
       "summary": "一键安全 NPC 对话：加对话条目 + 生成实例 + 注入已验证扁平距离触发块 + 自动 Alarm_0 守卫。默认可重复；--once 触发后 NPC 自毁",
       "example": "npc-dialogue --value \"room_torielroom\" --key \"obj_cactus\" --x 170 --y 180 --text-key \"obj_cactus_hi\" --text \"* Hi/%%\"",
       "notes": [
-        "扁平形态 = 15 次游戏内启动实验矩阵实证（AUDIT_2026-11-07/域F）；状态机形态在当前 UTMT 环境是游戏内死代码，禁止手写",
+        "扁平形态 = 11 次游戏内启动实验矩阵实证（AUDIT_2026-11-07/域F；11 启动/8 受控变体）；状态机形态在当前 UTMT 环境是游戏内死代码，禁止手写",
         "不锁移动（v2.3.0 起）；--text 含 \\C 会报错并引导改用 npc-choice",
         "--range 自定义触发距离（默认 50px）"
       ]

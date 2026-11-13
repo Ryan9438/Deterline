@@ -83,9 +83,10 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None,
         except Exception as e:
             check("undertale.ini 可解析", False, str(e)[:80])
 
-    # 3. 游戏数据文件 + 基线比对
+    # 3. 游戏数据文件 + 基线比对（--dir 文件/含 game.ios 的目录双形态，
+    #    与 md5/backup-index 同语义——v2.5.5 补齐 cli help 承诺）
     try:
-        game_file = paths.find_game_data_file(dir_override)
+        game_file = paths.resolve_game_data_file(dir_override)
     except FileNotFoundError as e:
         game_file = None
         check("游戏数据文件定位", False, str(e)[:80])

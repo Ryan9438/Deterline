@@ -285,7 +285,7 @@ deterline/
 | `create-battle --value "room_x" --key 0 --x 320 --y 240` | 创建战斗触发区（--key = battlegroup 数字 ID；--border 边框样式） | sandbox |
 | `handler-extract` | 分析 obj_time_Step_2 自定义逻辑（--apply 应用抽取） | static |
 
-> ⚠️ `npc-dialogue`: 扁平形态 = 15 次游戏内启动实验矩阵实证（AUDIT_2026-11-07/域F）；状态机形态在当前 UTMT 环境是游戏内死代码，禁止手写
+> ⚠️ `npc-dialogue`: 扁平形态 = 11 次游戏内启动实验矩阵实证（AUDIT_2026-11-07/域F；11 启动/8 受控变体）；状态机形态在当前 UTMT 环境是游戏内死代码，禁止手写
 > ⚠️ `npc-dialogue`: 不锁移动（v2.3.0 起）；--text 含 \C 会报错并引导改用 npc-choice
 > ⚠️ `npc-dialogue`: --range 自定义触发距离（默认 50px）
 > ⚠️ `npc-choice`: --text 必须含 \C（≤3 行）；YES/NO 分支文本不得含 \C（自动校验，防止选择框循环重弹）
@@ -732,7 +732,7 @@ Sprite (SPRT)            — 2583 个，逻辑精灵，每帧指向一个 Textur
 > 手工注入时必须自己做这步（或在 Create_0 末尾 `append-code` 加 `deterline_state = 0;`）。
 > 可用 `verify-nsid` 检查 / `--fix` 修复损坏变量。
 
-> 🚨 **v2.3.0 警示（2026-11 游戏内 13 次启动实测）**：下方手写状态机模板在当前
+> 🚨 **v2.3.0 警示（2026-11 游戏内 11 次启动实测，域F 口径）**：下方手写状态机模板在当前
 > UndertaleModCli 0.9.1.2 环境下**游戏内静默死代码**（触发分支从未执行）——凡"状态条件
 > 门控 create"的写法（deterline_state/flag[510]/内建变量，外层或嵌套）全部失效；唯一
 > 游戏内实证可用的形态是 `npc-dialogue` v2.3.0 生成的**纯扁平触发块**（无状态读写）。
