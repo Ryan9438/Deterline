@@ -66,7 +66,9 @@ ALLOWLIST: dict[str, str] = {
     "room-objects": "读式诊断",
     "search-sctext": "读式搜索（_fail_if_no_match 退出码 3 已测）",
     "search-sprite": "读式搜索",
-    "verify-code": "verify 域；cmd_cjk_font 五步管线的收尾步每轮实测",
+    # verify-code：2026-11-13 移出——cjk-trigger 前置校验测试引用
+    # cmd_verify_code（test_cjk_wrap.TestCjkTriggerGlyphPreflight），
+    # 且五步管线的收尾步每轮实测（原理由）见 CHANGELOG v2.3.2
 }
 
 

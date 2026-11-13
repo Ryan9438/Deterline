@@ -219,7 +219,7 @@ def main():
     parser.add_argument("--typer", type=int, default=31,
                         help="cjk-trigger: SCR_TEXTTYPE 编号（默认 31 = fnt_maintext spacing12；须在 CJK_TYPER_TABLE）")
     parser.add_argument("--glyphs", type=str, default=None,
-                        help="cjk-check: 字形表路径（默认 build/font_cjk/glyphs.json）")
+                        help="cjk-check/cjk-trigger: 字形表路径（默认 build/font_cjk/glyphs.json）")
     parser.add_argument("--detail", action="store_true",
                         help="diff-snapshots: 输出资源级差异（字符串哈希/实例坐标/代码指纹/字体）")
     parser.add_argument("--expected", type=str, default=None,

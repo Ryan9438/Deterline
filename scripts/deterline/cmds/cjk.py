@@ -432,8 +432,29 @@ try {{
 
 def cmd_cjk_trigger(game_file: Path, room_name: str, obj_name: str, x: int, y: int,
                     typer: int, text: str, wrap: bool = True,
-                    width_room_px: int = None) -> bool:
-    """C3b S6：注入单个 CJK 对话触发块（默认沙箱）+ 触发后体检。"""
+                    width_room_px: int = None,
+                    glyphs_json: Path | None = None) -> bool:
+    """C3b S6：注入单个 CJK 对话触发块（默认沙箱）+ 触发后体检。
+
+    前置字形覆盖校验（风险席 2026-11-13 切片 A）：文本含非 ASCII 且字形表
+    在位时，表外字符直接 ValidationError（先于任何 UTMT 调用/写盘）——
+    否则会生成必然渲染空白的触发块（"覆盖≠放行"诚实缺口收口）。
+    字形表缺失降级为提示行照常生成（与 cjk-check 退出码 2 语义分开）。
+    """
+    non_ascii = {ch for ch in text if ord(ch) >= 128 and ch not in "\n\r\t"}
+    if non_ascii:
+        loaded = _load_glyph_codes(glyphs_json)
+        if loaded is None:
+            print("  ⚠️ 字形表缺失——无法预检字形覆盖（先跑 cjk-font 或 --glyphs 指定）")
+        else:
+            codes, gj = loaded
+            missing = sorted(non_ascii - {chr(c) for c in codes})
+            if missing:
+                sample = "".join(missing[:8])
+                raise errors.ValidationError(
+                    f"文本含 {len(missing)} 个字形表外字符（{gj}）：'{sample}'"
+                    f"{'…' if len(missing) > 8 else ''}"
+                    "——先跑 cjk-check 详查；重建图集（cjk-font --full）或换字")
     csx = _build_cjk_trigger_csx(room_name, obj_name, x, y, typer, text, wrap, width_room_px)
     out = utmt._run_utmt(csx, game_file, save=True)
     if "CJK_TRIGGER_OK" not in out:
@@ -444,9 +465,24 @@ def cmd_cjk_trigger(game_file: Path, room_name: str, obj_name: str, x: int, y: i
     return verify.cmd_verify_code(game_file, step_name)
 
 
+def _default_glyphs_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "build" / "font_cjk" / "glyphs.json"
+
+
+def _load_glyph_codes(glyphs_json: Path | None = None) -> "tuple[set[int], Path] | None":
+    """读字形表 → (码点集合, 路径)；文件缺失返回 None（调用方自定降级）。"""
+    gj = glyphs_json or _default_glyphs_path()
+    if not gj.exists():
+        return None
+    glyphs = json.loads(gj.read_text(encoding="utf-8"))
+    known = {g["code"] for g in glyphs if isinstance(g, dict) and "code" in g}
+    return known, gj
+
+
 # ============================================================
 # cjk-check：字形覆盖预检（C3a-L1 收口，2026-11-11 价值席裁决落地）
 # ============================================================
+
 
 def cmd_cjk_check(text: str, glyphs_json: Path | None = None,
                   text_file: Path | None = None) -> None:
@@ -465,15 +501,14 @@ def cmd_cjk_check(text: str, glyphs_json: Path | None = None,
     if not text or not text.strip():
         raise errors.ValidationError("text 为空——用 --text 传文本或 --value 传文本文件路径")
 
-    default = Path(__file__).resolve().parents[3] / "build" / "font_cjk" / "glyphs.json"
-    gj = glyphs_json or default
-    if not gj.exists():
-        print(f"错误: 未找到字形表 {gj}", file=sys.stderr)
+    loaded = _load_glyph_codes(glyphs_json)
+    if loaded is None:
+        default = _default_glyphs_path()
+        print(f"错误: 未找到字形表 {default}", file=sys.stderr)
         print("  先运行 cjk-font（五步管线产出 glyphs.json），或 --glyphs 指定他处字形表",
               file=sys.stderr)
         sys.exit(2)
-    glyphs = json.loads(gj.read_text(encoding="utf-8"))
-    known = {g["code"] for g in glyphs if isinstance(g, dict) and "code" in g}
+    known, gj = loaded
 
     missing: dict[str, str] = {}
     for ch in text:

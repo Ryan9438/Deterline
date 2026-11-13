@@ -11,6 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import modify_save as ms
+from unittest import mock
+from deterline import errors
 
 
 class TestCjkWrapText(unittest.TestCase):
@@ -169,3 +171,61 @@ class TestTwoPageTrigger(unittest.TestCase):
         self.assertIsNotNone(m1)
         self.assertIn("&", m0.group(1), "页1 长文本折行应产生 & 硬换行")
         self.assertNotIn("&", m1.group(1), "页2 短文本不应有硬换行（独立性）")
+
+
+class TestCjkTriggerGlyphPreflight(unittest.TestCase):
+    """风险席切片 A（2026-11-13）：cjk-trigger 前置字形覆盖校验——
+    表外字符在任何 UTMT 调用/写盘前拒绝（"覆盖≠放行"缺口收口）。"""
+
+    FIXTURE = Path(__file__).resolve().parent / "fixtures" / "glyphs_min.json"
+
+    def _run(self, text, glyphs_json="NOT_SET"):
+        import io as _io
+        import contextlib as _ctxlib
+        from deterline.cmds import cjk as cjk_mod
+        game = Path(__file__).resolve().parent / "fixtures" / "glyphs_min.json"
+        game = game.parent / "glyphs_min.json"  # 占位目标（被 mock，不触盘）
+        captured = _io.StringIO()
+        calls = []
+        with mock.patch.object(cjk_mod.utmt, "_run_utmt",
+                               side_effect=lambda *a, **k:
+                               calls.append(a) or "CJK_TRIGGER_OK glyphs=1"), \
+             mock.patch.object(cjk_mod.verify, "cmd_verify_code",
+                               return_value=True):
+            if glyphs_json == "NOT_SET":
+                glyphs_json = None if glyphs_json is None else glyphs_json
+            with _ctxlib.redirect_stdout(captured):
+                try:
+                    cjk_mod.cmd_cjk_trigger(
+                        game, "room_ruins1", "obj_cactus", 220, 330,
+                        31, text, glyphs_json=self.FIXTURE
+                        if glyphs_json == "NOT_SET" else glyphs_json)
+                    outcome = "ok"
+                except errors.ValidationError as exc:
+                    outcome = f"ValidationError: {exc}"
+        return outcome, captured.getvalue(), calls
+
+    def test_uncovered_char_rejected_before_any_utmt_call(self):
+        outcome, _, calls = self._run("* 你好，美。")
+        self.assertTrue(outcome.startswith("ValidationError"), outcome)
+        self.assertIn("字形表外字符", outcome)
+        self.assertIn("美", outcome)
+        self.assertEqual(calls, [], "拒绝必须发生在任何 UTMT 调用之前")
+
+    def test_covered_text_proceeds(self):
+        outcome, out, calls = self._run("* 你好，测试。")
+        self.assertEqual(outcome, "ok", out)
+        self.assertEqual(len(calls), 1)
+
+    def test_ascii_only_skips_glyph_lookup(self):
+        # 字形表路径不存在 + 纯 ASCII → 不降级告警、照常生成
+        outcome, out, calls = self._run("* hello 123.", glyphs_json=None)
+        self.assertEqual(outcome, "ok", out)
+        self.assertNotIn("字形表缺失", out)
+
+    def test_missing_glyph_table_degrades_with_notice(self):
+        outcome, out, calls = self._run(
+            "* 你好。", glyphs_json=Path("/tmp/dl_no_such_glyphs_9f3c.json"))
+        self.assertEqual(outcome, "ok", out)
+        self.assertIn("字形表缺失", out, "缺表时降级为提示行照常生成")
+        self.assertEqual(len(calls), 1)

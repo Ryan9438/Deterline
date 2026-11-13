@@ -103,7 +103,8 @@ options:
   --object OBJECT       cjk-trigger: 承载触发块的对象名（其 Step_1 被追加；默认 obj_cactus）
   --typer TYPER         cjk-trigger: SCR_TEXTTYPE 编号（默认 31 = fnt_maintext
                         spacing12；须在 CJK_TYPER_TABLE）
-  --glyphs GLYPHS       cjk-check: 字形表路径（默认 build/font_cjk/glyphs.json）
+  --glyphs GLYPHS       cjk-check/cjk-trigger: 字形表路径（默认
+                        build/font_cjk/glyphs.json）
   --detail              diff-snapshots: 输出资源级差异（字符串哈希/实例坐标/代码指纹/字体）
   --expected EXPECTED   diff-snapshots --detail: 声明允许改变的资源范围 JSON（范围外差异退出码 1）
   --utmt-timeout UTMT_TIMEOUT
