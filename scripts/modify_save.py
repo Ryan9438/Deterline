@@ -8,7 +8,7 @@ scripts/deterline/{errors,config,state,paths,utmt,rooms_data,inifile,file0}
 运行入口不变：python3 scripts/modify_save.py ...（与 run.py 子进程转发）。
 """
 
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 
 import sys
 from pathlib import Path

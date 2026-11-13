@@ -1,5 +1,40 @@
 # Changelog
 
+## v2.5.1 — 2026-11-13（凌晨批次：A8 强化 + dispatch 收编 + cjk-trigger 前置校验 + O3b 前置钉）
+
+**性质：议会三席裁决的凌晨自主批次（文档收口/执行入口另行记录于 06 §4 设计稿，未实现）。344→361 测试。**
+
+### A8 强化（风险席首位）
+
+- **shim 全量导出面冻结**：FROZEN_EXPORTS 215 名逐名锁定（此前 91 名仅为测试引用子集，约 121 名裸奔）；有意变更须改清单并归因。覆盖扫描相应剪裁名册块（FROZEN 不是覆盖——曾使 21 条 ALLOWLIST 被误判陈余）。
+
+### dispatch 收编 + `--dir` 双形态
+
+- `cmd_md5` / `cmd_sandbox_restore` 抽入 cmds/save_cmds.py（01-ROADMAP 既定归属）；handler 委托；**ALLOWLIST 23→20**（两条内联豁免清偿）。
+- md5 / sandbox-restore 的 `--dir` 支持"文件或含 game.ios/data.win 的目录"（与 backup-index/recovery-scan 同语义；显式无效不回退 Steam）。
+
+### cjk-trigger 前置字形覆盖校验（风险席切片 A）
+
+- 文本含非 ASCII 且字形表在位时，**表外字符在任何 UTMT 调用/写盘前 ValidationError**（收口"覆盖≠放行"缺口：此前可生成必然渲染空白的触发块）。
+- 字形表缺失 → 降级告警照常生成（与 cjk-check 退出码 2 语义分离）；**畸形字形表 fail-closed 并点名文件**（此前 chr(c) ValueError/TypeError 裸栈）。
+- ALLOWLIST "verify-code" 移出（preflight 测试引用 cmd_verify_code）。`--glyphs` 现为 cjk-check/cjk-trigger 共用。
+
+### O3b 前置钉 + 域F 回归样本（阶段 3.4）
+
+- door/pit/battle **fresh-base golden ×3**（无既有 Create_0 → BASE 起步路径此前零钉——合并前盲区清障）。
+- 外层 `10-域F形态回归样本.md`：11+2 形态准入表；**准入集 = {扁平触发块 + Alarm_0 守卫}**，实测指纹 Step_1 `instr=68 branches=6` roundtrip stable / ASM sha256 `15ea1cb5…`（tmp 副本注入 + V1 采集，方法可复跑）。
+
+### 双席审核清偿（2 轮）
+
+- **golden 写回机制损坏**（P1）：GOLDEN_UPDATE 曾把 CSX 内 `"\r\n"` 转义序列全局替换成 `/r/n`——canonical 归一收窄到占位符路径；3 枚 fresh-base golden 重录、5 枚工作区污染回退；归一化转义序列保护有测试钉。
+- cjk-trigger `--glyphs` CLI 传 str 未 Path 化（AttributeError 裸栈，单测全走函数级故未暴露）→ handler Path 化 + 回归钉。
+- cjk-check 缺表报错打印实际尝试路径（回归）；测试夹具泄漏钉（backup-index 无存档目录用例现 patch resolve_game_data_file）。
+
+### 诚实记录
+
+- 本批 9 个提交中 2 次推送 CI 红（test_cjk_wrap 脚本链损伤期 NameError；根因与修复见 07 §3.0 同族——**教训：凌晨脚本链编辑后必须全量复跑再推**）。
+- 前向记录：door/pit/battle 对"反编译失败"与"条目不存在"同为 fresh-base 分支（O3b 合并时须区分 ERROR 语义，见 10 §4）。
+
 ## v2.5.0-rc1 — 2026-11-13（阶段 2 出口：恢复/平台/发布流程补齐）
 
 **性质：03 手册阶段 2 全部交付（2.1–2.6）的候选版；新增 `backup-prune`（v2.4.4）与 `tools/release_check.py`；CI 三平台矩阵；发布记录见外层 AUDIT_2026-11-07/08-候选版发布记录.md。**
