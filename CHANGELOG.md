@@ -1,5 +1,24 @@
 # Changelog
 
+## v2.5.0-rc1 — 2026-11-13（阶段 2 出口：恢复/平台/发布流程补齐）
+
+**性质：03 手册阶段 2 全部交付（2.1–2.6）的候选版；新增 `backup-prune`（v2.4.4）与 `tools/release_check.py`；CI 三平台矩阵；发布记录见外层 AUDIT_2026-11-07/08-候选版发布记录.md。**
+
+### 阶段 2.5 平台矩阵（本版）
+
+- CI 从单 ubuntu 扩为 **ubuntu/windows/macos 三 OS 矩阵**（fail-fast: false）：344 单测 + gen_docs --check + --help golden + `install.py --check` 安装入口（只读）+ diff 卫生。**Windows 侧 msvcrt 锁分支与路径语义首次真实执行**（03 §2.5 挂账项转 ci-static ✓）。
+- 外层新增 `07-平台矩阵与验证级别.md`：能力 × 平台 × 验证级别全表；明确挂账（Windows UTMT 集成/Windows smoke/TerminateProcess 实验/行尾游戏读回）。
+
+### 阶段 2.6 候选版（本版）
+
+- `tools/release_check.py`：工作树提交态 / 版本链单点 / gen_docs / help golden / 命令注册表↔commands.json / 分发关键文件 / install --check 入口 / 全量单测——候选版门槛命令化。
+- 外层 `08-候选版发布记录.md`：Git 标识、验证范围、已知限制、工作区迁移说明、CLI 兼容说明、回退方法。
+- tag `v2.5.0-rc1`。
+
+### 阶段出口核对（03 §6）
+
+常用写入与恢复有可重放证据（journal + recovery-scan + SIGKILL 216 实验 0 违例）✓；自动检查不依赖真实存档 ✓；候选版对每个平台和功能列出实际验证级别（07 矩阵）✓；真实 Steam 或 Windows 验证单独挂账 ✓。
+
 ## v2.4.4 — 2026-11-13（阶段 2.4：保留策略预览 backup-prune）
 
 **性质：03 手册 §6 阶段 2.4 最小切片；新增 `backup-prune` 命令（89 命令）；只读零删除。**
