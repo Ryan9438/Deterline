@@ -488,6 +488,31 @@ class TestGoldenDoorPitBattle(unittest.TestCase):
             replies={'ScriptMessage("GML_LINE:': _fake_gml_output(REMOVE_DOOR_GML_STUB)})
         _check_golden(self, "remove_door_coords", cap)
 
+    def test_create_door_fresh_base(self):
+        """O3b 前置钉（风险席 2026-11-13）：无既有 Create_0 → 从 BASE 起步
+        路径此前零 golden——空反编译应答走 fresh-base 分支，BASE 常量直录。"""
+        cap, _ = _capture_stateful(
+            ms.cmd_create_door, Path("/tmp/golden_test/game.ios"),
+            "room_golden", "room_golden_b", 320, 240, 100, 200,
+            replies={'ScriptMessage("IDX:': "IDX:70",
+                     'ScriptMessage("GML_LINE:': ""})
+        _check_golden(self, "create_door_fresh_base", cap)
+
+    def test_create_pit_fresh_base(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_create_pit, Path("/tmp/golden_test/game.ios"),
+            "room_golden", "room_golden_b", 320, 240, 100, 200,
+            replies={'ScriptMessage("IDX:': "IDX:70",
+                     'ScriptMessage("GML_LINE:': ""})
+        _check_golden(self, "create_pit_fresh_base", cap)
+
+    def test_create_battle_fresh_base(self):
+        cap, _ = _capture_stateful(
+            ms.cmd_create_battle, Path("/tmp/golden_test/game.ios"),
+            "room_golden", battlegroup_id=3, border=1, x=320, y=240,
+            replies={'ScriptMessage("GML_LINE:': ""})
+        _check_golden(self, "create_battle_fresh_base", cap)
+
     def test_remove_door_all(self):
         cap, _ = _capture_stateful(
             ms.cmd_remove_door, Path("/tmp/golden_test/game.ios"),
