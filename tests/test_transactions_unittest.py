@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from deterline import file0, sandbox, transactions
+from deterline import file0, sandbox, state, transactions
 from deterline.cmds import recovery
 import modify_save as ms
 
