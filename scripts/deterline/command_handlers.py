@@ -65,24 +65,11 @@ def _doctor(args, parser, target):
 
 
 def _md5(args, parser, target):
-    game_file = paths.find_game_data_file(args.dir)
-    print(f"{utmt._md5_file(game_file)}  {game_file}")
+    save_cmds.cmd_md5(paths.resolve_game_data_file(args.dir))
 
 
 def _sandbox_restore(args, parser, target):
-    game_file = paths.find_game_data_file(args.dir)
-    copy = sandbox.sandbox_path(game_file)
-    if not copy.is_file():
-        raise FileNotFoundError(f"沙箱备份不存在: {copy}")
-    # 工作区有 manifest → 保留来源漂移拒绝；legacy .sandbox 无 manifest，
-    # 无法做来源校验，按当前副本直恢复（EditPlan 仍会先备份目标）。
-    if copy.with_name(copy.name + ".json").is_file():
-        sandbox.check_baseline(game_file, copy)
-    transactions.EditPlan((transactions.FileEdit.prepare(game_file, copy),)).apply()
-    if state.PREVIEW:
-        return
-    sandbox.remove_workspace(copy)
-    print(f"✓ 沙箱备份已恢复: {copy} → {game_file}")
+    save_cmds.cmd_sandbox_restore(paths.resolve_game_data_file(args.dir))
 
 
 def _set_derived(args, parser, target):

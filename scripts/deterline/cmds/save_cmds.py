@@ -13,7 +13,7 @@ import sys
 import time
 from pathlib import Path
 
-from .. import errors, file0, inifile, paths, state, transactions
+from .. import errors, file0, inifile, paths, sandbox, state, transactions, utmt
 
 # ============================================================
 # Undo: restore from .bak
@@ -346,6 +346,33 @@ def cmd_experiment_restore(save_dir: Path, tag: str) -> None:
     for target, source in edits.items():
         print(f"✓ 已恢复 {target} ← {source.name}")
     print("完成。请重启游戏。")
+
+
+# ============================================================
+# md5 / sandbox-restore（表驱动 dispatch 收编，2026-11-13：原内联
+# handler 搬入 cmd_* 域，消 ALLOWLIST 两条内联豁免）
+# ============================================================
+
+def cmd_md5(game_file: Path) -> None:
+    """打印游戏数据文件 md5 与路径（--dir 文件/目录双形态由
+    paths.resolve_game_data_file 统一裁决）。"""
+    print(f"{utmt._md5_file(game_file)}  {game_file}")
+
+
+def cmd_sandbox_restore(game_file: Path) -> None:
+    """工作区/legacy 沙箱 → 游戏文件恢复。有 manifest 的工作区做来源漂移
+    + 副本/清单一致性校验；legacy .sandbox 无 manifest 直恢复
+    （EditPlan 先备份目标）。"""
+    copy = sandbox.sandbox_path(game_file)
+    if not copy.is_file():
+        raise FileNotFoundError(f"沙箱备份不存在: {copy}")
+    if copy.with_name(copy.name + ".json").is_file():
+        sandbox.check_baseline(game_file, copy)
+    transactions.EditPlan((transactions.FileEdit.prepare(game_file, copy),)).apply()
+    if state.PREVIEW:
+        return
+    sandbox.remove_workspace(copy)
+    print(f"✓ 沙箱备份已恢复: {copy} → {game_file}")
 
 
 # ============================================================

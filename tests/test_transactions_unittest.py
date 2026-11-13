@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from deterline import file0, sandbox, transactions
 from deterline.cmds import recovery
+import modify_save as ms
 
 
 class TransactionTests(unittest.TestCase):
@@ -660,6 +661,51 @@ transactions.write_many({{t: (b"NEW-" + t.name.encode()) for t in targets}})
         with _ctxlib.redirect_stdout(buf):
             code = recovery.cmd_recovery_scan(root, str(root), json_out=True)
         return json.loads(buf.getvalue()), code
+
+
+class TestDispatchRemnantCmds(unittest.TestCase):
+    """表驱动 dispatch 收编（2026-11-13）：原内联 md5/sandbox-restore 搬入
+    cmds/save_cmds.py 后的域级单测——ALLOWLIST 两条内联豁免就此清偿。"""
+
+    def test_cmd_md5_prints_hash_and_path(self):
+        import hashlib as _hl
+        import io as _io
+        import contextlib as _ctxlib
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "game.ios"
+            target.write_bytes(b"hello-md5")
+            captured = _io.StringIO()
+            with _ctxlib.redirect_stdout(captured):
+                ms.cmd_md5(target)
+            out = captured.getvalue()
+            self.assertIn(_hl.md5(b"hello-md5").hexdigest(), out)
+            self.assertIn(str(target), out)
+
+    def test_cmd_sandbox_restore_legacy_roundtrip(self):
+        import shutil as _shutil
+        with tempfile.TemporaryDirectory() as directory:
+            game = Path(directory) / "game.ios"
+            game.write_bytes(b"BASE")
+            (Path(directory) / "game.ios.sandbox").write_bytes(b"LEGACY")
+            ms.cmd_sandbox_restore(game)
+            self.assertEqual(game.read_bytes(), b"LEGACY")
+            # legacy 无 manifest：恢复后可重复恢复（幂等）
+            ms.cmd_sandbox_restore(game)
+            _shutil.rmtree(directory, ignore_errors=True)
+
+    def test_cmd_sandbox_restore_rejects_tampered_workspace(self):
+        import shutil as _shutil
+        game = Path(tempfile.mkdtemp()) / "game.ios"
+        self.addCleanup(_shutil.rmtree, str(game.parent), ignore_errors=True)
+        game.write_bytes(b"BASE")
+        copy = sandbox.ensure_workspace(game)
+        copy.write_bytes(b"EDITED")
+        edit = sandbox.record_edit(copy, copy, "test-edit")
+        transactions.EditPlan((edit,)).apply()
+        copy.write_bytes(b"TAMPERED")
+        with self.assertRaisesRegex(RuntimeError, "清单末条记录不符"):
+            ms.cmd_sandbox_restore(game)
+        self.assertEqual(game.read_bytes(), b"BASE", "拒绝时目标零写入")
 
 
 if __name__ == "__main__":

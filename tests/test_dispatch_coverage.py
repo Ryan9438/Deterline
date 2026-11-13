@@ -37,16 +37,14 @@ import deterline.paths  # noqa: E402
 
 # 覆盖豁免清单：{action: 理由}（复核 P1-2 修正后按 AST 精确分支归属实测）。
 # 两类豁免：
-#   - md5/sandbox-restore：逻辑内联在 cli.py dispatch（无 cmd_* 函数可单测；
-#     收编 = 表驱动 dispatch 的独立后续项）
-#   - 其余 22 条：读式/诊断命令（UTMT 查询+打印）或重游戏依赖命令
+#   - md5/sandbox-restore：已收编（2026-11-13 抽 cmd_md5/cmd_sandbox_restore
+#     入 cmds/save_cmds.py，测试见 test_transactions_unittest.TestDispatchRemnantCmds）
+#   - 其余 20 条：读式/诊断命令（UTMT 查询+打印）或重游戏依赖命令
 #     （npc-dialogue/smoke-test/replace-texture），行为面已由 golden CSX
 #     （28 生成器钉死）+ A3 双轮游戏级快照 parity 覆盖；补单测 = 独立后续项
 #     （需 dual_patch_utmt mock 逐条搭夹具，与本 commit 的接线防线目标正交）。
 # 新命令若暂缺测试，须连同理由登记于此（下一 commit 补测试即移除）。
 ALLOWLIST: dict[str, str] = {
-    "md5": "逻辑内联 cli.py dispatch（无 cmd_* 函数）——表驱动 dispatch 收编",
-    "sandbox-restore": "逻辑内联 cli.py dispatch——同上",
     "decompile-code": "读式诊断；golden 钉 _decompile_to_lines 链路",
 
     "dump-sprites": "读式导出（UTMT dump）",

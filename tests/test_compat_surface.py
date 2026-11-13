@@ -53,6 +53,8 @@ COMPAT_SURFACE = [
     "cjk_wrap_text",
     "cmd_backup_index",
     "cmd_backup_prune",
+    "cmd_md5",
+    "cmd_sandbox_restore",
     "cmd_batch_textdata",
     "cmd_smoke_test",
     "cmd_undo",
@@ -301,6 +303,7 @@ FROZEN_EXPORTS = [
     "cmd_list_backups",
     "cmd_list_doors",
     "cmd_list_game_bgs",
+    "cmd_md5",
     "cmd_npc_choice",
     "cmd_npc_dialogue",
     "cmd_obj_get",
@@ -316,6 +319,7 @@ FROZEN_EXPORTS = [
     "cmd_room_info",
     "cmd_room_list",
     "cmd_room_objects",
+    "cmd_sandbox_restore",
     "cmd_search_sctext",
     "cmd_search_vars",
     "cmd_set_derived",
@@ -380,7 +384,7 @@ class TestFullExportSurface(unittest.TestCase):
 
     def test_full_surface_count_reported(self):
         live = [n for n in dir(ms) if not n.startswith("__")]
-        self.assertGreaterEqual(len(live), 213,
+        self.assertGreaterEqual(len(live), 215,
                                 "全量导出面缩水——若为有意清理，先更新清单并归因")
 
 
