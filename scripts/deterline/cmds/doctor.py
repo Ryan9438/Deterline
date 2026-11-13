@@ -20,18 +20,29 @@ from .. import file0, paths, rooms_data, utmt
 _ROOT = Path(__file__).resolve().parents[3]  # doctor: 仓库根（基线/字形表）
 
 
-def cmd_doctor(save_dir: Path, dir_override: str | None = None) -> None:
-    """聚合体检（全部只读）。--dir 走 find_save_dir 语义。"""
+def cmd_doctor(save_dir: Path, dir_override: str | None = None,
+               json_out: bool = False) -> None:
+    """聚合体检（全部只读）。--dir 走 find_save_dir 语义。
+
+    --json（v2.5.5）：stdout 纯 JSON（schema deterline.doctor/v1，items 为
+    逐项 {label, ok, detail}）；人读各行不再打印（stderr 保持静默）。
+    退出码语义不变：任一 ✗ → 1。
+    """
     fails = 0
+    items: list[dict] = []
 
     def check(label: str, ok: bool, detail: str = "") -> None:
         nonlocal fails
+        items.append({"label": label, "ok": ok, "detail": detail})
+        if not ok:
+            fails += 1  # 计数必须先于 json 分支（v2.5.5 自纠：曾只在人读分支计数）
+        if json_out:
+            return
         mark = "✓" if ok else "✗"
         print(f"  {mark} {label}" + (f" — {detail}" if detail else ""))
-        if not ok:
-            fails += 1
 
-    print("--- doctor（只读体检） ---")
+    if not json_out:
+        print("--- doctor（只读体检） ---")
 
     # 0. 存档目录定位（None = 定位失败，由调用方打印 ✗；此处跳过存档项）
     check("存档目录定位", save_dir is not None,
@@ -130,6 +141,14 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None) -> None:
     except Exception as e:  # noqa: BLE001 — 损坏 JSON 等也降级为 ✗ 行（复核 P2-2）
         check("CJK 字形表", False, str(e)[:80])
 
-    print(f"--- 体检完成: {'全部通过 ✓' if fails == 0 else f'{fails} 项 ✗'} ---")
+    if json_out:
+        print(json.dumps({
+            "schema": "deterline.doctor/v1",
+            "save_dir": str(save_dir) if save_dir is not None else None,
+            "items": items,
+            "fails": fails,
+        }, ensure_ascii=False, indent=2))
+    else:
+        print(f"--- 体检完成: {'全部通过 ✓' if fails == 0 else f'{fails} 项 ✗'} ---")
     if fails:
         sys.exit(1)

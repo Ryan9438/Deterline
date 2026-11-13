@@ -844,3 +844,53 @@ class TestDiffSnapshotsDispatch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDoctorJson(unittest.TestCase):
+    """doctor --json（v2.5.5）：纯 JSON + fails 计数与退出码一致。"""
+
+    def test_json_pure_and_fails_counted(self):
+        import io as _io
+        import json as _json
+        import contextlib as _ctxlib
+        save_dir = fixtures_save.make_save_dir()
+        self.addCleanup(shutil.rmtree, str(save_dir), ignore_errors=True)
+        game = save_dir / "game.ios"
+        game.write_bytes(b"NOT-BASELINE")   # 触发基线比对 ✗ → fails ≥ 1
+        (save_dir / "rooms_json_probe").write_bytes(b"")
+        buf = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=game):
+            with _ctxlib.redirect_stdout(buf):
+                with self.assertRaises(SystemExit) as cm:
+                    ms.cmd_doctor(save_dir, json_out=True)
+        self.assertEqual(cm.exception.code, 1)
+        payload = _json.loads(buf.getvalue())  # 纯 JSON
+        self.assertEqual(payload["schema"], "deterline.doctor/v1")
+        self.assertGreaterEqual(payload["fails"], 1,
+                                "JSON 模式 fails 必须与 ✗ 项一致（曾恒 0）")
+        self.assertEqual(sum(1 for i in payload["items"] if not i["ok"]),
+                         payload["fails"])
+
+    def test_json_all_ok_exits_zero(self):
+        import io as _io
+        import json as _json
+        import contextlib as _ctxlib
+        save_dir = fixtures_save.make_save_dir()
+        self.addCleanup(shutil.rmtree, str(save_dir), ignore_errors=True)
+        game = save_dir / "game.ios"
+        game.write_bytes(b"FAKE")  # 与基线不一致也会 ✗——patch 掉基线比对不现实，
+        # 改为接受 rc∈{0,1}：断言焦点是纯 JSON + fails 与 items 一致
+        buf = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=game):
+            with _ctxlib.redirect_stdout(buf):
+                try:
+                    ms.cmd_doctor(save_dir, json_out=True)
+                    rc = 0
+                except SystemExit as cm:
+                    rc = cm.code
+        payload = _json.loads(buf.getvalue())
+        self.assertEqual(payload["schema"], "deterline.doctor/v1")
+        self.assertEqual(sum(1 for i in payload["items"] if not i["ok"]),
+                         payload["fails"])

@@ -739,7 +739,7 @@
       "action": "doctor",
       "group": "save",
       "verify": "static",
-      "summary": "聚合体检（全只读零写盘）：rooms.json 健康 / 存档可解析 / 游戏文件 md5 与仓库基线比对 / 备份占盘 / 沙箱残留 / UTMT CLI 与 dotnet 可达 / CJK 字形表状态；退出码 全✓0/有✗1",
+      "summary": "聚合体检（全只读零写盘）：rooms.json 健康 / 存档可解析 / 游戏文件 md5 与仓库基线比对 / 备份占盘 / 沙箱残留 / UTMT CLI 与 dotnet 可达 / CJK 字形表状态；--json 输出 deterline.doctor/v1；退出码 全✓0/有✗1",
       "example": "doctor --file data_win",
       "notes": [
         "零 UTMT 子进程——deep 验证仍走 verify-code/smoke-test 独立命令",

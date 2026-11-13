@@ -55,7 +55,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 | `room-list --value "雪镇"` | 搜索/列出房间（支持中文模糊搜索） | static |
 | `undo --value data_win` | 从 .bak 恢复最后一次写入（仅一步；--backup 指定时间戳版本） | static |
 | `list-backups --value data_win` | 列出所有备份（--value ini\|file0\|data_win） | static |
-| `doctor --file data_win` | 聚合体检（全只读零写盘）：rooms.json 健康 / 存档可解析 / 游戏文件 md5 与仓库基线比对 / 备份占盘 / 沙箱残留 / UTMT CLI 与 dotnet 可达 / CJK 字形表状态；退出码 全✓0/有✗1 | static |
+| `doctor --file data_win` | 聚合体检（全只读零写盘）：rooms.json 健康 / 存档可解析 / 游戏文件 md5 与仓库基线比对 / 备份占盘 / 沙箱残留 / UTMT CLI 与 dotnet 可达 / CJK 字形表状态；--json 输出 deterline.doctor/v1；退出码 全✓0/有✗1 | static |
 | `backup-prune --keep-archives 3` | 保留策略预览（03 §2.4，只读零删除）：占盘统计 + 内容重复分组（sha256）+ 超窗归档清理建议（精确 rm 命令 + 可回收字节）；--keep-archives N 每目标保留最近 N 份；--json 输出 deterline.backup-prune/v1 | static |
 | `recovery-scan` | 恢复完整性（03 §2.2c）：只读扫描未完结运行记录（.deterline/journal）与孤儿暂存 → 中断窗口分类 + 可预览恢复指引（--json 输出 deterline.recovery-scan/v1）；零写盘零 UTMT；发现未完结项退出码 1 | static |
 | `backup-index --hash` | 恢复资产只读索引（O5 最小切片）：.bak/.snap/.sandbox/.deterline 工作区 → 类型/路径/恢复目标/mtime/大小（--hash 追加 SHA-256；--json 输出 deterline.backup-index/v1）；零写盘零 UTMT | static |

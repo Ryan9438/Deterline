@@ -191,7 +191,7 @@ def main():
     parser.add_argument("--show-diff", action="store_true",
                         help="替换代码时显示新旧 diff (replace-code 用)")
     parser.add_argument("--json", action="store_true",
-                        help="以 JSON 输出结构化结果 (backup-index/recovery-scan/backup-prune 用; export-sprite 为附加元数据)")
+                        help="以 JSON 输出结构化结果 (doctor/backup-index/recovery-scan/backup-prune 用; export-sprite 为附加元数据)")
     parser.add_argument("--keep-archives", type=int, default=3,
                         help="backup-prune 每目标保留的最近归档份数 (默认: 3)")
     parser.add_argument("--hue-from", type=str, default=None,

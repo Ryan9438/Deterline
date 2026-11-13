@@ -85,8 +85,8 @@ options:
                         0 / export 全部帧到目录; export 时 --value 以 .png
                         结尾则默认单帧导出到该文件)
   --show-diff           替换代码时显示新旧 diff (replace-code 用)
-  --json                以 JSON 输出结构化结果 (backup-index/recovery-scan/backup-
-                        prune 用; export-sprite 为附加元数据)
+  --json                以 JSON 输出结构化结果 (doctor/backup-index/recovery-
+                        scan/backup-prune 用; export-sprite 为附加元数据)
   --keep-archives KEEP_ARCHIVES
                         backup-prune 每目标保留的最近归档份数 (默认: 3)
   --hue-from HUE_FROM   色相范围 "min-max" (colorize-sprite 用, 如 "180-260")
