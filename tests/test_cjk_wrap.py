@@ -170,4 +170,5 @@ class TestCjkTriggerBuilder(unittest.TestCase):
         self.assertIn("字形表缺失", captured.getvalue())
 
 
-if __name__ == "__main__":    unittest.main()
+if __name__ == "__main__":
+    unittest.main()
