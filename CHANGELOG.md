@@ -13,7 +13,7 @@
 
 - `tools/release_check.py`：工作树提交态 / 版本链单点 / gen_docs / help golden / 命令注册表↔commands.json / 分发关键文件 / install --check 入口 / 全量单测——候选版门槛命令化。
 - 外层 `08-候选版发布记录.md`：Git 标识、验证范围、已知限制、工作区迁移说明、CLI 兼容说明、回退方法。
-- tag `v2.5.0-rc1`。
+- tag `v2.5.0-rc1` → **rc2**（三平台 CI 首夜实证修掉 Windows 平台差异：fsync 只读句柄 Errno 9 / cp1252 打印与解码 / golden 反斜杠 / 夹具泄漏钉——详见 07 §3.0；run 43336290168 三平台全绿）。
 
 ### 阶段出口核对（03 §6）
 
