@@ -13,3 +13,13 @@ __version__ 单点：test_docs_lint 优先读本文件（O2-step0 地雷 #3）�
 """
 
 __version__ = "2.5.0"
+
+# Windows 控制台（cp1252 等）打印 ✓/中文会 UnicodeEncodeError——CLI 与测试
+# 的直 print 统一走 UTF-8（CI 2026-11-13 实证；errors="replace" 兜底）。
+import sys as _sys
+if hasattr(_sys.stdout, "reconfigure"):
+    try:
+        _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (ValueError, OSError):
+        pass

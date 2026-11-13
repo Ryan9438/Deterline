@@ -667,7 +667,9 @@ class TestBackupIndexSmoke(_SaveDirBase):
 
     def test_no_save_dir_hint_has_no_none_dir(self):
         """审核席 A/B P2-1 回归钉：存档侧未定位时，游戏侧提示不得出现
-        --dir "None"（粘贴即错）；JSON restore 不得带 dir:null 键。"""
+        --dir "None"（粘贴即错）；JSON restore 不得带 dir:null 键。
+        （patch 游戏定位到 tmp——否则 CI 无 Steam 时 entries 为空
+        StopIteration，而本机会静默读真实 Steam 目录：夹具泄漏同型。）"""
         import json as _json
         import io as _io
         import contextlib as _ctxlib
@@ -677,7 +679,9 @@ class TestBackupIndexSmoke(_SaveDirBase):
         buf = _io.StringIO()
         payload_buf = _io.StringIO()
         with mock.patch.object(deterline.paths, "find_save_dir",
-                               side_effect=FileNotFoundError("无存档目录")):
+                               side_effect=FileNotFoundError("无存档目录")), \
+             mock.patch.object(deterline.paths, "resolve_game_data_file",
+                               return_value=game):
             with _ctxlib.redirect_stdout(buf):
                 ms.cmd_backup_index(None, None)
             with _ctxlib.redirect_stdout(payload_buf):

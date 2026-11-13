@@ -120,7 +120,8 @@ def backup_file(path: Path, *, required: bool = False) -> None:
                     suffix=".new", delete=False) as stream:
                 temporary = Path(stream.name)
             shutil.copy2(path, temporary)
-            with temporary.open("rb") as stream:
+            with temporary.open("r+b") as stream:
+                # r+b：Windows 上 fsync 只读句柄报 Errno 9（CI 2026-11-13 实证）
                 os.fsync(stream.fileno())
             os.replace(temporary, backup)
         except OSError as exc:

@@ -46,11 +46,13 @@ def _golden_path(name: str) -> Path:
 
 def _canonical_tmp(text: str) -> str:
     """平台无关化（CI 修正）：/tmp 在 macOS resolve 成 /private/tmp、Linux
-    保持 /tmp——bg 资产 CSX 内嵌 resolve 后的真实路径，golden 只钉占位符。
+    保持 /tmp、Windows 是 C:\\tmp\\——bg 资产 CSX 内嵌 resolve 后的真实路径，
+    golden 只钉占位符；反斜杠统一成正斜杠后比较（Windows 分隔符）。
     先替换长路径再替换短路径（前者包含后者）。"""
     real = str(Path("/tmp/golden_test").resolve())
     return (text.replace(real, "<GOLDEN_TMP>")
-                .replace("/tmp/golden_test", "<GOLDEN_TMP>"))
+                .replace("/tmp/golden_test", "<GOLDEN_TMP>")
+                .replace("\\", "/"))
 
 
 def _check_golden(testcase, name: str, captured):
