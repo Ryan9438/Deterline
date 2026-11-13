@@ -51,6 +51,15 @@ def _is_forbidden_out(out: Path) -> bool:
             return True
     except OSError:
         pass
+    # firmlink 缺失态（审核席 B P2-1）：/System/Volumes/Data 别名前缀不被
+    # resolve 折叠——正式文件不存在（误删/新克隆）时 samefile 无法兜底，
+    # 补"父目录同 inode + 文件名 casefold"判定
+    try:
+        if out.parent.exists() and out.parent.samefile(forbidden.parent) \
+                and out.name.casefold() == FORBIDDEN_OUT.casefold():
+            return True
+    except OSError:
+        pass
     return False
 
 
@@ -149,8 +158,8 @@ def render_guide(data: dict, rooms: dict, problems: list[str]) -> str:
                 cn, rid = rooms[rid_key], f" id={rid_key}"
             else:
                 cn, rid = "（未登记）", f" id={rid_key}"
-            bgs = "、".join(obs["bg_enabled"]) or "—"
-            objs = "、".join(obs["objects"][:6]) or "—"
+            bgs = "、".join(_sanitize(x) for x in obs["bg_enabled"]) or "—"
+            objs = "、".join(_sanitize(x) for x in obs["objects"][:6]) or "—"
             more = f"（共 {len(obs['objects'])} 种对象）" if len(obs["objects"]) > 6 else ""
             lines.append(
                 f"- `{_sanitize(name)}`{rid} — {_sanitize(cn)} | {obs['size']}"
@@ -199,7 +208,11 @@ def main():
     except KeyError as exc:
         print(f"错误: scan JSON 缺观测字段: {exc}", file=sys.stderr)
         return 1
-    Path(args.out).write_text(text, encoding="utf-8")
+    try:
+        Path(args.out).expanduser().write_text(text, encoding="utf-8")
+    except OSError as exc:
+        print(f"错误: 草稿写入失败: {args.out}（{exc}）", file=sys.stderr)
+        return 1
     print(f"✓ 草稿 → {args.out}（{data['room_count']} 房；映射体检 "
           f"{'⚠️ ' + str(len(problems)) + ' 项' if problems else '通过'}）")
     print("  重生成须审批——本命令不触碰正式 ROOMS_GUIDE.md")

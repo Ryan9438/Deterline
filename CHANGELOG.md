@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.5.6 — 2026-11-14（终轮清偿：firmlink 闸门 + 生成器健壮化 + 批次 12/13 收口）
+
+**性质：终轮双席清偿（0 P0/P1；4 P2 → 3 清偿 + 1 设计稿修订）。375→386 测试。外层新增 11-阶段3设计稿.md 与 ROOMS_GUIDE.draft.md 审批件（336 房留痕）。**
+
+### 闸门（P2-1 清偿 + 加固）
+
+- rooms-scan 协议列表分隔符改 `\u001f`、畸形字段显式 RuntimeError（曾逗号碰撞出假 D-candidate / IndexError 裸栈）；inst/tiles int 解析对齐干净报错。
+- **ROOMS_GUIDE 审批闸门三重判定**：resolve 字面 + 大小写折叠（macOS 卷不敏感绕过实测后修）+ samefile（硬链接别名）+ **父目录同 inode + 文件名 casefold**（firmlink 缺失态绕过——B 席 /tmp 同构证明，正式文件缺失时旧闸门完全失效）。
+- 生成器：未知/非字符串分类兜底节（不丢房）+ 分类统计现算 + 行净化 + JSON 损坏/OSError 干净报错 + schema v2 条件式警告；`.gitignore` 补 `ROOMS_GUIDE.draft.md`（须审批的草稿不入库）。
+
+### 批次 12（补记）
+
+- doctor `--dir` 目录双形态（resolve_game_data_file，与 md5/undo/backup-index 同语义）；SKILL/commands.json 启动次数口径统一为域F 原文（11 次启动/8 受控变体；13/15 漂移清除）。
+
+### doctor --json（v2.5.5 主特性延续）
+
+- `deterline.doctor/v1`：save_dir/items{label,ok,detail}/fails；人读输出零扰动（git archive 对照）；fails 计数自纠（曾只在人读分支计数，双回归钉）；JSON 存档定位失败原因进 items[0].detail（人读双打印同步消除）。
+- `--dir` 存档目录为文件时的报错措辞区分（paths.py，低危口径项）。
+
+### CI 状态（如实）
+
+- 198fe5b/387b74a：ubuntu ✓ windows ✓ **macos ✗（infra："job not acquired by Runner"，容量约束，非测试失败）**——首见，随 runner 容量波动。
+- 历史红已按 v2.5.3/v2.5.5 补记口径全数登记（4+1 次）。
+
+### 外层交付
+
+- `11-阶段3设计稿.md`：3.3 收口记录（RESCAN_PLAN §七 自动化对照）+ 3.5 实施方案（**经终轮修订**：两段式房名语义二选一、语义拒绝三条改待实验/实况纠偏/口径对调）+ 前向记录。
+- `ROOMS_GUIDE.draft.md`：336 房审批件留痕（重放逐字节复现，仅采集时间差）。
+
 ## v2.5.5 — 2026-11-14（凌晨收口：批次 10/11 清偿 + doctor --json）
 
 **性质：双席交叉审核 2 轮清偿（批次 10 修复 + doctor --json）。382→386 测试（+4：闸门 2 + doctor JSON 2）。**

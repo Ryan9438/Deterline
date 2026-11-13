@@ -30,3 +30,4 @@ build/
 cjk_work/
 .deterline/
 rooms_scan.json
+ROOMS_GUIDE.draft.md

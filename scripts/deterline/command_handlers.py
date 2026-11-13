@@ -62,8 +62,11 @@ def _doctor(args, parser, target):
         save_dir = paths.find_save_dir(args.dir)
     except FileNotFoundError as exc:
         if not json_out:
+            # 人读：仅此处打印（doctor 项 detail 保持原样空——避免横幅前后双句）
             print(f"  ✗ 存档目录定位 — {exc}", file=sys.stderr)
-        save_dir, save_dir_error = None, str(exc)
+        else:
+            save_dir_error = str(exc)  # JSON：原因进 items[0].detail（B P2）
+        save_dir = None
     doctor.cmd_doctor(save_dir, args.dir, json_out=json_out,
                       save_dir_error=save_dir_error)
 
