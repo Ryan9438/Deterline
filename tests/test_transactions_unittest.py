@@ -688,8 +688,8 @@ class TestDispatchRemnantCmds(unittest.TestCase):
             game.write_bytes(b"BASE")
             (Path(directory) / "game.ios.sandbox").write_bytes(b"LEGACY")
             # 进程内其他测试可能残留 WORKSPACE——legacy 语义要求 None
-            with mock.patch.object(state, "WORKSPACE", None), \
-                 mock.patch.object(state, "PREVIEW", False):
+            with patch.object(state, "WORKSPACE", None), \
+                 patch.object(state, "PREVIEW", False):
                 ms.cmd_sandbox_restore(game)
             self.assertEqual(game.read_bytes(), b"LEGACY")
             # 恢复语义 = 消费副本（remove_workspace）：恢复后副本被删除
