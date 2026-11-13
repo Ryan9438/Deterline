@@ -47,12 +47,15 @@ def _golden_path(name: str) -> Path:
 def _canonical_tmp(text: str) -> str:
     """平台无关化（CI 修正）：/tmp 在 macOS resolve 成 /private/tmp、Linux
     保持 /tmp、Windows 是 C:\\tmp\\——bg 资产 CSX 内嵌 resolve 后的真实路径，
-    golden 只钉占位符；反斜杠统一成正斜杠后比较（Windows 分隔符）。
-    先替换长路径再替换短路径（前者包含后者）。"""
+    golden 只钉占位符。归一化**只作用于占位符后的分隔符**——绝不全局替换
+    反斜杠：审核席 A P1-1（GOLDEN_UPDATE 写回曾把 CSX 内 "\\r\\n" 转义序列
+    损坏成 "/r/n"，3 枚 fresh-base golden 因此带伤入库）。"""
     real = str(Path("/tmp/golden_test").resolve())
-    return (text.replace(real, "<GOLDEN_TMP>")
-                .replace("/tmp/golden_test", "<GOLDEN_TMP>")
-                .replace("\\", "/"))
+    real_win = real.replace("/", "\\")
+    text = (text.replace(real, "<GOLDEN_TMP>")
+                .replace(real_win, "<GOLDEN_TMP>")
+                .replace("/tmp/golden_test", "<GOLDEN_TMP>"))
+    return text.replace("<GOLDEN_TMP>\\", "<GOLDEN_TMP>/")
 
 
 def _check_golden(testcase, name: str, captured):
@@ -603,6 +606,24 @@ class TestGoldenDelegatingWrites(unittest.TestCase):
             "HP", "50",
             replies={'ScriptMessage("GML_LINE:': _fake_gml_output(DERIVED_GML_STUB)})
         _check_golden(self, "set_derived", cap)
+
+class TestCanonicalTmp(unittest.TestCase):
+    """P1-1 回归钉：归一化只动占位符路径，绝不碰转义序列。"""
+
+    def test_preserves_escape_sequences(self):
+        t = r'var lines = gml.Split(new[] { "\r\n", "\r", "\n" });'
+        self.assertEqual(_canonical_tmp(t), t)
+
+    def test_windows_path_normalized_to_placeholder(self):
+        # Windows 形态从当前平台 resolve 派生（反斜杠变体），钉住 real_win 分支
+        real = str(Path('/tmp/golden_test').resolve())
+        real_win = real.replace('/', chr(92))
+        t = f'var p = "{real_win}{chr(92)}bg.png";'
+        self.assertEqual(_canonical_tmp(t), 'var p = "<GOLDEN_TMP>/bg.png";')
+    def test_posix_resolved_path_normalized(self):
+        real = str(Path("/tmp/golden_test").resolve())
+        t = f'var p = "{real}/bg.png";'
+        self.assertEqual(_canonical_tmp(t), 'var p = "<GOLDEN_TMP>/bg.png";')
 
 
 if __name__ == "__main__":

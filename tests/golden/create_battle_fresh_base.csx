@@ -6,7 +6,7 @@ if (code == null) {
 }
 try {
     string gml = GetDecompiledText(code);
-    var lines = gml.Split(new[] { "/r/n", "/r", "/n" }, StringSplitOptions.None);
+    var lines = gml.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
     for (int i = 0; i < lines.Length; i++) {
         ScriptMessage("GML_LINE:" + i + ":" + lines[i]);
     }

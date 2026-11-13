@@ -588,7 +588,8 @@ def _cjk_trigger_data_win(args, parser, game_file):
                            args.typer, args.text,
                            wrap=not args.no_wrap,
                            width_room_px=args.width,
-                           glyphs_json=getattr(args, "glyphs", None)):
+                           glyphs_json=(Path(args.glyphs)
+                                        if getattr(args, "glyphs", None) else None)):
         sys.exit(1)  # Step_1 字节级体检 WARN 必须非零退出
 
 

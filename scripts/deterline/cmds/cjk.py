@@ -445,7 +445,9 @@ def cmd_cjk_trigger(game_file: Path, room_name: str, obj_name: str, x: int, y: i
     if non_ascii:
         loaded = _load_glyph_codes(glyphs_json)
         if loaded is None:
-            print("  ⚠️ 字形表缺失——无法预检字形覆盖（先跑 cjk-font 或 --glyphs 指定）")
+            gj_attempt = glyphs_json or _default_glyphs_path()
+            print(f"  ⚠️ 字形表缺失（{gj_attempt}）——无法预检字形覆盖"
+                  "（先跑 cjk-font 或 --glyphs 指定）")
         else:
             codes, gj = loaded
             missing = sorted(non_ascii - {chr(c) for c in codes})
@@ -475,7 +477,16 @@ def _load_glyph_codes(glyphs_json: Path | None = None) -> "tuple[set[int], Path]
     if not gj.exists():
         return None
     glyphs = json.loads(gj.read_text(encoding="utf-8"))
-    known = {g["code"] for g in glyphs if isinstance(g, dict) and "code" in g}
+    known: set[int] = set()
+    for g in glyphs:
+        # 畸形表 fail-closed 并点名记录（审核席 B P2-1：chr(c) 曾 ValueError/
+        # TypeError 裸栈——cjk-check 的"缺失 N 个"对坏表是误导）
+        if not isinstance(g, dict) or "code" not in g:
+            raise errors.ValidationError(f"字形表记录非法（缺 code 键，应为 code:整数 对象）: {gj} → {g!r}")
+        c = g["code"]
+        if not isinstance(c, int) or isinstance(c, bool) or not 0 <= c <= 0x10FFFF:
+            raise errors.ValidationError(f"字形表 code 非法（应 0..0x10FFFF 整数）: {gj} → {c!r}")
+        known.add(c)
     return known, gj
 
 
@@ -503,8 +514,8 @@ def cmd_cjk_check(text: str, glyphs_json: Path | None = None,
 
     loaded = _load_glyph_codes(glyphs_json)
     if loaded is None:
-        default = _default_glyphs_path()
-        print(f"错误: 未找到字形表 {default}", file=sys.stderr)
+        gj_attempt = glyphs_json or _default_glyphs_path()
+        print(f"错误: 未找到字形表 {gj_attempt}", file=sys.stderr)
         print("  先运行 cjk-font（五步管线产出 glyphs.json），或 --glyphs 指定他处字形表",
               file=sys.stderr)
         sys.exit(2)
