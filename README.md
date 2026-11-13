@@ -414,6 +414,7 @@ deterline/
 - LOVE、Kills、Room 同时存在于 INI 和 file0，`set --key Room` 自动同步
 - `facechoice` 范围 0-9（0=无头像, 1=Toriel, 2=Flowey, 3=Sans, ...），**不要用 10+**
 - **游戏数据默认写入实验工作区**。用 `--workspace NAME` 隔离实验，用 `--preview` 查看拟写入文件和哈希，用 `sandbox-restore` 应用基线仍匹配的工作区。`--commit` 直接提交，可加 `--no-steam-sync` 跳过 Steam 同步
+- **写入被拒或中断时先跑 `recovery-scan`**（只读分类 + 逐目标 cp 指引；完整手册见 SKILL"写入安全与恢复链"节）。`backup-index --hash` 盘点全部恢复资产，`backup-prune` 给出清理预览（零删除，决定权在用户）
 - **安装 UTMT CLI 后**才能使用 `--file data_win` 相关命令
 - **房间 View 必须为 320×240（port 640×480）**——设成 640×480 会导致视角跟随失效（`view_xview` 被钳位到 0）
 - **背景修改按房间分类选命令**（`room-bg-info` 诊断）：数据驱动（B1）房 `set-room-bg` 有效（须覆盖所有启用层）；对象驱动（B2）房用 `gml-bg` 注入；纯 Tile（A 类）房须先启用一层。2026-11 审计修正：旧"set-room-bg 一律被运行时忽略"结论有误

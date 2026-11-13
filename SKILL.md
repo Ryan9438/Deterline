@@ -434,6 +434,32 @@ python run.py --action sandbox-restore --workspace test
 
 应用工作区前会比较原始文件的基线哈希，并备份当前目标。缺少基线记录的旧副本可保留，使用新工作区重做编辑。直接写入请加 `--commit`，如需跳过 Steam 同步请再加 `--no-steam-sync`。`--preview` 显示拟写入目标和哈希，存档文本另有行级差异。原有代码替换 `--dry-run` 仍可查看源码匹配或差异。
 
+### 写入安全与恢复链（v2.4.3 起）
+
+**journal（运行记录）**：每次提交前（含单文件），事务层在首个目标旁 `.deterline/journal/<id>.json` 落盘（预期目标 / 前后 sha256 / staged 与回滚副本路径 / 状态机 pending→committing→删除|aborted-clean|aborted-partial）。成功后自动摘除；任何崩溃（含 SIGKILL）保留——216 次强杀实验 0 违例，目标内容恒为写入前或写入后之一。
+
+**写命令被拒绝时**（`检测到未完结的运行记录`）：说明同目标有上次未完结操作。下一步：
+
+```bash
+python run.py --action recovery-scan            # 只读分类，退出码 0=干净 / 1=发现 / 2=定位失败
+python run.py --action recovery-scan --json     # 机器可读（schema deterline.recovery-scan/v1）
+```
+
+按 scan 输出的分类处置（run-journal 记录看 **level**；orphan-staged/corrupt-journal 是 **kind**，level 恒为 unfinished）：
+
+| kind / level | 含义 | 处置 |
+|---|---|---|
+| not-started | 目标未被触及 | 删除该 journal 与 staged 残留即可 |
+| done-confirm | 全部目标已写入 | 核对内容后删除 journal 与残留 |
+| interrupted | 替换中断 | 按给出的 cp 命令二选一（全部回滚=放弃 / 全部完成=继续），**每条 cp 执行前后各核对一次目标 md5**，然后删除 journal |
+| aborted | 事务层已回滚（aborted-clean / aborted-partial） | aborted-partial 同样给出逐目标回滚 cp 指引；按 error 字段处理后删除 journal |
+| suspicious | 目标呈第三方内容 | **人工核对，勿盲用回滚副本** |
+| unknown-state | state 不在已知状态机 | 人工核对该记录来源 |
+| orphan-staged（kind） | 无记录引用的 `.new` 残留 | 确认后删除 |
+| corrupt-journal（kind） | 记录不可解析 | 人工查看后删除（**此时 journal 保护不完整，勿做清理决定**） |
+
+处理完重新运行原写命令即可通过。`backup-prune` 与未来的清理入口以"recovery-scan 无 corrupt-journal"为前置条件。已知局限：跨目录混合提交（如 game+ini）崩溃后，只动另一目录的新提交看不到该记录——`recovery-scan` 会同时扫描 game 旁/存档旁/工作区层三处兜底。`recovery-apply/clean`（命令化执行）设计稿见 06 §4，当前按 cp 指引手工执行。
+
 ---
 
 ## 关键架构发现
