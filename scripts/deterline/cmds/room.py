@@ -1168,8 +1168,8 @@ foreach (var room in Data.Rooms) {
             bgs.Add(b.BackgroundDefinition.Name.Content);
     ScriptMessage("RS|" + Esc(room.Name.Content) + "|" + room.Width + "x" + room.Height
         + "|inst=" + room.GameObjects.Count + "|tiles=" + room.Tiles.Count
-        + "|bgen=" + Esc(string.Join(",", bgs))
-        + "|objs=" + Esc(string.Join(",", objs)));
+        + "|bgen=" + Esc(string.Join("\u001f", bgs))
+        + "|objs=" + Esc(string.Join("\u001f", objs)));
 }
 """
 
@@ -1188,36 +1188,54 @@ def _parse_rooms_scan(out: str) -> dict[str, dict]:
         if len(parts) != 7:
             raise RuntimeError(f"rooms-scan 行解析失败（{len(parts)} 段）: {line[:80]}")
         _, name, size, inst, tiles, bgen, objs = parts
-        # 对象名按 CSX HashSet 已去重；parse 层再保序去重一次（契约加固）
+        for field in (inst, tiles, bgen, objs):
+            if "=" not in field:
+                raise RuntimeError(f"rooms-scan 行字段缺 '=': {line[:80]}")
+        # 对象名按 CSX HashSet 已去重；parse 层再保序去重一次（契约加固）。
+        # 列表分隔符 = \u001f 控制字符（资源名不可能含——审核席 B P3：逗号会与
+        # 名字内逗号碰撞出假 D-candidate）
+        sep = chr(31)
         seen_objs: list[str] = []
-        for o in objs.split("=", 1)[1].split(","):
+        for o in objs.split("=", 1)[1].split(sep):
             if o and o not in seen_objs:
                 seen_objs.append(o)
         rooms[name] = {
             "size": size,
             "instances": int(inst.split("=", 1)[1]),
             "tiles": int(tiles.split("=", 1)[1]),
-            "bg_enabled": [b for b in bgen.split("=", 1)[1].split(",") if b],
+            "bg_enabled": [b for b in bgen.split("=", 1)[1].split(sep) if b],
             "objects": seen_objs,
         }
     return rooms
 
 
 def _classify_room(obs: dict) -> tuple[str, str]:
-    """规则分类（03 §3.1：保留原始观测与分类理由；D 候选带人工复核标记）。"""
-    has_bg = bool(obs["bg_enabled"])
-    has_backgrounder = any(o.startswith("obj_backgrounder")
+    """规则分类（03 §3.1：保留原始观测与分类理由）。
+
+    优先级依 RESCAN_PLAN §三明文：**含 obj_backgrounder_* → B2（即使同时
+    有启用层）**——对象 Create_0 会覆盖房间数据层（审核席 A/B P2：此前
+    启用层优先与计划相逆，2026-11-13 修正）。D-candidate 阈值 ≥2 启用层
+    为**启发式（无文献背书）**，人工例外须带依据（RESCAN_PLAN 对 D 的既有
+    定义是"沿用旧清单"，本标签仅作复核引导）。
+    """
+    has_backgrounder = any(o.startswith("obj_backgrounder_")
                            for o in obs["objects"])
-    if has_bg:
-        if len(obs["bg_enabled"]) >= D_CANDIDATE_MIN_LAYERS:
-            return "D-candidate", (f"启用背景 {len(obs['bg_enabled'])} 层"
-                                   "（≥2 层=多层视差候选，人工复核）")
-        return "B1", "数据驱动背景（启用层含 BackgroundDefinition）"
+    n_layers = len(obs["bg_enabled"])
+    coexist = ("；另有 obj_backgrounder_* 共存——对象驱动，set-room-bg 无效"
+               if has_backgrounder else "")
     if has_backgrounder:
-        return "B2", "对象驱动背景（obj_backgrounder_* 实例）"
+        tail = f"；同时有启用背景 {n_layers} 层" if n_layers else ""
+        return "B2", "对象驱动背景（obj_backgrounder_* 实例）" + tail
+    if n_layers >= D_CANDIDATE_MIN_LAYERS:
+        return "D-candidate", (f"启发式：启用背景 {n_layers} 层（≥2 层=多层视差"
+                               "候选，无文献背书，人工复核须带依据）" + coexist)
+    if n_layers == 1:
+        return "B1", "数据驱动背景（启用层含 BackgroundDefinition）" + coexist
     if obs["tiles"] > 0:
         return "A", "纯 Tile（无启用背景、无 backgrounder）"
-    return "uncategorized", "无 Tile/背景/backgrounder 观测（记录待人工归类）"
+    return ("uncategorized",
+            f"无背景/backgrounder 观测（{obs['instances']} 实例/"
+            f"{obs['tiles']} Tile——记录待人工归类）")
 
 
 def scan_rooms_data(game_file: Path, timeout: int = 300) -> dict:

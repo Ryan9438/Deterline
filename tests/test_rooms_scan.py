@@ -23,6 +23,9 @@ from deterline.cmds import room as room_mod  # noqa: E402
 def _rs_line(name="room_a", size="640x480", inst=3, tiles=10,
              bgen="bg_wall", objs="obj_cactus"):
     from urllib.parse import quote
+    sep = chr(31)  # 列表分隔符 = \u001f（资源名不可能含）
+    bgen = sep.join(bgen.split(",")) if bgen else ""
+    objs = sep.join(objs.split(",")) if objs else ""
     return ("RS|" + quote(name) + "|" + size + f"|inst={inst}"
             f"|tiles={tiles}|bgen={quote(bgen)}|objs={quote(objs)}")
 
@@ -67,6 +70,22 @@ class TestClassifyRoom(unittest.TestCase):
         label, _ = room_mod._classify_room(obs)
         self.assertEqual(label, "B2")
 
+    def test_b2_precedence_over_enabled_layers(self):
+        """RESCAN_PLAN §三明文：含 obj_backgrounder_* → B2（即使同时有启用层）
+        ——审核席 A/B P2：此前 bg 优先与计划相逆。"""
+        obs = {"bg_enabled": ["bg_a", "bg_b"], "objects": ["obj_backgrounder_1"],
+               "tiles": 0, "instances": 1}
+        label, reason = room_mod._classify_room(obs)
+        self.assertEqual(label, "B2")
+        self.assertIn("同时有启用背景 2 层", reason, "理由必须携带共存信息")
+
+    def test_d_candidate_requires_no_backgrounder(self):
+        obs = {"bg_enabled": ["bg_far", "bg_near"], "objects": [],
+               "tiles": 0, "instances": 0}
+        label, reason = room_mod._classify_room(obs)
+        self.assertEqual(label, "D-candidate")
+        self.assertIn("无文献背书", reason, "D 阈值启发式必须自标免责")
+
     def test_a_pure_tile(self):
         obs = {"bg_enabled": [], "objects": ["obj_solid"],
                "tiles": 30, "instances": 1}
@@ -86,6 +105,7 @@ class TestClassifyRoom(unittest.TestCase):
         label, reason = room_mod._classify_room(obs)
         self.assertEqual(label, "uncategorized")
         self.assertIn("待人工归类", reason)
+        self.assertIn("0 实例", reason)
 
 
 class TestScanRoomsData(unittest.TestCase):
@@ -123,7 +143,9 @@ class TestScanRoomsData(unittest.TestCase):
     os.environ.get("DETERLINE_RUN_UTMT_INTEGRATION") == "1",
     "真实 UTMT 扫描需本机 CLI + 基线 game.ios（RESCAN_PLAN §七 基线断言）")
 class TestRoomsScanRealBaseline(unittest.TestCase):
-    """RESCAN_PLAN §七 五条中的三条自动化（336/B1/B2/A 采样）。"""
+    """RESCAN_PLAN §七 自动化口径：336 房 + md5 + tundra B2 + 两处旧标分歧
+    登记为 D-candidate/B2（§七其余两条——序号映射、B1/A 采样——的最终标签
+    以人工复核清单为准）。"""
 
     def test_baseline_counts_and_divergences(self):
         """RESCAN_PLAN §七 基线核对（2026-11-13 实测口径）：
@@ -139,10 +161,16 @@ class TestRoomsScanRealBaseline(unittest.TestCase):
         by = {n: o["classification"] for n, o in data["rooms"].items()}
         self.assertEqual(by.get("room_tundra_town"), "B2",
                          "RESCAN_PLAN §七：tundra_town = B2（backgrounder 对象驱动）")
-        for divergent in ("room_water_undynefinal", "room_lastruins_corridor"):
-            self.assertEqual(by.get(divergent), "D-candidate",
-                             f"{divergent}：启发式与 RESCAN_PLAN 旧标签分歧——"
-                             "D-candidate 人工复核（分歧登记见 09 §5）")
+        # 分歧登记（B2 优先级修正后口径，2026-11-13）：
+        #   lastruins_corridor → B2（backgrounder 共存，RESCAN_PLAN 明文优先；
+        #     旧标 A 的分歧随优先级修正消解）
+        #   water_undynefinal → D-candidate（无 backgrounder、3 启用层；
+        #     与旧标 B1 的分歧 = 阈值启发式，人工复核）
+        self.assertEqual(by.get("room_lastruins_corridor"), "B2",
+                         "B2 优先级修正后：backgrounder 共存房归 B2")
+        self.assertEqual(by.get("room_water_undynefinal"), "D-candidate",
+                         "阈值启发式与 RESCAN_PLAN 旧标 B1 的分歧——人工复核"
+                         "（登记见 09 §5 / CHANGELOG v2.5.3）")
 
 
 if __name__ == "__main__":

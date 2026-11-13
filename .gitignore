@@ -29,3 +29,4 @@ assets/fonts/vendor/
 build/
 cjk_work/
 .deterline/
+rooms_scan.json

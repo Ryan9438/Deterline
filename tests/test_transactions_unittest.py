@@ -615,7 +615,7 @@ transactions.write_many({{t: (b"NEW-" + t.name.encode()) for t in targets}})
                                     stderr=subprocess.DEVNULL)
             try:
                 journal = None
-                deadline = time.monotonic() + 20
+                deadline = time.monotonic() + 60  # Windows runner 冷启动慢（1ec101f run 43455131996 flake）
                 while time.monotonic() < deadline:
                     journals = list(transactions.journal_dir_for(
                         root / "t0.bin").glob("*.json"))
@@ -628,7 +628,7 @@ transactions.write_many({{t: (b"NEW-" + t.name.encode()) for t in targets}})
                             break
                     time.sleep(0.05)
                 self.assertIsNotNone(journal,
-                                     "20s 内未到达部分替换窗口（子进程卡死？）")
+                                     "60s 内未到达部分替换窗口（子进程卡死？）")
                 proc.kill()
                 proc.wait(timeout=10)
             finally:

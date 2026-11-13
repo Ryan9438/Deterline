@@ -11,6 +11,7 @@ classification/classification_reason 并保留 original_* 字段（3.2 生成器
 """
 
 import argparse
+import os
 import json
 import sys
 from pathlib import Path
@@ -32,6 +33,16 @@ def main():
     if not game.is_file():
         print(f"错误: 游戏数据文件不存在: {game}", file=sys.stderr)
         return 1
+    out = Path(args.out)
+    if out.exists() and not out.is_file():
+        print(f"错误: --out 是目录: {out}", file=sys.stderr)
+        return 1
+    if not out.parent.is_dir():
+        print(f"错误: --out 父目录不存在: {out.parent}", file=sys.stderr)
+        return 1
+    if not os.access(out.parent, os.W_OK):
+        print(f"错误: --out 目录不可写: {out.parent}", file=sys.stderr)
+        return 1
     data = room.scan_rooms_data(game, timeout=args.timeout)
 
     # 统计摘要
@@ -40,7 +51,6 @@ def main():
         by_class[obs["classification"]] = by_class.get(obs["classification"], 0) + 1
     data["summary"] = {"by_classification": by_class}
 
-    out = Path(args.out)
     out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"✓ {data['room_count']} 房间 → {out}")
     for label in sorted(by_class):

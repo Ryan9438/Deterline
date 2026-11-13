@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.5.3 — 2026-11-13（审核清偿：B2 优先级修正 + CI 红补记 + 协议加固）
+
+**性质：批次 7-9 双席交叉审核清偿。375 测试（+2）。**
+
+### 分类语义修正（审核席 A/B P2）
+
+- **B2 优先级修正**：`_classify_room` 改为**含 obj_backgrounder_* → B2（即使同时有启用层）**——RESCAN_PLAN §三明文（对象 Create_0 覆盖房间数据层）；此前启用层优先与计划相逆。真实基线复测：lastruins_corridor → B2（旧标 A 的分歧随修正消解）、3 个 backgrounder 共存房归 B2、D-candidate 8→5。
+- 分类理由携带共存信息（"另有 obj_backgrounder_* 共存——set-room-bg 无效"）；D 阈值启发式自标"无文献背书"（RESCAN_PLAN 对 D 的既有定义是"沿用旧清单"）。
+
+### 诚实记录修正（审核席 B P1/P2）
+
+- **v2.5.1 更正**：本批 CI 红实为 **4 次**（405570e/7b6c756 NameError ×2 + 2df6647/b26f038 cjk 链 ×2），原文记 2 次漏计前两起——同为"编辑后未全量复跑"教训的最强佐证。
+- **v2.5.2 后记**：1ec101f 推送 run 43455131996 windows-latest 红（SIGKILL 测试 20s 计时窗口 flake；ubuntu/macos/本地绿，无代码交集）——测试窗口放宽至 60s 修复。
+
+### 协议/工具加固（审核席 B P3）
+
+- rooms-scan 行协议列表分隔符改 `\u001f` 控制字符（资源名内逗号会碰撞出假 D-candidate）；畸形字段缺 `=` 显式 RuntimeError。
+- `obj_backgrounder_` 前缀统一带下划线（与 room-bg-info/RESCAN_PLAN 一致）。
+- `tools/scan_rooms.py`：--out 可写性预检（先检后扫，不再浪费一次全量 UTMT）；`rooms_scan.json` 入 .gitignore。
+
+### 文档口径修正
+
+- 09 头部刷新（373/v2.5.3/CI 状态如实）；`uncategorized` 描述改"零背景观测"（53 房均有实例观测）；测试 docstring "三条"夸述改为如实口径。
+
 ## v2.5.2 — 2026-11-13（阶段 3.1 首切片：rooms-scan 统一扫描）
 
 **性质：03 手册 §7 条 3.1 首切片——库函数 + 工具 + 分类规则；ROOMS_GUIDE 重生成归 3.2（议会裁决：须审批）。373 测试（+12）。**
