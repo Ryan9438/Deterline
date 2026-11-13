@@ -35,7 +35,10 @@ DISTRIBUTION_FILES = [
 
 
 def _run(cmd, **kw):
-    return subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO), **kw)
+    # UTF-8 固定：子命令输出含中文/✓，Windows 父进程默认 cp1252 解码会炸
+    return subprocess.run(cmd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace",
+                          cwd=str(REPO), **kw)
 
 
 def check_version_chain(failures):

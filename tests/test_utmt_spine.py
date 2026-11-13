@@ -377,6 +377,9 @@ class TestSmokeVerdict(unittest.TestCase):
             marker_body=self._marker_body(inst="70"))
         self.assertEqual((started, triggered), ("ok", "fail"))
 
+    @unittest.skipIf(sys.platform == "win32",
+                     "POSIX chmod 权限位语义——Windows 只映射只读位，"
+                     "mode 200 仍可读（语义本身属 POSIX；判据在 _accept_marker 已由其他负例覆盖）")
     def test_unreadable_marker_degrades_to_fail(self):
         """复核席 3：读取失败不得当作通过（旧实现 exists 即 pass 的洞）。"""
         marker = self.save_dir / f"zcode_smoke_{self.RUN_ID}.txt"

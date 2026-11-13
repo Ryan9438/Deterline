@@ -29,8 +29,11 @@ def _run_help(script: str) -> str:
     import subprocess
     # COLUMNS 固定：argparse HelpFormatter 是 terminal-size aware（复核席 P1-3：
     # 导出过 COLUMNS 的机器上输出重排，A2 逐字节断言会假失败）
+    # encoding 固定 UTF-8：子进程输出恒为 UTF-8（__init__ reconfigure），
+    # Windows 父进程默认 cp1252 解码会 UnicodeDecodeError → stdout=None
     r = subprocess.run([sys.executable, str(REPO / script), "--help"],
-                       capture_output=True, text=True, cwd=str(REPO),
+                       capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", cwd=str(REPO),
                        env={**os.environ, "COLUMNS": "80"})
     if r.returncode != 0:
         raise RuntimeError(f"{script} --help 退出码 {r.returncode}: {r.stderr[-300:]}")
