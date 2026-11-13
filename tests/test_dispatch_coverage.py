@@ -121,9 +121,18 @@ class TestDispatchCoverageRatchet(unittest.TestCase):
                          f"commands.json 有 action 无 dispatch 分支（冷路径）: {missing}")
 
     def test_zero_coverage_within_allowlist(self):
-        # 排除棘轮自身：ALLOWLIST 的理由文本提到 action 名会把自己算成"已覆盖"
+        # 排除自引用源：①棘轮自身（ALLOWLIST 理由文本提到 action 名会把自己
+        # 算成"已覆盖"）②compat_surface 的 FROZEN_EXPORTS 冻结名册块
+        # （2026-11-13 全量导出锁入清单后，213 个 cmd_* 名被子串扫描误判成
+        # 21 条 ALLOWLIST 项"已覆盖"——名册不是覆盖；COMPAT_SURFACE 原有
+        # 语义保持不变）
+        def _coverage_text(f):
+            text = f.read_text(encoding="utf-8")
+            if f.name == "test_compat_surface.py":
+                text = text.split("FROZEN_EXPORTS = [", 1)[0]
+            return text
         test_src = "\n".join(
-            f.read_text(encoding="utf-8") for f in (REPO / "tests").glob("test_*.py")
+            _coverage_text(f) for f in (REPO / "tests").glob("test_*.py")
             if f.name != "test_dispatch_coverage.py")
         zero = []
         for act, fns in _coverage_map().items():
