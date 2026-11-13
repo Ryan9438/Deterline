@@ -127,7 +127,7 @@ class TestScanRoomsData(unittest.TestCase):
         data = self._scan([_rs_line("room_a", bgen="bg_w"),
                            _rs_line("room_b", tiles=0, bgen="",
                                     objs="obj_backgrounder_1")])
-        self.assertEqual(data["schema"], "deterline.rooms-scan/v1")
+        self.assertEqual(data["schema"], "deterline.rooms-scan/v2")
         self.assertEqual(data["source_md5"], source_md5)
         self.assertEqual(data["room_count"], 2)
         self.assertEqual(data["rooms"]["room_a"]["classification"], "B1")

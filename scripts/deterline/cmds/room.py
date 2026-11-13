@@ -1201,8 +1201,12 @@ def _parse_rooms_scan(out: str) -> dict[str, dict]:
         for o in objs.split("=", 1)[1].split(sep):
             if o and o not in seen_objs:
                 seen_objs.append(o)
+        try:
+            room_idx = int(idx.split("=", 1)[1])
+        except ValueError as exc:
+            raise RuntimeError(f"rooms-scan idx 非整数: {line[:80]}") from exc
         rooms[name] = {
-            "idx": int(idx.split("=", 1)[1]),
+            "idx": room_idx,
             "size": size,
             "instances": int(inst.split("=", 1)[1]),
             "tiles": int(tiles.split("=", 1)[1]),
@@ -1253,7 +1257,7 @@ def scan_rooms_data(game_file: Path, timeout: int = 300) -> dict:
         obs["classification"] = label
         obs["classification_reason"] = reason
     return {
-        "schema": "deterline.rooms-scan/v1",
+        "schema": "deterline.rooms-scan/v2",
         "source_md5": utmt._md5_file(game_file),
         "source_sha256": transactions.fingerprint(game_file),
         "captured_at": _time.strftime("%Y-%m-%dT%H:%M:%S"),

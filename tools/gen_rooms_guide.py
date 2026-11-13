@@ -24,6 +24,14 @@ SECTION_TITLES = {
     "uncategorized": "未归类（零背景观测——人工归类）",
 }
 
+FORBIDDEN_OUT = "ROOMS_GUIDE.md"  # 正式文档：审批闸门（审核席 B P2-2）
+
+
+def _sanitize(text: str) -> str:
+    """markdown 行净化：换行折叠、反引号替换（防行裂/代码 span 破损）。"""
+    return (str(text).replace(chr(10), " ").replace(chr(13), " ")
+            .replace(chr(96), chr(39)))
+
 
 def validate_mapping(rooms: dict, reverse: dict) -> list[str]:
     """rooms.json（id→中文名）与 rooms_reverse.json（中文名→id）双向体检。"""
@@ -44,6 +52,11 @@ def validate_mapping(rooms: dict, reverse: dict) -> list[str]:
 
 
 def render_guide(data: dict, rooms: dict, problems: list[str]) -> str:
+    # 分类统计由 rooms 现算（人工改 classification 后 stale summary 曾自相矛盾）
+    live_counts: dict[str, int] = {}
+    for obs in data["rooms"].values():
+        c = obs.get("classification", "uncategorized")
+        live_counts[c] = live_counts.get(c, 0) + 1
     lines = [
         "# ROOMS_GUIDE 草稿（自动生成——重生成须审批，勿直接覆盖正式文档）",
         "",
@@ -52,8 +65,7 @@ def render_guide(data: dict, rooms: dict, problems: list[str]) -> str:
         f"- 采集时间: {data['captured_at']}",
         f"- 房间总数: {data['room_count']}",
         f"- 分类统计: " + "、".join(
-            f"{k}={v}" for k, v in sorted(
-                data.get("summary", {}).get("by_classification", {}).items())),
+            f"{k}={v}" for k, v in sorted(live_counts.items())),
         "",
         "## 映射体检（03 §3.2）",
         "",
@@ -77,9 +89,26 @@ def render_guide(data: dict, rooms: dict, problems: list[str]) -> str:
         lines.extend(f"- {n}" for n in unregistered[:20])
     lines.append("")
 
-    for section in SECTION_ORDER:
+    # 未知标签兜底节（审核席 B P2-1：人工改 "D" 曾静默丢房）
+    known = set(SECTION_ORDER)
+    unknown = {c for c in live_counts if c not in known}
+    sections = SECTION_ORDER + [f"unknown:{c}" for c in sorted(unknown)]
+
+    for section in sections:
+        if section.startswith("unknown:"):
+            raw = section.split(":", 1)[1]
+            members = sorted(n for n, o in data["rooms"].items()
+                             if o.get("classification") == raw)
+            lines.append(f"## 其他（人工标签 {raw!r}——不在规则集，请复核）"
+                         f"（{len(members)}）")
+            lines.append("")
+            for name in members:
+                obs = data["rooms"][name]
+                lines.append(f"- `{_sanitize(name)}` id={obs.get('idx')}")
+            lines.append("")
+            continue
         members = sorted(n for n, o in data["rooms"].items()
-                         if o["classification"] == section)
+                         if o.get("classification") == section)
         lines.append(f"## {SECTION_TITLES[section]}（{len(members)}）")
         lines.append("")
         if not members:
@@ -97,9 +126,11 @@ def render_guide(data: dict, rooms: dict, problems: list[str]) -> str:
             objs = "、".join(obs["objects"][:6]) or "—"
             more = f"（共 {len(obs['objects'])} 种对象）" if len(obs["objects"]) > 6 else ""
             lines.append(
-                f"- `{name}`{rid} — {cn} | {obs['size']} | 实例 {obs['instances']}"
-                f" | Tile {obs['tiles']} | 启用背景: {bgs} | 对象: {objs}{more}")
-            lines.append(f"  - 理由: {obs['classification_reason']}")
+                f"- `{_sanitize(name)}`{rid} — {_sanitize(cn)} | {obs['size']}"
+                f" | 实例 {obs['instances']}"
+                f" | Tile {obs['tiles']} | 启用背景: {_sanitize(bgs)}"
+                f" | 对象: {_sanitize(objs)}{more}")
+            lines.append(f"  - 理由: {_sanitize(obs['classification_reason'])}")
         lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -116,12 +147,28 @@ def main():
     if not scan_path.is_file():
         print(f"错误: scan JSON 不存在: {scan_path}", file=sys.stderr)
         return 1
-    data = json.loads(scan_path.read_text(encoding="utf-8"))
+    if Path(args.out).resolve() == (REPO / FORBIDDEN_OUT).resolve():
+        print(f"错误: --out 不得指向正式 {FORBIDDEN_OUT}（重生成须审批；"
+              "请用默认 ROOMS_GUIDE.draft.md 或显式草稿路径）", file=sys.stderr)
+        return 1
+    try:
+        data = json.loads(scan_path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        print(f"错误: scan JSON 不可解析: {scan_path}（{exc}）", file=sys.stderr)
+        return 1
+    if data.get("schema") != "deterline.rooms-scan/v2":
+        print(f"⚠️ scan schema={data.get('schema')!r} ≠ v2（旧协议 JSON 无 idx，"
+              "映射将全标未登记）——建议重扫（tools/scan_rooms.py）",
+              file=sys.stderr)
     rooms = json.loads((REPO / "scripts" / "rooms.json").read_text(encoding="utf-8"))
     reverse = json.loads((REPO / "scripts" / "rooms_reverse.json").read_text(encoding="utf-8"))
 
     problems = validate_mapping(rooms, reverse)
-    text = render_guide(data, rooms, problems)
+    try:
+        text = render_guide(data, rooms, problems)
+    except KeyError as exc:
+        print(f"错误: scan JSON 缺观测字段（旧协议？请重扫）: {exc}", file=sys.stderr)
+        return 1
     Path(args.out).write_text(text, encoding="utf-8")
     print(f"✓ 草稿 → {args.out}（{data['room_count']} 房；映射体检 "
           f"{'⚠️ ' + str(len(problems)) + ' 项' if problems else '通过'}）")
