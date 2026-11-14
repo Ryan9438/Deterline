@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import random
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -893,3 +894,119 @@ def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
 
 def _fmt_short_sha(sha: str | None) -> str:
     return f"{sha[:12]}…" if sha else "<未计算>"
+
+
+def cmd_prune_purge(save_dir: Path | None, dir_override: str | None = None,
+                    commit: bool = False, json_out: bool = False) -> int:
+    """purge 真删除（06 §4，值守入口）：清空 .deterline/pruned/<ts>/ 批次。
+
+    删除对象 = backup-prune --commit 移入的批次目录（归档文件 + manifest）
+    ——**真删除不可逆**；每批次硬校验 manifest.json 存在且 schema 正确
+    （deterline.pruned-manifest/v1），缺失/损坏批次拒绝并保留（保护可
+    追溯性）。默认预览零动作；--commit 执行（shutil.rmtree 逐批次）。
+    --preview × --commit 由 handler 层互斥（R5 P2-3 同款）。
+    退出码：0=预览完成/已清空/无 pruned 目录；1=存在拒绝批次；2=两侧定位均失败。
+    --json 输出 deterline.pruned-purge/v1。
+    """
+    try:
+        game_dir = paths.resolve_game_data_file(dir_override)
+        game_dir = game_dir.parent
+    except FileNotFoundError as e:
+        game_dir = None
+        _loc_warn = f"游戏数据目录未定位: {e}"
+    else:
+        _loc_warn = None
+    roots = [r for r in (game_dir, save_dir) if r is not None]
+    if not roots:
+        if json_out:
+            print(json.dumps({
+                "schema": "deterline.pruned-purge/v1",
+                "commit": commit, "roots": [], "batches": [],
+                "refused": [], "warnings": [_loc_warn or "定位失败"],
+            }, ensure_ascii=False, indent=2))
+        else:
+            if _loc_warn:
+                print(f"  ⚠️ {_loc_warn}", file=sys.stderr)
+            print("--- 未定位任何目录（退出码 2） ---")
+        return 2
+
+    pruned_roots = [r / ".deterline" / "pruned" for r in roots
+                    if (r / ".deterline" / "pruned").is_dir()]
+    batches: list[dict] = []
+    refused: list[dict] = []
+    seen_dirs = set()
+    for pruned_root in pruned_roots:
+        for batch_dir in sorted(pruned_root.iterdir()):
+            if not batch_dir.is_dir() or batch_dir in seen_dirs:
+                continue
+            seen_dirs.add(batch_dir)
+            manifest_path = batch_dir / "manifest.json"
+            entry = {"path": str(batch_dir), "entries": None, "bytes": 0,
+                     "purgeable": False}
+            try:
+                manifest = json.loads(
+                    manifest_path.read_text(encoding="utf-8"))
+                ok = (isinstance(manifest, dict)
+                      and manifest.get("schema") == "deterline.pruned-manifest/v1"
+                      and isinstance(manifest.get("entries"), list))
+            except (OSError, ValueError):
+                ok = False
+                manifest = None
+            if ok:
+                entry["purgeable"] = True
+                entry["entries"] = len(manifest["entries"])
+                entry["bytes"] = sum(
+                    f.stat().st_size for f in sorted(batch_dir.rglob("*"))
+                    if f.is_file())
+            else:
+                refused.append({
+                    "path": str(batch_dir),
+                    "guidance": "manifest.json 缺失/损坏——真删除前须人工核对该"
+                                "批次内容（可追溯性保护）",
+                })
+            batches.append(entry)
+
+    deleted: list[str] = []
+    if commit:
+        for entry in batches:
+            if not entry["purgeable"]:
+                continue
+            batch_dir = Path(entry["path"])
+            try:
+                shutil.rmtree(batch_dir)
+                deleted.append(str(batch_dir))
+            except OSError as exc:
+                refused.append({"path": entry["path"],
+                                "guidance": f"删除失败: {exc}"})
+
+    if json_out:
+        print(json.dumps({
+            "schema": "deterline.pruned-purge/v1",
+            "commit": commit,
+            "roots": [str(r) for r in roots],
+            "batches": batches,
+            "refused": refused,
+            "deleted": deleted,
+            "warnings": ([_loc_warn] if _loc_warn else []),
+        }, ensure_ascii=False, indent=2))
+        return 1 if refused else 0
+
+    print(f"--- prune-purge（{'真删除' if commit else '预览，零动作'}） ---")
+    for entry in batches:
+        mark = "✓" if entry["purgeable"] else "✗"
+        size = f"{entry['bytes'] / 1e6:.1f}MB" if entry["purgeable"] else "?"
+        count = entry["entries"] if entry["entries"] is not None else "?"
+        print(f"  {mark} {entry['path']}（{count} 条 / {size}）")
+    for r in refused:
+        print(f"  ✗ 拒绝: {r['path']} → {r['guidance']}")
+    if commit:
+        if deleted:
+            print(f"  已真删除 {len(deleted)} 批次（不可逆）")
+        elif not batches:
+            print("  ✅ 无 pruned 批次")
+    else:
+        if batches:
+            print("  预览完成——加 --commit 真删除（不可逆）")
+        else:
+            print("  ✅ 无 pruned 批次")
+    return 1 if refused else 0

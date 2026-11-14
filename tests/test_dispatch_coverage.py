@@ -132,7 +132,7 @@ class TestDispatchCoverageRatchet(unittest.TestCase):
             if f.name == "test_compat_surface.py":
                 head, sep, _tail = text.partition("FROZEN_EXPORTS = [")
                 # C P2-2：截断必须真发生——字面量漂移（如加类型注解）曾会
-                # 静默返回全文，215 个冻结名会把 20 条 ALLOWLIST 误判成
+                # 静默返回全文，216 个冻结名会把 20 条 ALLOWLIST 误判成
                 # "已覆盖"并强制清偿，棘轮整体假绿
                 if not sep:
                     raise AssertionError(

@@ -52,7 +52,7 @@ ASCII, ascii, 英文, 中文限制, 字体
 
 ## 技能版本
 
-2.5.9
+2.5.10
 
 ## 适用平台
 
@@ -146,7 +146,7 @@ deterline/
 ## 命令总览
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 91 个命令 · 版本 2.5.9 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 92 个命令 · 版本 2.5.10 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -166,6 +166,7 @@ deterline/
 | `list-backups --value data_win` | 列出所有备份（--value ini\|file0\|data_win） | static |
 | `doctor --file data_win` | 聚合体检（全只读零写盘）：rooms.json 健康 / 存档可解析 / 游戏文件 md5 与仓库基线比对 / 备份占盘 / 沙箱残留 / UTMT CLI 与 dotnet 可达 / CJK 字形表状态；--json 输出 deterline.doctor/v1；退出码 全✓0/有✗1 | static |
 | `backup-prune --keep-archives 3` | 保留策略预览/执行（03 §2.4 + 06 §4 执行入口）：占盘统计 + 内容重复分组（sha256）+ 超窗归档清理建议（精确 rm 命令 + 可回收字节）；--keep-archives N 每目标保留最近 N 份；默认预览零删除，--commit 将超窗归档移入 .deterline/pruned/<ts>/（可逆，manifest 含原路径+sha256）；--json 输出 deterline.backup-prune/v1（commit 模式附 committed 块） | static |
+| `prune-purge --commit` | purge 真删除（06 §4，值守入口）：清空 .deterline/pruned/<ts>/ 移除批次（backup-prune --commit 的最终出口）——默认预览列出批次/条目/字节，--commit 真删除（不可逆）；每批次硬校验 manifest.json（缺失/损坏拒绝并保留）；--json 输出 deterline.pruned-purge/v1 | static |
 | `recovery-scan` | 恢复完整性（03 §2.2c）：只读扫描未完结运行记录（.deterline/journal）与孤儿暂存 → 中断窗口分类 + 可预览恢复指引（--json 输出 deterline.recovery-scan/v1）；零写盘零 UTMT；发现未完结项退出码 1 | static |
 | `recovery-apply --direction rollback --commit` | 恢复执行（06 §4，值守入口）：按 scan 分类执行恢复——--direction rollback=放弃本次(目标←回滚副本，须全部==after) / complete=继续本次(目标←暂存副本，须全部∈{before,not-created})；混合分类整批拒绝；默认预览，--commit 执行（逐目标 os.replace）；--json 输出 deterline.recovery-apply/v1 | static |
 | `recovery-clean --commit` | 恢复清理（06 §4，值守入口）：对每条记录现场重分类（绝不信任存量 state）——仅 not-started/done-confirm 可清（journal + 其 staged/rollback 副本）；suspicious/interrupted/aborted-partial/corrupt/unknown 一律拒绝并指引；孤儿 .new 一并清理；默认预览，--commit 执行；--json 输出 deterline.recovery-clean/v1 | static |
@@ -185,6 +186,9 @@ deterline/
 > ⚠️ `backup-prune`: journal 引用的归档被保护跳过并单独计数；双侧定位均失败退出码 2；--commit 拒绝/移动失败退出码 1
 > ⚠️ `backup-prune`: 归档新旧按纳秒级 mtime 排序（backup_file 保留源 mtime，可能与文件名时间戳分叉；同纳秒平局按名字字典序）
 > ⚠️ `backup-prune`: 硬前置：recovery-scan 无 corrupt-journal（口径与 scan 对齐：解析失败/schema 不符/targets 缺失均算损坏）
+> ⚠️ `prune-purge`: 真删除不可逆——删除对象含 manifest 本体，执行前务必预览确认
+> ⚠️ `prune-purge`: manifest 缺失/损坏/schema 不符的批次拒绝并保留（可追溯性保护）
+> ⚠️ `prune-purge`: --preview × --commit 互斥；退出码：0=预览完成/已清空/无 pruned 目录；1=存在拒绝批次；2=定位失败
 > ⚠️ `recovery-scan`: 扫描 game 旁与存档目录旁两处 .deterline/journal（transactions 每次提交前落盘、成功后删除、SIGKILL 保留）
 > ⚠️ `recovery-scan`: 分类：未开始（清理）/ 已全部写入（确认清理）/ 替换中断（逐目标给出回滚或完成的 cp 命令）/ 存在外部修改（人工核对）/ aborted（含 error 字段）
 > ⚠️ `recovery-scan`: 孤儿暂存（.{name}.*.new 无记录引用）单独列出；本命令零恢复零清理——执行恢复留待 recovery-apply/clean

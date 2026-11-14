@@ -83,6 +83,7 @@ COMPAT_SURFACE = [
     "cmd_list_backups",
     "cmd_ini_set",
     "cmd_obj_set_sprite",
+    "cmd_prune_purge",
     "cmd_remove_door",
     "cmd_remove_obj",
     "cmd_remove_tile",
@@ -150,7 +151,7 @@ class TestCompatSurface(unittest.TestCase):
 
 
 # 全量导出面冻结（风险席 2026-11-13：91 名只是测试引用子集，shim 活导出
-# 215 名中约 121 名无任何守护——一次 shim"清理"可静默删掉它们）。
+# 216 名中约 122 名无任何守护——一次 shim"清理"可静默删掉它们）。
 # 有意变更（新增/删除/改名）必须同步更新本清单并在提交信息归因。
 FROZEN_EXPORTS = [
     "ALLOW_CJK",
@@ -308,6 +309,7 @@ FROZEN_EXPORTS = [
     "cmd_npc_dialogue",
     "cmd_obj_get",
     "cmd_obj_set_sprite",
+    "cmd_prune_purge",
     "cmd_quest_init",
     "cmd_quest_status",
     "cmd_remove_door",

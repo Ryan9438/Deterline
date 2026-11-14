@@ -9,7 +9,7 @@
     },
     "invariants": "action 集合必须与 modify_save.py --action choices 完全一致（test_docs_lint 校验）。新增命令流程：注册 command_handlers.py 路由 → 加本文件条目（含 golden test / doctor 项）→ python3 tools/gen_docs.py。"
   },
-  "version": "2.5.9",
+  "version": "2.5.10",
   "groups": [
     {
       "id": "save",
@@ -760,6 +760,18 @@
         "journal 引用的归档被保护跳过并单独计数；双侧定位均失败退出码 2；--commit 拒绝/移动失败退出码 1",
         "归档新旧按纳秒级 mtime 排序（backup_file 保留源 mtime，可能与文件名时间戳分叉；同纳秒平局按名字字典序）",
         "硬前置：recovery-scan 无 corrupt-journal（口径与 scan 对齐：解析失败/schema 不符/targets 缺失均算损坏）"
+      ]
+    },
+    {
+      "action": "prune-purge",
+      "group": "save",
+      "verify": "static",
+      "summary": "purge 真删除（06 §4，值守入口）：清空 .deterline/pruned/<ts>/ 移除批次（backup-prune --commit 的最终出口）——默认预览列出批次/条目/字节，--commit 真删除（不可逆）；每批次硬校验 manifest.json（缺失/损坏拒绝并保留）；--json 输出 deterline.pruned-purge/v1",
+      "example": "prune-purge --commit",
+      "notes": [
+        "真删除不可逆——删除对象含 manifest 本体，执行前务必预览确认",
+        "manifest 缺失/损坏/schema 不符的批次拒绝并保留（可追溯性保护）",
+        "--preview × --commit 互斥；退出码：0=预览完成/已清空/无 pruned 目录；1=存在拒绝批次；2=定位失败"
       ]
     },
     {

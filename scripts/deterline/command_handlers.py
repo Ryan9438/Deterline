@@ -50,6 +50,25 @@ def _backup_prune(args, parser, target):
         sys.exit(code)  # 2 = 两侧定位均失败；1 = commit 拒绝/移动失败
 
 
+def _prune_purge(args, parser, target):
+    # 06 §4：purge 真删除（backup-prune --commit 移入批次的永久清理入口）。
+    # 默认预览；--commit 真删除（不可逆）；--preview × --commit 互斥（R5 P2-3）。
+    json_out = bool(getattr(args, "json", False))
+    if bool(getattr(args, "commit", False)) and state.PREVIEW:
+        parser.error("--preview 与 --commit 互斥（执行动词不接受预览门）")
+    try:
+        save_dir = paths.find_save_dir(args.dir)
+    except FileNotFoundError as exc:
+        if not json_out:
+            print(f"（存档目录未定位：{exc}）", file=sys.stderr)
+        save_dir = None
+    code = save_cmds.cmd_prune_purge(
+        save_dir, args.dir, commit=bool(getattr(args, "commit", False)),
+        json_out=json_out)
+    if code:
+        sys.exit(code)  # 1 = 存在拒绝批次（manifest 缺失/损坏）；2 = 定位失败
+
+
 def _recovery_scan(args, parser, target):
     # --dir 语义与 backup-index 一致：文件/目录均接受，游戏侧用
     # resolve_game_data_file（recovery 内部调用），存档侧 find_save_dir。
@@ -840,6 +859,7 @@ COMMANDS = {
     "diff-snapshots": {"data_win": _diff_snapshots_data_win},
     "backup-index": {"any": _backup_index},
     "backup-prune": {"any": _backup_prune},
+    "prune-purge": {"any": _prune_purge},
     "set-derived": {"any": _set_derived},
     "cjk-font": {"data_win": _cjk_font_data_win},
     "cjk-trigger": {"data_win": _cjk_trigger_data_win},

@@ -510,3 +510,92 @@ class TestPreviewCommitMutex(unittest.TestCase):
 
     def test_recovery_clean_mutex(self):
         self._expect_parser_error("_recovery_clean", {})
+
+
+class TestPrunePurge(RecoveryExecBase):
+    """prune-purge（06 §4 purge 真删除入口）：manifest 硬校验 + 可逆链收口。"""
+
+    def _make_pruned_batches(self):
+        """两个合法批次 + 一个 manifest 损坏批次。"""
+        root = self.root / ".deterline" / "pruned"
+        for name, entries in (("20261114_100000_0001",
+                               [{"original_path": "/x/a", "sha256": "aa"},
+                                {"original_path": "/x/b", "sha256": "bb"}]),
+                              ("20261114_110000_0002",
+                               [{"original_path": "/x/c", "sha256": "cc"}])):
+            d = root / name
+            d.mkdir(parents=True)
+            (d / "manifest.json").write_text(json.dumps({
+                "schema": "deterline.pruned-manifest/v1",
+                "pruned_at": name, "keep_archives": 3, "entries": entries,
+            }), encoding="utf-8")
+            (d / "game.ios.bak.x").write_bytes(b"ARCHIVED")
+        broken = root / "20261114_120000_0003"
+        broken.mkdir(parents=True)
+        (broken / "game.ios.bak.y").write_bytes(b"NO-MANIFEST")
+
+    def _purge(self, commit=False, json_out=False):
+        buf = io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=self.game):
+            with contextlib.redirect_stdout(buf):
+                code = ms.cmd_prune_purge(self.root, None, commit=commit,
+                                          json_out=json_out)
+        return buf.getvalue(), code
+
+    def test_preview_lists_batches_and_refuses_broken(self):
+        self._make_pruned_batches()
+        out, code = self._purge(commit=False)
+        self.assertEqual(code, 1, "manifest 损坏批次 → 1")
+        self.assertIn("20261114_100000_0001", out)
+        self.assertIn("manifest.json 缺失/损坏", out)
+        self.assertIn("预览完成", out)
+        # 零动作
+        self.assertTrue((self.root / ".deterline" / "pruned"
+                         / "20261114_100000_0001").is_dir())
+
+    def test_commit_deletes_purgeable_keeps_refused(self):
+        self._make_pruned_batches()
+        out, code = self._purge(commit=True)
+        self.assertEqual(code, 1)
+        pruned = self.root / ".deterline" / "pruned"
+        self.assertFalse((pruned / "20261114_100000_0001").is_dir())
+        self.assertFalse((pruned / "20261114_110000_0002").is_dir())
+        self.assertTrue((pruned / "20261114_120000_0003").is_dir(),
+                        "manifest 损坏批次保留")
+        self.assertIn("已真删除 2 批次", out)
+
+    def test_no_pruned_dir_noop(self):
+        out, code = self._purge(commit=True)
+        self.assertEqual(code, 0, out)
+        self.assertIn("无 pruned 批次", out)
+
+    def test_json_schema(self):
+        self._make_pruned_batches()
+        out, code = self._purge(commit=True, json_out=True)
+        self.assertEqual(code, 1)
+        payload = json.loads(out)
+        self.assertEqual(payload["schema"], "deterline.pruned-purge/v1")
+        self.assertEqual(len(payload["deleted"]), 2)
+        self.assertEqual(len(payload["refused"]), 1)
+
+    def test_commit_requires_no_preview_mutex(self):
+        # R5 P2-3 同款：handler 层 --preview × --commit 互斥
+        import types as _types
+        import contextlib as _ctxlib
+        import io as _io
+        import deterline.command_handlers as _ch
+        args = _types.SimpleNamespace(dir=None, json=False, commit=True,
+                                      preview=True)
+        class _Parser:
+            def error(self, msg):
+                raise SystemExit(2)
+
+        buf = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_save_dir",
+                               return_value=None), \
+             mock.patch.object(deterline.state, "PREVIEW", True):
+            with _ctxlib.redirect_stdout(buf):
+                with self.assertRaises(SystemExit) as cm:
+                    _ch._prune_purge(args, _Parser(), None)
+        self.assertEqual(cm.exception.code, 2)

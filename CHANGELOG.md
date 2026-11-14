@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.5.10 — 2026-11-14（深夜：prune-purge 入口 + 样例升级 in-game 级）
+
+**性质：值守场次交付收尾。** v2.5.9 修复后的样例（文本 ≤3 行重录）实机六项复验**全过 → 判级升级 in-game**（05 §5.3）；purge 真删除入口交付（06 §4 执行链最后一环）。**425 测试（+5）。**
+
+### prune-purge（新命令 91→92，06 §4 执行链最后一环）
+
+- `prune-purge`：清空 `.deterline/pruned/<ts>/` 批次（backup-prune --commit 的最终出口）——默认预览（批次/条目/字节），`--commit` 真删除（不可逆）；**每批次硬校验 manifest.json**（缺失/损坏/schema 不符拒绝并保留——可追溯性保护）；`--preview × --commit` handler 层互斥（R5 P2-3 同款）；--json 输出 deterline.pruned-purge/v1。
+- 注册链：commands.json 92 → COMMANDS/cli → gen_docs；shim 收编 cmd_prune_purge（FROZEN_EXPORTS 215→216）；tests/test_recovery_exec.py +5（预览/逐批删除+损坏保留/空 no-op/json schema/互斥）。
+- 至此 06 §4 执行链完整：recovery-scan（分类）→ recovery-apply（恢复）→ recovery-clean（清理）→ backup-prune --commit（可逆移除）→ prune-purge（真删除）——破坏性逐级上升、全部默认预览 + --commit 显式激活 + 值守场次逐次确认。
+
+### 样例升级 in-game 级（05 §5.3）
+
+- 样例 v2：页 1 文本缩短至 3 行（`* 托丽尔你好，这是中文样例。&CJK 12px + ASCII 123 mixed。`）+ 修复后生成器（非末页裸 `/`）——实机六项复验全过（帧证据齐），判级 **sandbox → in-game**。
+- 观察项：贴身站上仙人掌会同时触发原版观察文本（双框并显）——原版行为共存。
+
 ## v2.5.9 — 2026-11-14（深夜：cjk-trigger 两页翻页修复——Boot-1 实验矩阵实锤根因）
 
 **性质：1.6 实机缺陷定位（W1 静态分析 + Boot-1 三点对照实验矩阵，实机判读 Computer-Use 代检）→ 一行修复 + golden 重录。420 测试（two-page 断言更新）。外层 05 §5.2 已收口记录；R7/R8 双席复审通过（P3 笔误随本版订正）。**
