@@ -231,8 +231,8 @@ class TestGoldenCjkFont(unittest.TestCase):
                           "* 托丽尔你好，这里是中文测试。第二行内容稍微长一些需要折行。")])
 
     def test_cjk_trigger_two_page_csx(self):
-        """阶段 1.5：两页形态钉形（中部 "/%%" 页分隔 → msg[0]/msg[1] 各带翻页、
-        msg[2]="%%%" 收口）。"""
+        """阶段 1.5：两页形态钉形（中部 "/%%" 页分隔输入 → msg[0] 裸 "/" 翻页
+        （2026-11-14 实机订正）、msg[1] "/%%" 关框、msg[2]="%%%" 收口）。"""
         _check_golden(self, "cjk_trigger_twopage",
                       [ms._build_cjk_trigger_csx(
                           "room_ruins1", "obj_cactus", 220, 330, 31,

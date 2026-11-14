@@ -336,8 +336,9 @@ def _build_cjk_trigger_csx(room_name: str, obj_name: str, x: int, y: int,
     """生成单个 CJK 对话触发块 CSX（追加到 obj_<名>_Step_1）。
 
     触发块形态 = B4 实证全形态（缺一即幽灵框/空框，见 AUDIT §八/§九）：
-    msc=0 / typer / facechoice=3 / faceemotion=0 / msg[0] 带 "/%%" 终止符 /
-    msg[1]="%%%" / id 守卫三连 / distance<60。
+    msc=0 / typer / facechoice=3 / faceemotion=0 / 消息表 = 各页文本 + 翻页
+    语义分隔符（单页/末页 "/%%" 终止；两页非末页裸 "/" 翻页——2026-11-14
+    实机订正）+ "%%%" 收口 / id 守卫三连 / distance<60。
     typer 必须在 CJK_TYPER_TABLE 内（几何未核对的 typer 拒绝）。
     位置硬校验：0 <= x < 320（房间宽 320——越界即物理不可触发，B2 教训）。
     """
@@ -379,7 +380,7 @@ def _build_cjk_trigger_csx(room_name: str, obj_name: str, x: int, y: int,
     # 非末页以裸 "/" 结尾（Draw 扫到 "/" 且 nextch 非 "%" → halt=1 → Z 翻页
     # mystring[stringno++]），末页以 "/%%" 结尾（nextch=="%" → halt=2 →
     # Z 关框销毁），终结条目 "%%%"。旧形态（非末页也 "/%%"）把页 1 变成
-    # 终止页——页 2 结构性不可达（Boot-1 实验矩阵 A/B/C 全过实证，05 §5.1）。
+    # 终止页——页 2 结构性不可达（Boot-1 实验矩阵 A/B/C 全过实证，05 §5.2）。
     if len(pages) == 2:
         msg_lines = [pages[0] + "/", pages[1] + "/%%", "%%%"]
     else:
