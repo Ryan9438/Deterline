@@ -21,7 +21,7 @@ if (spr == null) {
     ScriptMessage("ERROR: Sprite not found: spr_golden");
     return;
 }
-string pngPath = "/tmp/golden_test/spr_golden.png";
+string pngPath = "<GOLDEN_TMP>/spr_golden.png";
 if (!System.IO.File.Exists(pngPath)) {
     ScriptMessage("ERROR: File not found: " + pngPath);
     return;

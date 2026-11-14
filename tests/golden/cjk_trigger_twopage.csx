@@ -28,7 +28,7 @@ try {
         + "        global.msc = 0;\n"
         + "        global.typer = 31;\n"
         + "        global.facechoice = 3;\n        global.faceemotion = 0;\n"
-        + "        global.msg[0] = \"* 托丽尔你好，这是中文样例第一&页。&CJK 12px + ASCII&123 mixed。/%%\";\n"
+        + "        global.msg[0] = \"* 托丽尔你好，这是中文样例第一&页。&CJK 12px + ASCII&123 mixed。/\";\n"
         + "        global.msg[1] = \"* 第二页：翻页、头像与退出对话&测试。/%%\";\n"
         + "        global.msg[2] = \"%%%\";\n"
         + "        instance_create(0, 0, obj_dialoguer);\n"

@@ -375,9 +375,13 @@ def _build_cjk_trigger_csx(room_name: str, obj_name: str, x: int, y: int,
         if 0 < wxend < 9000:                       # 引擎会按 wxend 二次折行 → 预折行不超它
             width_room_px = min(width_room_px, wxend)
         pages = [cjk_wrap_text(pg, max(1, width_room_px // spacing)) for pg in pages]
-    # 消息表形态（B4）：末页不带终止符、以 "%%%" 收口；非末页各带 "/%%" 翻页
+    # 消息表形态（2026-11-14 实机订正 W1 §1：obj_base_writer 原版语义——
+    # 非末页以裸 "/" 结尾（Draw 扫到 "/" 且 nextch 非 "%" → halt=1 → Z 翻页
+    # mystring[stringno++]），末页以 "/%%" 结尾（nextch=="%" → halt=2 →
+    # Z 关框销毁），终结条目 "%%%"。旧形态（非末页也 "/%%"）把页 1 变成
+    # 终止页——页 2 结构性不可达（Boot-1 实验矩阵 A/B/C 全过实证，05 §5.1）。
     if len(pages) == 2:
-        msg_lines = [pages[0] + "/%%", pages[1] + "/%%", "%%%"]
+        msg_lines = [pages[0] + "/", pages[1] + "/%%", "%%%"]
     else:
         msg_lines = [pages[0] + "/%%", "%%%"]
     gml_lines = [_csx_escape(_gml_escape(ml)) for ml in msg_lines]

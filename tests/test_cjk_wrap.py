@@ -138,7 +138,9 @@ class TestTwoPageTrigger(unittest.TestCase):
         csx = ms._build_cjk_trigger_csx("room_ruins1", "obj_cactus", 220, 330,
                                         31, "* 第一页/%%* 第二页", wrap=False)
         # CSX 内 GML 字符串带反斜杠转义（\"）——与 B4 形态一致
-        self.assertIn('global.msg[0] = \\"* 第一页/%%\\";', csx)
+        # 2026-11-14 实机订正（W1 §1/Boot-1）：非末页裸 / 结尾（halt=1 翻页），
+        # 末页 /%%（halt=2 关框）——旧形态非末页也 /%% = 页 2 结构性不可达
+        self.assertIn('global.msg[0] = \\"* 第一页/\\";', csx)
         self.assertIn('global.msg[1] = \\"* 第二页/%%\\";', csx)
         self.assertIn('global.msg[2] = \\"%%%\\";', csx)
         self.assertNotIn("global.msg[3]", csx)

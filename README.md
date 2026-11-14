@@ -107,7 +107,7 @@ python run.py --action quest-init
 ### 全部命令（自动生成 · 与 SKILL.md/COMMANDS.md 逐字节一致）
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 91 个命令 · 版本 2.5.8 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 91 个命令 · 版本 2.5.9 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -400,7 +400,7 @@ Skill 通过符号链接安装，工作区修改自动同步。
 ```
 deterline/
 ├── run.py              ← 快捷入口
-├── SKILL.md            ← Agent Skill 完整文档（2.5.8）
+├── SKILL.md            ← Agent Skill 完整文档（2.5.9）
 ├── COMMANDS.md         ← 常用指令速查
 ├── QUESTIONNAIRE_WORKFLOW.md ← 问卷工作流（Agent 必读）
 ├── README.md

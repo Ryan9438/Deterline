@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.5.9 — 2026-11-14（深夜：cjk-trigger 两页翻页修复——Boot-1 实验矩阵实锤根因）
+
+**性质：1.6 实机缺陷定位（W1 静态分析 + Boot-1 三点对照实验矩阵，实机判读 Computer-Use 代检）→ 一行修复 + golden 重录。420 测试（two-page 断言更新）。外层 05 §5.1 已收口记录。**
+
+### 根因（W1 §1/H1，Boot-1 A/B/C 全过实证）
+
+- **obj_base_writer 原版页推进语义**（dump 逐字节实证，打补丁件 = 原版）：非末页条目以**裸 "/"** 结尾（Draw 扫到 `/` 且 nextch≠`%` → halt=1 → Z 翻页 `mystring[stringno++]`）；末页以 "/%%" 结尾（nextch=="%" → halt=2 → Z 关框销毁）；终结条目 "%%%"。原版三实例（SCR_TEXT case1 / obj_undyne1_old / obj_bara04）全同构。writer/dialoguer/SCR_TEXTTYPE/SCR_TEXTSETUP 在 cjk-font 补丁后与原版**逐字节一致**——"CJK 补丁改写推进分支"不存在，typer31 为原版合法 typer。
+- **生成器缺陷**（cjk.py 消息表组装）：非末页也发 "/%%" → 页 1 成为终止页 → halt=2 → Z 关框（范围内 refire 把"关框"伪装成"卡死"）→ **页 2 结构性不可达**——与 CJK 栈无关。
+- **输入伪影（前瞻登记）**：合成点按可落在 30fps 帧间隙（control_check_pressed 帧沿检测）——Computer-Use 实验按键须 holdSeconds ≥0.15；真人自然长按不受影响。
+
+### 修复
+
+- cjk.py 消息表组装：**非末页裸 "/" 结尾、末页 "/%%"、终结 "%%%"**（单页形态不变——本就是末页语义，B4 实机已证）；golden cjk_trigger_twopage.csx 重录（diff 恰一行 = W1 预测）；test_cjk_wrap two-page 形态断言更新（含订正注释）。页内容仍拒绝 "/" "%"（writer 语义）；输入语法 `页1/%%页2` 不变。
+- **Boot-1 矩阵（room_ruins1 同房三实例一次 boot）**：A=裸 `/`+中文最简 **✓ 翻页**（「第二页」帧证据）；B=裸 `/`+原文 4 行溢出 **✓ 翻页**（H3 溢出排除——纯显示层）；C=裸 `/`+纯 ASCII **✓ 翻页**（CJK 栈排除）。范围内 refire 重打 = 伴生现象（走出范围判读隔离）。
+- golden 附带：sprite_replace_all/frame 占位符规范化随重录携带（比对语义不变，归因本提交）。
+
 ## v2.5.8 — 2026-11-14（夜间值守场次：06 §4 执行入口 + ROOMS_GUIDE 审批重生成）
 
 **性质：值守场次交付（用户在场）。1.6 实机核对已执行（渲染栈 ✓/两页触发 ✗，外层 05 §5.1）。393→415 测试（+22）。**
