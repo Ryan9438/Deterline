@@ -789,7 +789,7 @@ def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
             if moved:
                 manifest_path = pruned_dir / "manifest.json"
                 transactions._write_json_atomic(manifest_path, {  # noqa: SLF001 同包私有复用（原子写）
-                    "schema": "deterline.pruned-manifest/v1",
+                    "schema": PRUNED_MANIFEST_SCHEMA,
                     "pruned_at": ts,
                     "keep_archives": keep_archives,
                     "entries": moved,
@@ -896,6 +896,9 @@ def _fmt_short_sha(sha: str | None) -> str:
     return f"{sha[:12]}…" if sha else "<未计算>"
 
 
+PRUNED_MANIFEST_SCHEMA = "deterline.pruned-manifest/v1"
+
+
 def cmd_prune_purge(save_dir: Path | None, dir_override: str | None = None,
                     commit: bool = False, json_out: bool = False) -> int:
     """purge 真删除（06 §4，值守入口）：清空 .deterline/pruned/<ts>/ 批次。
@@ -922,7 +925,8 @@ def cmd_prune_purge(save_dir: Path | None, dir_override: str | None = None,
             print(json.dumps({
                 "schema": "deterline.pruned-purge/v1",
                 "commit": commit, "roots": [], "batches": [],
-                "refused": [], "warnings": [_loc_warn or "定位失败"],
+                "refused": [], "deleted": [],
+                "warnings": [_loc_warn or "定位失败"],
             }, ensure_ascii=False, indent=2))
         else:
             if _loc_warn:
@@ -947,7 +951,7 @@ def cmd_prune_purge(save_dir: Path | None, dir_override: str | None = None,
                 manifest = json.loads(
                     manifest_path.read_text(encoding="utf-8"))
                 ok = (isinstance(manifest, dict)
-                      and manifest.get("schema") == "deterline.pruned-manifest/v1"
+                      and manifest.get("schema") == PRUNED_MANIFEST_SCHEMA
                       and isinstance(manifest.get("entries"), list))
             except (OSError, ValueError):
                 ok = False
@@ -992,6 +996,8 @@ def cmd_prune_purge(save_dir: Path | None, dir_override: str | None = None,
         return 1 if refused else 0
 
     print(f"--- prune-purge（{'真删除' if commit else '预览，零动作'}） ---")
+    if _loc_warn:
+        print(f"  ⚠️ {_loc_warn}", file=sys.stderr)
     for entry in batches:
         mark = "✓" if entry["purgeable"] else "✗"
         size = f"{entry['bytes'] / 1e6:.1f}MB" if entry["purgeable"] else "?"

@@ -51,8 +51,8 @@ options:
   --section SECTION     INI 节名 (默认: General)
   --file {ini,file0,data_win}
                         目标文件 (默认: ini)
-  --dir DIR             手动指定存档目录或游戏数据文件路径 (backup-index/backup-
-                        prune/md5/doctor/recovery-scan/recovery-
+  --dir DIR             手动指定存档目录或游戏数据文件路径 (backup-index/backup-prune/prune-
+                        purge/md5/doctor/recovery-scan/recovery-
                         apply/recovery-clean 亦接受含 game.ios/data.win 的目录)
   --limit LIMIT         最大显示条数 (默认: 30)
   --offset OFFSET       起始偏移 (list-strings 用)
@@ -89,8 +89,8 @@ options:
                         结尾则默认单帧导出到该文件)
   --show-diff           替换代码时显示新旧 diff (replace-code 用)
   --json                以 JSON 输出结构化结果 (doctor/backup-index/recovery-
-                        scan/recovery-apply/recovery-clean/backup-prune 用;
-                        export-sprite 为附加元数据)
+                        scan/recovery-apply/recovery-clean/backup-prune/prune-
+                        purge 用; export-sprite 为附加元数据)
   --direction {rollback,complete}
                         recovery-apply: 恢复方向 rollback=放弃本次(目标←回滚副本) /
                         complete=继续本次(目标←暂存副本)；混合分类整批拒绝
@@ -102,8 +102,8 @@ options:
                         选择独立实验工作区（读取也使用该工作区）
   --sandbox             沙箱模式: 在实验工作区副本上操作（v2 起写操作默认即沙箱，此参数保留为显式声明）
   --commit              v2 写入安全: 直写真实文件（默认写操作只落沙箱副本）；含 Steam 同步；recovery-
-                        apply/recovery-clean/backup-prune = 执行恢复/清理/移入
-                        pruned（默认预览）
+                        apply/recovery-clean/backup-prune/prune-purge =
+                        执行恢复/清理/移入 pruned/真删除（默认预览）
   --no-steam-sync       v2 写入安全: 即使 --commit 也不同步 Steam 路径
   --allow-cjk           C3a: 放行 CJK 对话文本（需中文字体注入支持，否则显示空白）
   --asm                 verify-code: 输出完整反汇编文本（ASM| 行）

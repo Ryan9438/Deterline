@@ -182,7 +182,7 @@ deterline/
 > ⚠️ `doctor`: 备份占盘 .bak* 单个约 250MB，长期不用可清（undo/experiment-restore 依赖）
 > ⚠️ `backup-prune`: 保留条件：bak-latest / 命名快照 / 工作区副本与 legacy / journal 引用文件（活动恢复记录）/ 每目标最近 --keep-archives 份归档
 > ⚠️ `backup-prune`: 内容重复按 sha256 分组（同组保留最新一份；组内超窗部分已入删除集）；归档哈希全量流式计算——13×60MB 约 1-3 秒
-> ⚠️ `backup-prune`: 默认预览零删除；--commit（06 §4 执行入口）现场重算删除集 + 可逆移入 pruned/<ts>/ + manifest（purge 真删除另立显式入口，值守）
+> ⚠️ `backup-prune`: 默认预览零删除；--commit（06 §4 执行入口）现场重算删除集 + 可逆移入 pruned/<ts>/ + manifest（purge 真删除见 prune-purge，值守）
 > ⚠️ `backup-prune`: journal 引用的归档被保护跳过并单独计数；双侧定位均失败退出码 2；--commit 拒绝/移动失败退出码 1
 > ⚠️ `backup-prune`: 归档新旧按纳秒级 mtime 排序（backup_file 保留源 mtime，可能与文件名时间戳分叉；同纳秒平局按名字字典序）
 > ⚠️ `backup-prune`: 硬前置：recovery-scan 无 corrupt-journal（口径与 scan 对齐：解析失败/schema 不符/targets 缺失均算损坏）
@@ -481,7 +481,7 @@ python run.py --action recovery-clean --commit                        # 清理�
 | orphan-staged（kind） | 无记录引用的 `.new` 残留 | recovery-clean --commit 一并清理 |
 | corrupt-journal（kind） | 记录不可解析 | 人工查看后删除（**此时 journal 保护不完整，勿做清理决定**） |
 
-处理完重新运行原写命令即可通过。apply/clean 纪律（06 §4）：apply 以原 journal 为运行记录（不删不建——中段 SIGKILL → scan 重分类 → 可重入），完成后记录自然重分类为 not-started/done-confirm 再 clean 收尾；clean 现场重分类（绝不信任存量 state），清理 manifest 只进 stdout/--json。已知局限：跨目录混合提交（如 game+ini）崩溃后，只动另一目录的新提交看不到该记录——`recovery-scan` 会同时扫描 game 旁/存档旁/工作区层三处兜底。`backup-prune --commit` 同场次交付：超窗归档**移入** `.deterline/pruned/<ts>/`（可逆，manifest 含原路径+sha256），硬前置"recovery-scan 无 corrupt-journal"；purge（真删除）另立显式入口（值守）。
+处理完重新运行原写命令即可通过。apply/clean 纪律（06 §4）：apply 以原 journal 为运行记录（不删不建——中段 SIGKILL → scan 重分类 → 可重入），完成后记录自然重分类为 not-started/done-confirm 再 clean 收尾；clean 现场重分类（绝不信任存量 state），清理 manifest 只进 stdout/--json。已知局限：跨目录混合提交（如 game+ini）崩溃后，只动另一目录的新提交看不到该记录——`recovery-scan` 会同时扫描 game 旁/存档旁/工作区层三处兜底。`backup-prune --commit` 同场次交付：超窗归档**移入** `.deterline/pruned/<ts>/`（可逆，manifest 含原路径+sha256），硬前置"recovery-scan 无 corrupt-journal"；purge 真删除入口 = `prune-purge`（v2.5.10 交付：默认预览，--commit 真删除不可逆，manifest 硬校验）。
 
 ---
 

@@ -134,7 +134,7 @@ def main():
                         help="INI 节名 (默认: General)")
     parser.add_argument("--file", choices=["ini", "file0", "data_win"], default="ini",
                         help="目标文件 (默认: ini)")
-    parser.add_argument("--dir", help="手动指定存档目录或游戏数据文件路径 (backup-index/backup-prune/md5/doctor/recovery-scan/recovery-apply/recovery-clean 亦接受含 game.ios/data.win 的目录)")
+    parser.add_argument("--dir", help="手动指定存档目录或游戏数据文件路径 (backup-index/backup-prune/prune-purge/md5/doctor/recovery-scan/recovery-apply/recovery-clean 亦接受含 game.ios/data.win 的目录)")
     parser.add_argument("--limit", type=int, default=30,
                         help="最大显示条数 (默认: 30)")
     parser.add_argument("--offset", type=int, default=0,
@@ -191,7 +191,7 @@ def main():
     parser.add_argument("--show-diff", action="store_true",
                         help="替换代码时显示新旧 diff (replace-code 用)")
     parser.add_argument("--json", action="store_true",
-                        help="以 JSON 输出结构化结果 (doctor/backup-index/recovery-scan/recovery-apply/recovery-clean/backup-prune 用; export-sprite 为附加元数据)")
+                        help="以 JSON 输出结构化结果 (doctor/backup-index/recovery-scan/recovery-apply/recovery-clean/backup-prune/prune-purge 用; export-sprite 为附加元数据)")
     parser.add_argument("--direction", choices=["rollback", "complete"], default=None,
                         help="recovery-apply: 恢复方向 rollback=放弃本次(目标←回滚副本) / complete=继续本次(目标←暂存副本)；混合分类整批拒绝")
     parser.add_argument("--keep-archives", type=int, default=3,
@@ -205,7 +205,7 @@ def main():
     parser.add_argument("--sandbox", action="store_true",
                         help="沙箱模式: 在实验工作区副本上操作（v2 起写操作默认即沙箱，此参数保留为显式声明）")
     parser.add_argument("--commit", action="store_true",
-                        help="v2 写入安全: 直写真实文件（默认写操作只落沙箱副本）；含 Steam 同步；recovery-apply/recovery-clean/backup-prune = 执行恢复/清理/移入 pruned（默认预览）")
+                        help="v2 写入安全: 直写真实文件（默认写操作只落沙箱副本）；含 Steam 同步；recovery-apply/recovery-clean/backup-prune/prune-purge = 执行恢复/清理/移入 pruned/真删除（默认预览）")
     parser.add_argument("--no-steam-sync", action="store_true",
                         help="v2 写入安全: 即使 --commit 也不同步 Steam 路径")
     parser.add_argument("--allow-cjk", action="store_true",

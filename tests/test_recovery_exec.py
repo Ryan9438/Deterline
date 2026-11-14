@@ -570,6 +570,21 @@ class TestPrunePurge(RecoveryExecBase):
         self.assertEqual(code, 0, out)
         self.assertIn("无 pruned 批次", out)
 
+    def test_wrong_schema_batch_refused_and_preserved(self):
+        # R9 P2-1 回归钉：schema 不符批次拒绝并保留（曾只钉"缺失"分支，
+        # schema 等式分支零钉力——变异全绿）
+        root = self.root / ".deterline" / "pruned" / "20261114_130000_0004"
+        root.mkdir(parents=True)
+        (root / "manifest.json").write_text(json.dumps({
+            "schema": "totally-other/v9",
+            "entries": [{"original_path": "/x/z"}],
+        }), encoding="utf-8")
+        (root / "game.ios.bak.z").write_bytes(b"Z")
+        out, code = self._purge(commit=True)
+        self.assertEqual(code, 1, "schema 不符 → 拒绝")
+        self.assertTrue(root.is_dir(), "schema 不符批次保留")
+        self.assertIn("manifest.json 缺失/损坏", out)
+
     def test_json_schema(self):
         self._make_pruned_batches()
         out, code = self._purge(commit=True, json_out=True)

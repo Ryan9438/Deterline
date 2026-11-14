@@ -756,7 +756,7 @@
       "notes": [
         "保留条件：bak-latest / 命名快照 / 工作区副本与 legacy / journal 引用文件（活动恢复记录）/ 每目标最近 --keep-archives 份归档",
         "内容重复按 sha256 分组（同组保留最新一份；组内超窗部分已入删除集）；归档哈希全量流式计算——13×60MB 约 1-3 秒",
-        "默认预览零删除；--commit（06 §4 执行入口）现场重算删除集 + 可逆移入 pruned/<ts>/ + manifest（purge 真删除另立显式入口，值守）",
+        "默认预览零删除；--commit（06 §4 执行入口）现场重算删除集 + 可逆移入 pruned/<ts>/ + manifest（purge 真删除见 prune-purge，值守）",
         "journal 引用的归档被保护跳过并单独计数；双侧定位均失败退出码 2；--commit 拒绝/移动失败退出码 1",
         "归档新旧按纳秒级 mtime 排序（backup_file 保留源 mtime，可能与文件名时间戳分叉；同纳秒平局按名字字典序）",
         "硬前置：recovery-scan 无 corrupt-journal（口径与 scan 对齐：解析失败/schema 不符/targets 缺失均算损坏）"
