@@ -9,7 +9,7 @@
     },
     "invariants": "action 集合必须与 modify_save.py --action choices 完全一致（test_docs_lint 校验）。新增命令流程：注册 command_handlers.py 路由 → 加本文件条目（含 golden test / doctor 项）→ python3 tools/gen_docs.py。"
   },
-  "version": "2.5.7",
+  "version": "2.5.8",
   "groups": [
     {
       "id": "save",
@@ -773,6 +773,32 @@
         "分类：未开始（清理）/ 已全部写入（确认清理）/ 替换中断（逐目标给出回滚或完成的 cp 命令）/ 存在外部修改（人工核对）/ aborted（含 error 字段）",
         "孤儿暂存（.{name}.*.new 无记录引用）单独列出；本命令零恢复零清理——执行恢复留待 recovery-apply/clean",
         "写命令提交前检测到同名目标未完结记录会拒绝并指引本命令"
+      ]
+    },
+    {
+      "action": "recovery-apply",
+      "group": "save",
+      "verify": "static",
+      "summary": "恢复执行（06 §4，值守入口）：按 scan 分类执行恢复——--direction rollback=放弃本次(目标←回滚副本，须全部==after) / complete=继续本次(目标←暂存副本，须全部∈{before,not-created})；混合分类整批拒绝；默认预览，--commit 执行（逐目标 os.replace）；--json 输出 deterline.recovery-apply/v1",
+      "example": "recovery-apply --direction rollback --commit",
+      "notes": [
+        "journal 复用方案 A：不新建/不删除运行记录——apply 以原 journal 为运行记录，中段 SIGKILL → scan 重分类 → 可重入",
+        "完成后记录自然重分类为 not-started/done-confirm，recovery-clean 清理 journal 与副本",
+        "副本指纹校验（staged==after / rollback==before）失败整批拒绝；多记录/无需 apply/suspicious/unknown 一律拒绝并指引",
+        "退出码：0=成功/可执行/无未完结；1=拒绝；2=定位失败"
+      ]
+    },
+    {
+      "action": "recovery-clean",
+      "group": "save",
+      "verify": "static",
+      "summary": "恢复清理（06 §4，值守入口）：对每条记录现场重分类（绝不信任存量 state）——仅 not-started/done-confirm 可清（journal + 其 staged/rollback 副本）；suspicious/interrupted/aborted-partial/corrupt/unknown 一律拒绝并指引；孤儿 .new 一并清理；默认预览，--commit 执行；--json 输出 deterline.recovery-clean/v1",
+      "example": "recovery-clean --commit",
+      "notes": [
+        "清理 manifest 只进 stdout/--json，不写入 journal 目录",
+        "现场重分类：aborted-clean（回滚已成功）与全部 before 同判 not-started 可清；aborted-partial 混合分类拒绝",
+        "拒绝项不影响其他可清项执行（退出码 1 提示存在拒绝）",
+        "退出码：0=无可清项或全部已清；1=存在拒绝项；2=定位失败"
       ]
     },
     {

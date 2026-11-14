@@ -595,15 +595,21 @@ def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
 
 def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
                      keep_archives: int = 3, json_out: bool = False,
-                     save_dir_error: str | None = None) -> int:
-    """保留策略预览（03 §2.4，**只读零删除**）：重复内容/占盘统计 + 清理建议。
+                     save_dir_error: str | None = None,
+                     commit: bool = False) -> int:
+    """保留策略预览/执行（03 §2.4 + 06 §4 执行入口）。
 
     建议集 = 主文件（game.ios/data.win/file0/undertale.ini 及
     system_information_962/963）的 .bak.<ts> 时间戳归档中超出
     --keep-archives 窗口的部分；bak-latest / 命名快照 / 工作区副本
     （含 legacy）/ journal 引用文件一律保留。重复内容按 sha256 分组统计（同组建议保留最新一份——超窗部分
-    已被删除集覆盖）。是否执行清理由用户根据预览决定（执行入口下批）。
-    返回 0=预览完成；2=两侧定位均失败。
+    已被删除集覆盖）。
+    默认预览（只读零删除）；**--commit 执行（06 §4，值守场次）**：现场重算
+    删除集（绝不信任历史预览）+ 硬前置"无损坏运行记录"（journal 保护可能
+    不完整时拒绝）+ 空删除集 no-op；**可逆设计**——移入
+    `<game_dir>/.deterline/pruned/<ts>/` + manifest（原路径+sha256）而非
+    unlink；purge（真删除）另立显式入口（值守）。undo 失效提示随行打印。
+    返回 0=预览完成/已执行/空集 no-op；1=commit 拒绝或移动失败；2=两侧定位均失败。
     """
     entries, warnings, game_dir = _collect_backup_entries(
         save_dir, dir_override, with_hash=True,
@@ -729,6 +735,103 @@ def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
             kept_counts[kind] = stats[kind]["count"]
 
     reclaimable = sum(d["size_bytes"] for d in deletions)
+
+    if commit:
+        # 06 §4：现场重算（上面刚完成）+ 硬前置 + 可逆移入 pruned/<ts>/
+        commit_refused = None
+        if corrupt_count:
+            commit_refused = ("存在损坏/不可解析运行记录（journal 保护可能不完整）"
+                              "——先运行 recovery-scan 处理")
+        moved: list[dict] = []
+        failures: list[str] = []
+        manifest_path = None
+        if not commit_refused and deletions:
+            import datetime as _dt
+            import shutil as _shutil
+            ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+            root_dir = game_dir if game_dir is not None else save_dir
+            pruned_dir = root_dir / ".deterline" / "pruned" / ts
+            pruned_dir.mkdir(parents=True, exist_ok=True)
+            for row in deletions:
+                src = Path(row["path"])
+                if not src.is_file():
+                    failures.append(f"源文件已不存在: {src}")
+                    continue
+                dest = pruned_dir / src.name
+                if dest.exists():
+                    n = 1
+                    while True:
+                        cand = pruned_dir / f"{src.stem}_{n}{src.suffix}"
+                        if not cand.exists():
+                            dest = cand
+                            break
+                        n += 1
+                try:
+                    _shutil.move(str(src), str(dest))
+                except OSError as exc:
+                    failures.append(f"移动失败: {src}（{exc}）")
+                    continue
+                moved.append({
+                    "original_path": row["path"], "moved_to": str(dest),
+                    "sha256": row.get("sha256"),
+                    "undo_key": row.get("key"),
+                    "backup_ts": row.get("backup_ts"),
+                    "size_bytes": row.get("size_bytes"),
+                    "reason": row.get("reason"),
+                })
+            if moved:
+                manifest_path = pruned_dir / "manifest.json"
+                transactions._write_json_atomic(manifest_path, {  # noqa: SLF001 同包私有复用（原子写）
+                    "schema": "deterline.pruned-manifest/v1",
+                    "pruned_at": ts,
+                    "keep_archives": keep_archives,
+                    "entries": moved,
+                })
+        commit_rc = 1 if (commit_refused or failures) else 0
+        if json_out:
+            print(json.dumps({
+                "schema": "deterline.backup-prune/v1",
+                "keep_archives": keep_archives,
+                "stats": {"total_items": len(entries),
+                          "total_bytes": total_bytes,
+                          "by_kind": stats},
+                "duplicate_groups": duplicate_groups,
+                "deletions": deletions,
+                "kept_counts": kept_counts,
+                "journal_protected_skipped": protected_skipped,
+                "warnings": warnings,
+                "commit": {
+                    "executed": commit_refused is None and bool(deletions),
+                    "refused": commit_refused,
+                    "moved": moved,
+                    "failures": failures,
+                    "manifest": str(manifest_path) if manifest_path else None,
+                },
+            }, ensure_ascii=False, indent=2))
+            return commit_rc
+        print(f"--- backup-prune --commit（移入 .deterline/pruned/，可逆） ---")
+        for w in warnings:
+            print(f"  ⚠️ {w}", file=sys.stderr)
+        if commit_refused:
+            print(f"  ✗ 拒绝: {commit_refused}")
+        elif not deletions:
+            print("  ✅ 删除集为空——no-op")
+        else:
+            for m in moved:
+                print(f"  moved: {m['original_path']}")
+                print(f"    → {m['moved_to']}")
+                if m.get("undo_key"):
+                    print(f"    undo --value {m['undo_key']}"
+                          + (f" --backup {m['backup_ts']}" if m.get("backup_ts") else "")
+                          + " 将随之失效")
+            for f in failures:
+                print(f"  ✗ {f}")
+            if manifest_path:
+                print(f"  manifest: {manifest_path}")
+            print(f"  完成 {len(moved)} 项 / 失败 {len(failures)}"
+                  "（purge 真删除另立显式入口，值守场次）")
+        return commit_rc
+
     if json_out:
         print(json.dumps({
             "schema": "deterline.backup-prune/v1",

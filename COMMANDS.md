@@ -37,7 +37,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 ## 命令总表（全量 · 自动生成）
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 89 个命令 · 版本 2.5.7 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 91 个命令 · 版本 2.5.8 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -58,6 +58,8 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 | `doctor --file data_win` | 聚合体检（全只读零写盘）：rooms.json 健康 / 存档可解析 / 游戏文件 md5 与仓库基线比对 / 备份占盘 / 沙箱残留 / UTMT CLI 与 dotnet 可达 / CJK 字形表状态；--json 输出 deterline.doctor/v1；退出码 全✓0/有✗1 | static |
 | `backup-prune --keep-archives 3` | 保留策略预览（03 §2.4，只读零删除）：占盘统计 + 内容重复分组（sha256）+ 超窗归档清理建议（精确 rm 命令 + 可回收字节）；--keep-archives N 每目标保留最近 N 份；--json 输出 deterline.backup-prune/v1 | static |
 | `recovery-scan` | 恢复完整性（03 §2.2c）：只读扫描未完结运行记录（.deterline/journal）与孤儿暂存 → 中断窗口分类 + 可预览恢复指引（--json 输出 deterline.recovery-scan/v1）；零写盘零 UTMT；发现未完结项退出码 1 | static |
+| `recovery-apply --direction rollback --commit` | 恢复执行（06 §4，值守入口）：按 scan 分类执行恢复——--direction rollback=放弃本次(目标←回滚副本，须全部==after) / complete=继续本次(目标←暂存副本，须全部∈{before,not-created})；混合分类整批拒绝；默认预览，--commit 执行（逐目标 os.replace）；--json 输出 deterline.recovery-apply/v1 | static |
+| `recovery-clean --commit` | 恢复清理（06 §4，值守入口）：对每条记录现场重分类（绝不信任存量 state）——仅 not-started/done-confirm 可清（journal + 其 staged/rollback 副本）；suspicious/interrupted/aborted-partial/corrupt/unknown 一律拒绝并指引；孤儿 .new 一并清理；默认预览，--commit 执行；--json 输出 deterline.recovery-clean/v1 | static |
 | `backup-index --hash` | 恢复资产只读索引（O5 最小切片）：.bak/.snap/.sandbox/.deterline 工作区 → 类型/路径/恢复目标/mtime/大小（--hash 追加 SHA-256；--json 输出 deterline.backup-index/v1）；零写盘零 UTMT | static |
 
 > ⚠️ `set`: HP/maxhp 进战斗会被按 LV 重算——永久固定用 set-derived
@@ -78,6 +80,14 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 > ⚠️ `recovery-scan`: 分类：未开始（清理）/ 已全部写入（确认清理）/ 替换中断（逐目标给出回滚或完成的 cp 命令）/ 存在外部修改（人工核对）/ aborted（含 error 字段）
 > ⚠️ `recovery-scan`: 孤儿暂存（.{name}.*.new 无记录引用）单独列出；本命令零恢复零清理——执行恢复留待 recovery-apply/clean
 > ⚠️ `recovery-scan`: 写命令提交前检测到同名目标未完结记录会拒绝并指引本命令
+> ⚠️ `recovery-apply`: journal 复用方案 A：不新建/不删除运行记录——apply 以原 journal 为运行记录，中段 SIGKILL → scan 重分类 → 可重入
+> ⚠️ `recovery-apply`: 完成后记录自然重分类为 not-started/done-confirm，recovery-clean 清理 journal 与副本
+> ⚠️ `recovery-apply`: 副本指纹校验（staged==after / rollback==before）失败整批拒绝；多记录/无需 apply/suspicious/unknown 一律拒绝并指引
+> ⚠️ `recovery-apply`: 退出码：0=成功/可执行/无未完结；1=拒绝；2=定位失败
+> ⚠️ `recovery-clean`: 清理 manifest 只进 stdout/--json，不写入 journal 目录
+> ⚠️ `recovery-clean`: 现场重分类：aborted-clean（回滚已成功）与全部 before 同判 not-started 可清；aborted-partial 混合分类拒绝
+> ⚠️ `recovery-clean`: 拒绝项不影响其他可清项执行（退出码 1 提示存在拒绝）
+> ⚠️ `recovery-clean`: 退出码：0=无可清项或全部已清；1=存在拒绝项；2=定位失败
 > ⚠️ `backup-index`: 覆盖 game 旁（game.ios/data.win.bak*、game.ios.snap*、.deterline 工作区、legacy .sandbox）与存档目录（file0/undertale.ini/system_information_962/963 的 bak/snap）
 > ⚠️ `backup-index`: 工作区行恢复提示用 --workspace；legacy 行不带参数；所有提示带 --dir 作用域，可直接粘贴执行
 > ⚠️ `backup-index`: 工作区行尾附 manifest history 摘要；损坏 manifest 容错（标 manifest损坏 不崩溃）

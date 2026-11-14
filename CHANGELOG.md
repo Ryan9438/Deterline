@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.5.8 — 2026-11-14（夜间值守场次：06 §4 执行入口 + ROOMS_GUIDE 审批重生成）
+
+**性质：值守场次交付（用户在场）。1.6 实机核对已执行（渲染栈 ✓/两页触发 ✗，外层 05 §5.1）。393→415 测试（+22）。**
+
+### recovery-apply / recovery-clean（06 §4 执行入口，新命令 89→91）
+
+- **recovery-apply**：`--direction rollback|complete` 显式择向（rollback=放弃本次，须全部目标==after；complete=继续本次，须全部 ∈{before,not-created}）；混合分类整批拒绝；副本指纹校验（staged==after / rollback==before）失败整批拒绝；**journal 复用方案 A**——不删不建运行记录，中段 SIGKILL → scan 重分类 → 可重入；完成后记录自然重分类为 not-started/done-confirm（clean 收尾）。默认预览零动作，--commit 逐目标 os.replace（副本即被消费）。
+- **recovery-clean**：**现场重分类（绝不信任存量 state）**——state=committing 但实况 mixed 的记录照样拒绝；可清 = state∈状态机 且纯重分类 ∈{not-started, done-confirm}（aborted-clean+全 before 归 not-started 可清——06 §4 拒绝清单不含它）；**逐条执行**（拒绝项不影响其他可清项，退出码 1 提示）；孤儿 .new 一并清理；清理 manifest 只进 stdout/--json，不写 journal 目录。
+- 实设修正：初版"无需 apply"门（not-started/done-confirm 一律拒）误挡 pending+全 before 的 complete 场景（=staging 后、首次替换前的合法继续窗口）——删除该门，裁决权交同质校验+副本校验；done-confirm+rollback=放弃本次为合法出口。
+- 分类 SSOT 重构：`_collect_findings`（scan/apply/clean 共用；records 携带 level_scan/level_pure 双口径）——**scan 输出逐字节不变**（重构后 393 基线全绿验证）。
+
+### backup-prune --commit（06 §4）
+
+- 现场重算删除集（绝不信任历史预览）+ 硬前置"无损坏运行记录"（journal 保护可能不完整时拒绝）+ 空删除集 no-op；**可逆设计**：移入 `<game_dir>/.deterline/pruned/<ts>/` + manifest（deterline.pruned-manifest/v1：原路径+sha256+undo key+reason）而非 unlink；journal 引用文件保护照常生效；undo 失效提示随行打印；purge（真删除）另立显式入口（值守场次）。
+- --json：commit 模式 = deterline.backup-prune/v1 + `committed` 块（executed/refused/moved/failures/manifest）。
+
+### 交付配套
+
+- 新增 tests/test_recovery_exec.py（22 测试：apply 10 / clean 6 / prune commit 5 / json schema；离线 tmp 矩阵——journal 复用方案 A 的"完成后 scan 重分类"双向断言、clean 现场重分类反证、prune 保护跳过与损坏拒绝）。
+- 注册链：commands.json 89→91（save 组）→ COMMANDS/cli.ACTION_CHOICES → gen_docs 三文档再生；cli 新增 `--direction`；--help golden GOLDEN_UPDATE 重录。
+- **cli 帮助三处滞后清偿（B P3-5 前瞻项）**：--dir 双形态命令清单补全（+md5/doctor/backup-prune/apply/clean）、--text 补 npc-choice、--value 口径放宽；--json/--commit 帮助同步。
+- SKILL 恢复链章节：scan 分类处置表改指 apply/clean 入口 + apply/clean/prune 纪律段（journal 复用方案 A、现场重分类、可逆 pruned）。
+- **ROOMS_GUIDE.md 审批重生成**（用户 2026-11-14 批准，09 §3）：2026-08-16 旧版（376 行 A/B/C/D 旧分类）→ rooms-scan v2 重生成（723 行，A=237/B1=30/B2=11/D-candidate=5/unc=53，336 房，双射体检通过）；正文 = 生成器输出逐字节（重生成 diff 仅头部+采集时间戳，/tmp/rg_regen 复验）；**审批闸门保持绝对**（--out 指向正式文件仍一律拒绝，无 bypass flag）。
+
+### 1.6 实机核对（已执行，详见外层 05 §5.1；本版无游戏侧代码改动）
+
+- 渲染栈本体实机成立（sans 头像/混排/&硬换行/重复触发/file0 CRLF 读档 ✓）+ **两页触发 Z 翻页实机失效 ✗**（S6 首曝——沙箱字节级验证盲区实证，writer 机制静态分析 + 对照实验矩阵进行中）；样例判级如实回落 sandbox。
+
+### 前瞻登记（更新）
+
+- purge 入口（pruned/ 真删除，值守）、apply 多记录 `--journal` 选择器、跨目录闸门收口、kill_chaos 入库、**两页触发修复**（W1 静态分析 → 实机对照矩阵 → 修复+golden 重录）、prune system-info 哈希、覆盖判据 AST 化、CI action 升级。
+
 ## v2.5.7 — 2026-11-14（上午全量复审：四席并发审 02/03 全部成果 → 清偿）
 
 **性质：四席并发复审（B 命令层 / C 测试与 CI / D 文档审批件 / A 架构事务层）两轮清偿，经 R1/R2 + R3/R4 两轮双席复审——0 P1，10 P2 全清偿 + P3 择要。386→393 测试（+7 测试方法；回归钉面 8——B P2-1 等值钉内嵌既有用例）。**

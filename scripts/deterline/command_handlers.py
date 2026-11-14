@@ -42,9 +42,10 @@ def _backup_prune(args, parser, target):
     code = save_cmds.cmd_backup_prune(
         save_dir, args.dir, keep_archives=keep_archives,
         json_out=bool(getattr(args, "json", False)),
-        save_dir_error=save_dir_error)
+        save_dir_error=save_dir_error,
+        commit=bool(getattr(args, "commit", False)))
     if code:
-        sys.exit(code)  # 2 = 两侧定位均失败
+        sys.exit(code)  # 2 = 两侧定位均失败；1 = commit 拒绝/移动失败
 
 
 def _recovery_scan(args, parser, target):
@@ -61,6 +62,42 @@ def _recovery_scan(args, parser, target):
     code = recovery.cmd_recovery_scan(save_dir, args.dir, json_out=json_out)
     if code:
         sys.exit(code)  # 1 = 发现未完结运行记录/孤儿暂存；2 = 两侧定位均失败
+
+
+def _recovery_apply(args, parser, target):
+    # 06 §4 执行入口：默认预览零动作；--commit + --direction 择向执行。
+    json_out = bool(getattr(args, "json", False))
+    try:
+        save_dir = paths.find_save_dir(args.dir)
+    except FileNotFoundError as exc:
+        if not json_out:
+            print(f"（存档目录未定位：{exc}）", file=sys.stderr)
+        save_dir = None
+    direction = getattr(args, "direction", None)
+    commit = bool(getattr(args, "commit", False))
+    if commit and direction not in ("rollback", "complete"):
+        parser.error("--commit 需要 --direction rollback|complete")
+    code = recovery.cmd_recovery_apply(
+        save_dir, args.dir, direction=direction, commit=commit,
+        json_out=json_out)
+    if code:
+        sys.exit(code)  # 1 = 拒绝（混合/外部改动/副本缺失/多记录）；2 = 定位失败
+
+
+def _recovery_clean(args, parser, target):
+    # 06 §4 执行入口：现场重分类；默认预览，--commit 清理可清项。
+    json_out = bool(getattr(args, "json", False))
+    try:
+        save_dir = paths.find_save_dir(args.dir)
+    except FileNotFoundError as exc:
+        if not json_out:
+            print(f"（存档目录未定位：{exc}）", file=sys.stderr)
+        save_dir = None
+    code = recovery.cmd_recovery_clean(
+        save_dir, args.dir, commit=bool(getattr(args, "commit", False)),
+        json_out=json_out)
+    if code:
+        sys.exit(code)  # 1 = 存在拒绝项（指引已打印）；2 = 定位失败
 
 
 def _doctor(args, parser, target):
@@ -803,6 +840,8 @@ COMMANDS = {
     "cjk-check": {"data_win": _cjk_check_data_win},
     "doctor": {"any": _doctor},
     "recovery-scan": {"any": _recovery_scan},
+    "recovery-apply": {"any": _recovery_apply},
+    "recovery-clean": {"any": _recovery_clean},
     "md5": {"any": _md5},
 }
 

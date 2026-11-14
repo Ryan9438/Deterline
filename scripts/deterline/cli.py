@@ -123,7 +123,7 @@ def main():
     parser.add_argument("--action", required=True,
                         choices=ACTION_CHOICES)
     parser.add_argument("--key", help="键名或数字索引 (file0 用数字)")
-    parser.add_argument("--value", help="要设置/搜索的值 (set/find 操作必需)")
+    parser.add_argument("--value", help="按 action 而异的值 (set/find/undo/room-name/recovery 等用——房间名/搜索词/路径/快照标签/备份时间戳等)")
     parser.add_argument("--old", help="replace-string 的旧文本 (decompile-code 兼容别名，等同 --search)")
     parser.add_argument("--search", help="decompile-code: 仅显示匹配该文本的行 (等同行过滤)")
     parser.add_argument("--preview", action="store_true",
@@ -134,7 +134,7 @@ def main():
                         help="INI 节名 (默认: General)")
     parser.add_argument("--file", choices=["ini", "file0", "data_win"], default="ini",
                         help="目标文件 (默认: ini)")
-    parser.add_argument("--dir", help="手动指定存档目录或游戏数据文件路径 (backup-index/recovery-scan 亦接受含 game.ios/data.win 的目录)")
+    parser.add_argument("--dir", help="手动指定存档目录或游戏数据文件路径 (backup-index/backup-prune/md5/doctor/recovery-scan/recovery-apply/recovery-clean 亦接受含 game.ios/data.win 的目录)")
     parser.add_argument("--limit", type=int, default=30,
                         help="最大显示条数 (默认: 30)")
     parser.add_argument("--offset", type=int, default=0,
@@ -168,7 +168,7 @@ def main():
     parser.add_argument("--text-key", type=str, default=None,
                         help="textdata key (npc-dialogue/guard-npc-alarm/npc-choice 用)")
     parser.add_argument("--text", type=str, default=None,
-                        help="对话文本 (npc-dialogue 用 ASCII；cjk-trigger 用 CJK，触发框全形态+预折行自动补全)")
+                        help="对话文本 (npc-dialogue/npc-choice 用 ASCII；cjk-trigger 用 CJK，触发框全形态+预折行自动补全)")
     parser.add_argument("--yes-text-key", type=str, default=None,
                         help="YES 分支 textdata key (npc-choice 用)")
     parser.add_argument("--yes-text", type=str, default=None,
@@ -191,7 +191,9 @@ def main():
     parser.add_argument("--show-diff", action="store_true",
                         help="替换代码时显示新旧 diff (replace-code 用)")
     parser.add_argument("--json", action="store_true",
-                        help="以 JSON 输出结构化结果 (doctor/backup-index/recovery-scan/backup-prune 用; export-sprite 为附加元数据)")
+                        help="以 JSON 输出结构化结果 (doctor/backup-index/recovery-scan/recovery-apply/recovery-clean/backup-prune 用; export-sprite 为附加元数据)")
+    parser.add_argument("--direction", choices=["rollback", "complete"], default=None,
+                        help="recovery-apply: 恢复方向 rollback=放弃本次(目标←回滚副本) / complete=继续本次(目标←暂存副本)；混合分类整批拒绝")
     parser.add_argument("--keep-archives", type=int, default=3,
                         help="backup-prune 每目标保留的最近归档份数 (默认: 3)")
     parser.add_argument("--hue-from", type=str, default=None,
@@ -203,7 +205,7 @@ def main():
     parser.add_argument("--sandbox", action="store_true",
                         help="沙箱模式: 在实验工作区副本上操作（v2 起写操作默认即沙箱，此参数保留为显式声明）")
     parser.add_argument("--commit", action="store_true",
-                        help="v2 写入安全: 直写真实文件（默认写操作只落沙箱副本）；含 Steam 同步")
+                        help="v2 写入安全: 直写真实文件（默认写操作只落沙箱副本）；含 Steam 同步；recovery-apply/recovery-clean/backup-prune = 执行恢复/清理/移入 pruned（默认预览）")
     parser.add_argument("--no-steam-sync", action="store_true",
                         help="v2 写入安全: 即使 --commit 也不同步 Steam 路径")
     parser.add_argument("--allow-cjk", action="store_true",
