@@ -70,7 +70,9 @@ def cmd_recovery_scan(save_dir: Path | None, dir_override: str | None = None,
     except FileNotFoundError as e:
         warnings.append(f"游戏数据目录未定位: {e}")
     if save_dir is not None:
-        if save_dir not in roots:
+        # A P3-4：--dir /private/tmp/x 与 file parent /tmp/x 拼写差曾产生
+        # 双 root 重复扫描（findings 重复列出）——resolve 归一去重
+        if all(save_dir.resolve() != r.resolve() for r in roots):
             roots.append(save_dir)
     else:
         warnings.append("存档目录未定位——存档侧 journal/孤儿不扫描")
@@ -94,9 +96,24 @@ def cmd_recovery_scan(save_dir: Path | None, dir_override: str | None = None,
 
     referenced: set[str] = set()   # resolve 归一（/tmp 与 /private/tmp 同形）
     orphan_dirs: list[Path] = []   # 孤儿暂存扫描目录：roots + 各目标 parent
+
+    def _register_orphan_dir(directory: Path) -> None:
+        # A P3-4：拼写差目录以 resolve 归一去重（字面比较曾失效）
+        try:
+            key = str(directory.resolve())
+        except OSError:
+            key = str(directory)
+        for existing in orphan_dirs:
+            try:
+                existing_key = str(existing.resolve())
+            except OSError:
+                existing_key = str(existing)
+            if existing_key == key:
+                return
+        orphan_dirs.append(directory)
+
     for directory in roots:
-        if directory not in orphan_dirs:
-            orphan_dirs.append(directory)
+        _register_orphan_dir(directory)
 
     for journal_root in journal_roots:
         for path in sorted(journal_root.glob("*.json")):
@@ -123,6 +140,11 @@ def cmd_recovery_scan(save_dir: Path | None, dir_override: str | None = None,
             entries = record["targets"]
             classes = [_classify_target(e) if isinstance(e, dict) else "external"
                        for e in entries]
+            # A P2-2：目标 parent 一并纳入孤儿扫描——journal 先于暂存落盘
+            # （pending 记录 staged=None）时，嵌套工作区旁的残留顶层看不到
+            for entry in entries:
+                if isinstance(entry, dict) and entry.get("path"):
+                    _register_orphan_dir(Path(entry["path"]).parent)
             if state not in transactions.JOURNAL_STATES:
                 level = "unknown-state"
             elif state in ("aborted-clean", "aborted-partial"):
@@ -150,22 +172,23 @@ def cmd_recovery_scan(save_dir: Path | None, dir_override: str | None = None,
                         f"完成该目标: cp \"{staged}\" \"{target_path}\"")
                 if rollback:
                     referenced.add(str(Path(rollback).resolve()))
-                    parent = Path(rollback).parent
-                    if parent not in orphan_dirs:
-                        orphan_dirs.append(parent)
+                    _register_orphan_dir(Path(rollback).parent)
                 if staged:
                     referenced.add(str(Path(staged).resolve()))
-                    parent = Path(staged).parent
-                    if parent not in orphan_dirs:
-                        orphan_dirs.append(parent)
+                    _register_orphan_dir(Path(staged).parent)
             if level == "not-started":
                 actions.append("目标未被触及——删除该 journal 与 staged 残留即可")
             elif level == "done-confirm":
                 actions.append("全部目标已写入（== after）——核对内容后删除该 "
                                "journal 与残留（recovery-clean 下批提供）")
             elif level == "interrupted":
-                actions.append("替换中断——上列 cp 命令二选一：全部回滚=放弃本次，"
-                               "全部完成=继续本次；执行后删除 journal")
+                if actions:
+                    actions.append("替换中断——上列 cp 命令二选一：全部回滚=放弃本次，"
+                                   "全部完成=继续本次；执行后删除 journal")
+                else:
+                    # A P3-5：回滚/暂存副本均不存在时"上列 cp"是空指
+                    actions.append("替换中断——但回滚/暂存副本均不存在，无 cp 出口；"
+                                   "人工核对目标内容后删除 journal")
             elif level == "suspicious":
                 actions.append("存在外部修改——人工核对目标内容，勿盲用回滚副本")
             elif level == "aborted":

@@ -82,6 +82,22 @@ def _content_sha(content: Payload) -> str | None:
     return fingerprint(content)
 
 
+def _fsync_dir(path: Path) -> None:
+    """目录 fsync（A P3-2 掉电加固）：让 journal 目录项落盘，避免掉电后
+    journal 丢失而 staged 残留退化为"无记录孤儿"。Windows 无目录 fsync
+    语义（os.open 目录即 OSError）——静默跳过；SIGKILL 语义不受影响。"""
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
 def _write_json_atomic(path: Path, record: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".journal.", suffix=".new", dir=path.parent)
@@ -91,6 +107,7 @@ def _write_json_atomic(path: Path, record: dict) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(tmp, path)
+        _fsync_dir(path.parent)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise

@@ -165,7 +165,8 @@ class TestRoomsScanRealBaseline(unittest.TestCase):
         # 分歧登记（B2 优先级修正后口径，2026-11-13）：
         #   lastruins_corridor → B2（backgrounder 共存，RESCAN_PLAN 明文优先；
         #     旧标 A 的分歧随优先级修正消解）
-        #   water_undynefinal → D-candidate（无 backgrounder、3 启用层；
+        #   water_undynefinal → D-candidate（无 backgrounder、2 启用层
+        #     （bg_waterfalltex/bg_undynecrag，2026-11-14 实测订正）；
         #     与旧标 B1 的分歧 = 阈值启发式，人工复核）
         self.assertEqual(by.get("room_lastruins_corridor"), "B2",
                          "B2 优先级修正后：backgrounder 共存房归 B2")

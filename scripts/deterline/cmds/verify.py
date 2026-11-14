@@ -374,6 +374,7 @@ def _launch_and_poll(save_dir: Path, timeout: int, send_keys: str, run_id: str,
     osascript_failures = 0
     osascript_sends = 0
     mismatch = ""
+    marker_mismatch = False
     while time.time() - start < timeout:
         time.sleep(2)
         if not saw_game:
@@ -392,9 +393,15 @@ def _launch_and_poll(save_dir: Path, timeout: int, send_keys: str, run_id: str,
                 return ("ok" if saw_game else "fail", "ok", content, True,
                         time.time() - start)
             mismatch = content[:60]
+            marker_mismatch = True
             print(f"  ⚠️ 标记出现但内容不符（{mismatch}…），继续轮询")
     if send_keys == "external":
         keys_ok = False  # 未发键：无法区分“人未操作”与“触发未执行”→ 未验证
+        if marker_mismatch:
+            # B P3-3：external 模式仍保守降级 unverified，但观测到"标记出现
+            # 但内容不符"= 触发器实际执行过（陈旧/伪造标记）——必须留痕区分
+            print("  ⚠️ external 模式观测到内容不符标记——触发器已执行过；"
+                  "verdict 仍降级 unverified（未发键）", file=sys.stderr)
     else:
         keys_ok = not (send_keys == "osascript" and osascript_sends > 0
                        and osascript_failures == osascript_sends)
@@ -864,4 +871,10 @@ if (!identical) {{
         print(f"VARREF: READ {var} x{n}")
     if writes or reads:
         print(f"VERIFY_CODE_SUMMARY: writes={sum(writes.values())} reads={sum(reads.values())}")
+    if stable is None:
+        # B P3-2：整段零 ROUNDTRIP 行 = 往返稳定性未观测（UTMT 无输出/
+        # 脚本静默的假绿面——utmt._fail_if_no_match 同型防线）；退出契约
+        # 保守不变（stable 非 False 即 0），但必须显式留痕而非静默通过
+        print("WARN: 未见 ROUNDTRIP 行——往返稳定性未确认（UTMT 输出为空？）",
+              file=sys.stderr)
     return stable is not False

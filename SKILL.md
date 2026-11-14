@@ -52,7 +52,7 @@ ASCII, ascii, 英文, 中文限制, 字体
 
 ## 技能版本
 
-2.5.6
+2.5.7
 
 ## 适用平台
 
@@ -146,7 +146,7 @@ deterline/
 ## 命令总览
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 89 个命令 · 版本 2.5.6 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 89 个命令 · 版本 2.5.7 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -436,7 +436,9 @@ python run.py --action sandbox-restore --workspace test
 
 ### 写入安全与恢复链（v2.4.3 起）
 
-**journal（运行记录）**：每次提交前（含单文件），事务层在首个目标旁 `.deterline/journal/<id>.json` 落盘（预期目标 / 前后 sha256 / staged 与回滚副本路径 / 状态机 pending→committing→删除|aborted-clean|aborted-partial）。成功后自动摘除；任何崩溃（含 SIGKILL）保留——216 次强杀实验 0 违例，目标内容恒为写入前或写入后之一。
+**journal（运行记录）**：每次提交前（含单文件），事务层在首个目标旁 `.deterline/journal/<id>.json` 落盘（预期目标 / 前后 sha256 / staged 与回滚副本路径 / 状态机 pending→committing→删除|aborted-clean|aborted-partial）。成功后自动摘除；任何崩溃（含 SIGKILL）保留——216 次强杀实验（一次性夜间运行，采样脚本未入库）+ 入库的确定性窗口回归测试均 0 违例，目标内容恒为写入前或写入后之一（A P2-4 措辞收敛）。
+
+**已知局限（A P2-3）**：跨目录提交（如 experiment-restore 同时写游戏侧+存档侧）崩溃后，记录只落在首目标旁——随后**仅动另一侧目标**的再提交暂不被拒绝闸门拦截。补偿控制：`recovery-scan` 双 roots 扫描仍能报出该记录（此时降级为 suspicious）。完整收口（记录内回查清单/上下文 roots）挂值守批次。
 
 **写命令被拒绝时**（`检测到未完结的运行记录`）：说明同目标有上次未完结操作。下一步：
 

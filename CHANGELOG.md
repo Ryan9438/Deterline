@@ -1,5 +1,45 @@
 # Changelog
 
+## v2.5.7 — 2026-11-14（上午全量复审：四席并发审 02/03 全部成果 → 清偿）
+
+**性质：四席并发复审（B 命令层 / C 测试与 CI / D 文档审批件 / A 架构事务层）两轮清偿，经 R1/R2 + R3/R4 两轮双席复审——0 P1，10 P2 全清偿 + P3 择要。386→393 测试（+7 测试方法；回归钉面 8——B P2-1 等值钉内嵌既有用例）。**
+
+### 第一轮清偿（P2 ×6：B/C/D 席）
+
+- **backup-prune duplicate_groups.reclaimable_bytes 恒 0**（B P2-1）：deletion_paths 在同组删除集构建**之前**快照——统计改在删除集成型后做第二遍；reclaimable 恰等于删除行字节，journal 保护跳过不计；test_duplicate_group_reported 补等值回归钉。
+- **backup-index/prune --json stderr 泄漏**（B P2-2）：适配器 find_save_dir 失败无条件 print(stderr)——与 recovery-scan/doctor 同型：原因并入 payload warnings（save_dir_error 参数）；TestAdapterJsonStderrPurity 回归钉 ×2（stderr==""）。
+- **backup-prune 人读模式 warnings 不可见**（B P2-3）：损坏 journal 前置信号人读分支无输出——补 stderr warnings 循环（对照 backup-index / prune 早退分支同款）。
+- **doctor 非 dict 形态 rooms.json 报 ✓ 0 条**（B P2-4）：bool(raw) 对非空 list 为真——判定改 `isinstance(raw, dict) and bool(raw)`，detail 区分"非映射形态/空/缺失"；回归钉 ×1。
+- **棘轮冻结名册截断字面量静默失效**（C P2-2）：`split("FROZEN_EXPORTS = [")` 落空时静默返回全文 → 215 个冻结名把 20 条 ALLOWLIST 误判"已覆盖"——旧失败模式经变异实证为**误导性红**（陈余爆红诱导误清偿 → 假绿面；R2 P3-1 措辞订正）——partition + 未截断显式 AssertionError。
+- **test_dispatch_coverage.py `__main__` 主块在 TestDoctorJson 之前**（C P2-1）：直跑恒缺 doctor --json 2 例（45 vs 47）——主块移至 EOF（直跑 45→50，与 discover 对齐）。
+
+### 第二轮清偿（A 席架构/事务层 + R1/R2 复审残项）
+
+- **backup-prune 同秒 mtime 保留方向反转**（A P2-1）：mtime_epoch 整秒截断 + 稳定排序在同秒批量备份场景"留最旧删最新"（违反 COMMANDS.md"保留最近 N 份"承诺；journal 保护计数随窗口错位）——排序改纳秒级 mtime（stat 现取，不进 JSON 面）+ 路径名次级键，stat 失败回退极大值（宁可不删，R3 观察）；同秒夹具回归钉。
+- **recovery-scan 孤儿暂存漏扫目标 parent**（A P2-2）：注释承诺"roots + 各目标 parent"但实现只加 roots——journal 先于暂存落盘（pending 记录 staged=None）时嵌套工作区旁残留永不报告；目标 parent 纳入 orphan_dirs（`_register_orphan_dir` resolve 归一去重，顺带修 A P3-4 双 root 重复扫描）；嵌套孤儿回归钉。
+- **跨目录混合提交闸门豁口**（A P2-3）：journal 只落首目标旁，崩溃后仅动另一侧目标的再提交不被拒——完整收口需记录回查清单/上下文 roots（挂值守批次），本轮先把局限提升到 SKILL 恢复链章节（补偿控制：recovery-scan 双 roots 报 suspicious）。
+- **"216 实验"可重放性声明过强**（A P2-4）：CHANGELOG/SKILL/外层 06/07/03 五文件六处措辞收敛为"216 一次性运行未入库 + 确定性窗口 1 窗口有入库回归测试"（A 席独立复刻实验 8/8 断言通过——方法学成立、结论可复现，问题仅在证据面）。
+- journal 目录 fsync（A P3-2 掉电加固，Windows 无此语义静默跳过）；interrupted 无副本时指引文案分支（A P3-5）；errors.py docstring 注记（A P3-6）；roots 拼写差 resolve 去重（A P3-4）。
+- 复审残项：直跑==discover 测试数钉（R2 P3-2，防 `__main__` 位置回归）；prune 损坏 journal 人读可见性钉（R2 P3-3）；外层"五项"残留 ×4 对齐六项（R2 P3-4：03/05/07/08）；save_cmds prune warnings 注释的行号引用改位置描述（R2 P3-5——删号式修复，diff 中无行号可检索）；CHANGELOG 棘轮条目措辞订正（R2 P3-1）。
+
+### 清偿（P3 择要）
+
+- verify-code 零 ROUNDTRIP 行：stderr 显式 WARN 留痕（假绿面；退出契约保守不变）（B P3-2）。
+- smoke-test external 观测到内容不符标记：留痕区分"触发器已执行过（陈旧/伪造标记）"与人未操作（B P3-3）。
+- release_check check_git_clean 收紧：删 "?? .github" 历史白名单（tests.yml 已入库）（C P3-4）。
+- 数字漂移订正：FROZEN 213→215（compat_surface 注释）、water_undynefinal "3 启用层"→"2 启用层"（实测 bg_waterfalltex/bg_undynecrag）、棘轮头 84/84→89/20 口径、doctor inifile._read_ini 注释订正（现行实现已零写盘，旧注释失实）（B P3-7/P3-8、C P3-1）。
+
+### 外层文档修复（D 席，随本版落）
+
+- 11 设计稿：§3 残留 `code.py:140-150` → `:97-124`（与 §2.3 自我修正对齐，D P2-1）；door.py:108-111 → :112-114（D P3-1）；"09 §5.4" → "09 §5 条 5"（D P3-5）。
+- 09 §1：实机"五项"→"六项"（05 §5 六条清单为权威，D P3-6）；03 手册 1.2 注记"12 条负例"精确为"含 2 阳性对照"（D P3-7）。
+- CHANGELOG v2.4.1：backup-index 引入提交 92a2393 → 19d59f1（92a2393 为同轮审核修复，D P3-2）；rc1 段补 CI 前史（1216993/3d9cfc5，D P3-4）。
+
+### 前瞻登记（未清偿）
+
+- prune hash_kinds 补 system-info + kept_counts 语义名不符实（B P3-4）；cli help 三处滞后（--dir/--text/--value，需 --help golden 重录）（B P3-5=A P3-8）；异常退出码契约文档化（B P3-6）；覆盖判据子串提及 → AST 级（C P3-2）；CI checkout@v4/setup-python@v5 Node 20 弃用告警升级（C P3-5）；CHANGELOG v2.3.x 段序倒排归位（D P3-3，纯排版）。
+- **A 席架构残项**：kill_chaos 随机杀脚本入库（A P2-4 彻底解）、伪造相对路径记录闸门加固（A P3-1）、`.journal.*.new` 残留单列（A P3-3）、RuntimeError 收编 DeterlineError（A P3-6 实作面）、跨进程竞争字面测试（A P3-10）、跨目录闸门完整收口（A P2-3）、prune keep_path 语义角落（R1 观察 a）——均挂值守/O3b 批次。
+
 ## v2.5.6 — 2026-11-14（终轮清偿：firmlink 闸门 + 生成器健壮化 + 批次 12/13 收口）
 
 **性质：终轮双席清偿（0 P0/P1；4 P2 → 3 清偿 + 1 设计稿修订）。375→386 测试。外层新增 11-阶段3设计稿.md 与 ROOMS_GUIDE.draft.md 审批件（336 房留痕）。**
@@ -138,7 +178,7 @@
 
 ### 阶段 2.5 平台矩阵（本版）
 
-- CI 从单 ubuntu 扩为 **ubuntu/windows/macos 三 OS 矩阵**（fail-fast: false）：344 单测 + gen_docs --check + --help golden + `install.py --check` 安装入口（只读）+ diff 卫生。**Windows 侧 msvcrt 锁分支与路径语义首次真实执行**（03 §2.5 挂账项转 ci-static ✓）。
+- CI 从单 ubuntu 扩为 **ubuntu/windows/macos 三 OS 矩阵**（fail-fast: false）：344 单测 + gen_docs --check + --help golden + `install.py --check` 安装入口（只读）+ diff 卫生。**Windows 侧 msvcrt 锁分支与路径语义首次真实执行**（03 §2.5 挂账项转 ci-static ✓）。（CI 前史补记 D P3-4：1216993 单 ubuntu 最小工作流、3d9cfc5 平台中立 golden 路径，v2.4.x 期间落库）
 - 外层新增 `07-平台矩阵与验证级别.md`：能力 × 平台 × 验证级别全表；明确挂账（Windows UTMT 集成/Windows smoke/TerminateProcess 实验/行尾游戏读回）。
 
 ### 阶段 2.6 候选版（本版）
@@ -149,7 +189,7 @@
 
 ### 阶段出口核对（03 §6）
 
-常用写入与恢复有可重放证据（journal + recovery-scan + SIGKILL 216 实验 0 违例）✓；自动检查不依赖真实存档 ✓；候选版对每个平台和功能列出实际验证级别（07 矩阵）✓；真实 Steam 或 Windows 验证单独挂账 ✓。
+常用写入与恢复有可重放证据（journal + recovery-scan + SIGKILL 确定性窗口回归测试入库；216 随机杀实验为一次性运行未入库，A P2-4 措辞收敛）✓；自动检查不依赖真实存档 ✓；候选版对每个平台和功能列出实际验证级别（07 矩阵）✓；真实 Steam 或 Windows 验证单独挂账 ✓。
 
 ## v2.4.4 — 2026-11-13（阶段 2.4：保留策略预览 backup-prune）
 
@@ -175,7 +215,7 @@
 ### 2.2b 可恢复运行记录（journal）
 
 - 每次多文件提交前在首个目标旁 `.deterline/journal/<id>.json` 落盘（mkstemp+fsync+os.replace 原子写）：预期目标 / before-after sha256 / staged 与回滚副本路径 / 状态机 pending→committing→(删除 | aborted-clean | aborted-partial)。
-- 成功后整目录摘除；失败路径 aborted-* 保留（含 error 聚合）；**SIGKILL 保留——216 次随机 kill + 3 个确定性窗口实验 0 违例**（目标内容恒 ∈ {before, after}，journal 全部可解析）。
+- 成功后整目录摘除；失败路径 aborted-* 保留（含 error 聚合）；**SIGKILL 保留——216 次随机 kill + 3 个确定性窗口实验 0 违例**（目标内容恒 ∈ {before, after}，journal 全部可解析；A P2-4 补注：216 为一次性运行、采样脚本未入库——确定性窗口中 1 窗口有入库回归测试，A 席独立复刻 8/8 通过）。
 - 提交前检测同名目标未完结运行记录 → 拒绝并指引 recovery-scan（03"再次运行能识别"）。
 - 已知局限：跨目录混合提交崩溃后，只动另一目录的新提交看不到该记录（06 §4 登记；scan 三处兜底）。
 
@@ -263,7 +303,7 @@
 - 层1（基线 vs 构建，声明范围）：资源级 0 违规；结构层 4 处差异 = 声明操作的结构投影（缺口已修）。
 - 撤销核验：覆盖回基线后 md5 复原。复现步骤全录于外层 05-中文样例复现记录.md。
 
-### 新命令：`backup-index`（阶段 2.3 O5 最小切片，92a2393）
+### 新命令：`backup-index`（阶段 2.3 O5 最小切片，19d59f1；92a2393 为同轮审核修复——D P3-2 引用订正）
 
 - 恢复资产只读索引：bak-latest/bak-archive/named-snapshot/workspace-copy/workspace-legacy 五类 → 路径/恢复目标/mtime/大小（--hash 追加 SHA-256）。
 - 恢复提示与 undo/experiment-restore 的 key/tag 语义精确对齐（首轮 33/59 提示不可用被审核席 B 实测抓出后全部修正）。

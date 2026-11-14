@@ -121,7 +121,9 @@ def check_tests(failures):
 
 def check_git_clean(failures):
     r = _run(["git", "status", "--porcelain"])
-    dirty = [l for l in r.stdout.splitlines() if l.strip() and not l.startswith("?? .github")]
+    # C P3-4：原 "?? .github" 白名单是工作流提交前的历史遗留——tests.yml 已
+    # 入库，任何未跟踪 .github 文件都是真脏（候选版必须提交态）
+    dirty = [l for l in r.stdout.splitlines() if l.strip()]
     if dirty:
         failures.append(f"工作树不干净（候选版必须提交态）: {dirty[:3]}")
     else:

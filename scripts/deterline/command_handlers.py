@@ -10,31 +10,39 @@ from .cmds import cjk, code, dialogue, doctor, door, npc, recovery, room, save_c
 
 def _backup_index(args, parser, target):
     save_dir = None
+    save_dir_error = None
     try:
         save_dir = paths.find_save_dir(args.dir)
     except FileNotFoundError as exc:
-        print(f"（存档目录未定位：{exc}）", file=sys.stderr)
+        # B P2-2：--json 模式 stderr 必须静默，原因并入 payload warnings
+        # （与 _recovery_scan/_doctor 同型）；人读模式由 cmd 内 warnings
+        # 循环打印到 stderr
+        save_dir_error = str(exc)
     code = save_cmds.cmd_backup_index(
         save_dir, args.dir,
         with_hash=bool(getattr(args, "hash", False)),
-        json_out=bool(getattr(args, "json", False)))
+        json_out=bool(getattr(args, "json", False)),
+        save_dir_error=save_dir_error)
     if code:
         sys.exit(code)  # 两侧定位均失败 = 2（可区分空索引与路径错误）
 
 
 def _backup_prune(args, parser, target):
     save_dir = None
+    save_dir_error = None
     try:
         save_dir = paths.find_save_dir(args.dir)
     except FileNotFoundError as exc:
-        print(f"（存档目录未定位：{exc}）", file=sys.stderr)
+        # B P2-2：--json 模式 stderr 必须静默，原因并入 payload warnings
+        save_dir_error = str(exc)
     raw = getattr(args, "keep_archives", 3)
     keep_archives = 3 if raw is None else int(raw)
     if keep_archives < 1:
         parser.error(f"--keep-archives 必须 ≥ 1（收到 {keep_archives}）")
     code = save_cmds.cmd_backup_prune(
         save_dir, args.dir, keep_archives=keep_archives,
-        json_out=bool(getattr(args, "json", False)))
+        json_out=bool(getattr(args, "json", False)),
+        save_dir_error=save_dir_error)
     if code:
         sys.exit(code)  # 2 = 两侧定位均失败
 

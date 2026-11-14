@@ -547,16 +547,21 @@ def _entry_restore_hint(entry: dict) -> str:
 
 
 def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
-                     with_hash: bool = False, json_out: bool = False) -> int:
+                     with_hash: bool = False, json_out: bool = False,
+                     save_dir_error: str | None = None) -> int:
     """只读索引：备份/命名快照/工作区副本 → 类型/路径/恢复目标/mtime/大小。
 
     零写盘、零 UTMT、零清理（O5 保留策略的前置证据面）。
     --hash 追加每项 SHA-256（大文件逐项流式）。
     定位失败降级为提示行，不崩溃（doctor 先例）。
+    save_dir_error：适配器定位失败原因——并入 warnings（B P2-2：--json
+    模式 stderr 必须静默，原因随 payload 走，与 recovery-scan/doctor 同型）。
     返回 0=至少一侧定位成功；2=两侧均失败（自动化可区分"空索引"与"路径错"）。
     """
     entries, warnings, game_dir = _collect_backup_entries(
         save_dir, dir_override, with_hash=with_hash)
+    if save_dir_error:
+        warnings.append(f"存档目录未定位：{save_dir_error}")
     if json_out:
         print(json.dumps({
             "schema": "deterline.backup-index/v1",
@@ -589,7 +594,8 @@ def cmd_backup_index(save_dir: Path | None, dir_override: str | None = None,
 
 
 def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
-                     keep_archives: int = 3, json_out: bool = False) -> int:
+                     keep_archives: int = 3, json_out: bool = False,
+                     save_dir_error: str | None = None) -> int:
     """保留策略预览（03 §2.4，**只读零删除**）：重复内容/占盘统计 + 清理建议。
 
     建议集 = 主文件（game.ios/data.win/file0/undertale.ini 及
@@ -602,6 +608,8 @@ def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
     entries, warnings, game_dir = _collect_backup_entries(
         save_dir, dir_override, with_hash=True,
         hash_kinds={"bak-archive"})
+    if save_dir_error:
+        warnings.append(f"存档目录未定位：{save_dir_error}")  # B P2-2 同型
     if game_dir is None and save_dir is None:
         if json_out:
             print(json.dumps({
@@ -660,33 +668,39 @@ def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
     deletions: list[dict] = []
     duplicate_groups: list[dict] = []
     protected_skipped = 0
+    # A P2-1：mtime_epoch 整秒截断 + 稳定排序在"同秒批量备份"场景方向反转
+    # （保留最旧、建议删除最新，违反 COMMANDS.md"保留最近 N 份"承诺，
+    # journal 保护计数随窗口错位）——排序改用纳秒级 mtime（stat 现取，
+    # 不进 JSON 面），路径名次级键（同纳秒时名降序 = 名内嵌时间戳最新优先）
+    ns_by_path: dict[str, int] = {}
+    for entry in entries:
+        if entry["kind"] in ("bak-archive", "system-info"):
+            try:
+                ns_by_path[entry["path"]] = Path(entry["path"]).stat().st_mtime_ns
+            except OSError:
+                # R3 观察：stat 失败按"最新"处理（宁可不删——预览态保守方向；
+                # 实际不可达性极高：采集端 add() 刚 stat 成功）
+                ns_by_path[entry["path"]] = 1 << 62
     for key, rows in sorted(groups.items(), key=lambda kv: str(kv[0])):
-        rows = sorted(rows, key=lambda e: e.get("mtime_epoch") or 0,
+        rows = sorted(rows,
+                      key=lambda e: (ns_by_path.get(e["path"], 0), str(e["path"])),
                       reverse=True)
-        # 内容重复统计（同组 sha 相同，保留最新一份）
+        # 内容重复统计（同组 sha 相同，保留最新一份）——B P2-1 修正：
+        # 统计必须在删除集成型之后做第二遍（此前 deletion_paths 在同组
+        # 删除集构建之前快照，reclaimable_bytes 恒为 0）
         by_sha: dict[str, list[dict]] = {}
         for row in rows:
             sha = row.get("sha256")
             if sha:
                 by_sha.setdefault(sha, []).append(row)
-        for sha, same in by_sha.items():
-            if len(same) > 1:
-                deletion_paths = {d["path"] for d in deletions}
-                duplicate_groups.append({
-                    "key": key[0], "sha256": sha[:16] + "…",
-                    "count": len(same),
-                    # 只计真正进入删除集的份数（A P3-2：窗口内重复不虚报）
-                    "reclaimable_bytes": sum(r.get("size_bytes") or 0
-                                             for r in same[1:]
-                                             if r["path"] in deletion_paths),
-                    "keep_path": same[0]["path"],
-                })
+        deleted_here: set[str] = set()
         for index, row in enumerate(rows):
             if index < max(int(keep_archives), 1):
                 continue
             if str(Path(row["path"]).resolve()) in protected:
                 protected_skipped += 1
                 continue
+            deleted_here.add(row["path"])
             deletions.append({
                 "path": row["path"], "key": key[0], "dir": key[1],
                 "backup_ts": (row.get("restore") or {}).get("backup"),
@@ -695,6 +709,18 @@ def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
                 "reason": (f"超出 --keep-archives {keep_archives} 窗口"
                            f"（第 {index + 1} 新）"),
             })
+        for sha, same in by_sha.items():
+            if len(same) > 1:
+                duplicate_groups.append({
+                    "key": key[0], "sha256": sha[:16] + "…",
+                    "count": len(same),
+                    # 只计真正进入删除集的份数（A P3-2：窗口内重复不虚报；
+                    # journal 保护跳过未进 deleted_here，同样不计）
+                    "reclaimable_bytes": sum(r.get("size_bytes") or 0
+                                             for r in same[1:]
+                                             if r["path"] in deleted_here),
+                    "keep_path": same[0]["path"],
+                })
 
     kept_counts = {}
     for kind in ("bak-latest", "named-snapshot", "workspace-copy",
@@ -719,6 +745,10 @@ def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
         return 0
 
     print(f"--- backup-prune（只读预览，零删除） ---")
+    for w in warnings:
+        # B P2-3：损坏 journal 等前置信号在人读模式必须可见（对照
+        # backup-index 人读分支 / prune 早退分支 / recovery-scan 人读分支同款）
+        print(f"  ⚠️ {w}", file=sys.stderr)
     print(f"  统计: {len(entries)} 项 / {total_bytes / 1e6:.0f} MB")
     for kind, bucket in sorted(stats.items()):
         print(f"    {kind}: {bucket['count']} 项 / "

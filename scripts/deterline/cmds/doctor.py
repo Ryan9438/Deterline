@@ -55,8 +55,15 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None,
         # 直接 json.load 判定（rooms_data._load_rooms 会把损坏吞成空表，
         # 复核 P2-1：损坏文件误报"✓ 0 条"）；解析成功后再经 _load_rooms 供后续
         raw = json.loads(rooms_json.read_text(encoding="utf-8")) if rooms_json.exists() else {}
-        n = len(raw) if isinstance(raw, dict) else 0
-        check(f"rooms.json 可解析（{n} 条）", bool(raw), "" if raw else "文件缺失或内容为空")
+        is_map = isinstance(raw, dict)  # B P2-4：非 dict 形态（如 list）不得 ✓
+        n = len(raw) if is_map else 0
+        if is_map and raw:
+            detail = ""
+        elif not raw:
+            detail = "文件缺失或内容为空"
+        else:
+            detail = f"非映射形态（{type(raw).__name__}）——应为 id→中文名 dict"
+        check(f"rooms.json 可解析（{n} 条）", is_map and bool(raw), detail)
         rooms_data._load_rooms()
     except Exception as e:  # noqa: BLE001 — 体检命令吞异常改为 ✗ 行
         check("rooms.json 可解析", False, str(e)[:80])
@@ -73,8 +80,10 @@ def cmd_doctor(save_dir: Path, dir_override: str | None = None,
             check(f"file0 可解析（玩家 {name}，{len(nums)} 变量）", True)
         except Exception as e:
             check("file0 可解析", False, str(e)[:80])
-        # ⚠️ 只读解析：不得走 inifile._read_ini——其 DuplicateOptionError 分支
-        # 会备份+改写 ini（复核 P1-1：doctor 承诺零写盘）
+        # ⚠️ 只读解析：不走 inifile._read_ini——现行实现已零写盘（strict=False
+        # 重读 + stderr 提示），但带 stderr 副作用且语义耦合；doctor 自持
+        # configparser strict=False 读，零写盘零噪声（复核 P1-1 承诺不变；
+        # B P3-8 注释订正——旧注释"会备份+改写 ini"与现行实现不符）
         try:
             cp = configparser.ConfigParser(strict=False)
             cp.read(str(ini), encoding="utf-8")

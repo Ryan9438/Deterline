@@ -424,6 +424,32 @@ class TestRecoveryScan(unittest.TestCase):
         path.write_text(json.dumps(record), encoding="utf-8")
         return path
 
+    def test_orphan_scan_covers_target_parents(self):
+        """A P2-2 回归钉：嵌套工作区旁未引用 staged 必须被报——journal 先于
+        暂存落盘时 pending 记录 staged=None，目标 parent 不入扫描则永不报告。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            game = root / "game.ios"
+            game.write_bytes(b"BASE")
+            ws = root / ".deterline" / "game.ios" / "default"
+            ws.mkdir(parents=True)
+            ws_game = ws / "game.ios"
+            ws_game.write_bytes(b"BASE")
+            self._write_journal(ws, "p", "pending", [
+                {"path": str(ws_game), "before": None, "after": None,
+                 "rollback": None, "staged": None}])
+            orphan = ws / ".game.ios.abc123.new"
+            orphan.write_bytes(b"STAGED-LEFTOVER")
+            out, code = self._scan(root, json_out=True)
+            self.assertEqual(code, 1, "发现未完结项 → 1")
+            payload = json.loads(out)
+            kinds = [f["kind"] for f in payload["findings"]]
+            self.assertIn("orphan-staged", kinds,
+                          "目标 parent（嵌套工作区）必须纳入孤儿扫描（A P2-2）")
+            self.assertTrue(any(f["path"] == str(orphan)
+                                for f in payload["findings"]
+                                if f["kind"] == "orphan-staged"))
+
     def test_no_findings_exit0_and_json_pure(self):
         with tempfile.TemporaryDirectory() as directory:
             out, code = self._scan(Path(directory))

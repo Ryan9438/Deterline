@@ -4,8 +4,9 @@ room-list P0 的土壤：接线层 bug 不被 CSX golden 钉住，而冷路径�
 让它潜伏到运行时。本文件三层防线：
 
 1. 覆盖地图（动态计算）：commands.json 的每个 action，其 action 名或实现
-   cmd_* 函数名必须在 tests/ 出现过——零覆盖集合必须 ⊆ ALLOWLIST（当前
-   为空：10 条 save 域命令已全数冒烟，84/84）。新增命令不带测试即爆红。
+   cmd_* 函数名必须在 tests/ 出现过——零覆盖集合必须 ⊆ ALLOWLIST
+   （2026-11-14 口径：89 actions = 69 已覆盖 + 20 条显式豁免）。
+   新增命令不带测试即爆红。
 2. 三方 SSOT 扩展：commands.json actions == cli.ACTION_CHOICES == dispatch
    分支集合（docs lint 已有两腿，此处补齐 dispatch 腿的 In-tuple 形态）。
 3. 十条 save 域命令冒烟：全部 tmp 目录（experiment 系经
@@ -129,7 +130,16 @@ class TestDispatchCoverageRatchet(unittest.TestCase):
         def _coverage_text(f):
             text = f.read_text(encoding="utf-8")
             if f.name == "test_compat_surface.py":
-                text = text.split("FROZEN_EXPORTS = [", 1)[0]
+                head, sep, _tail = text.partition("FROZEN_EXPORTS = [")
+                # C P2-2：截断必须真发生——字面量漂移（如加类型注解）曾会
+                # 静默返回全文，215 个冻结名会把 20 条 ALLOWLIST 误判成
+                # "已覆盖"并强制清偿，棘轮整体假绿
+                if not sep:
+                    raise AssertionError(
+                        "test_compat_surface.py 找不到 'FROZEN_EXPORTS = [' "
+                        "字面量——冻结名册截断失效（棘轮假绿面）；"
+                        "请同步更新本处的匹配标记")
+                text = head
             return text
         test_src = "\n".join(
             _coverage_text(f) for f in (REPO / "tests").glob("test_*.py")
@@ -428,8 +438,9 @@ class TestBackupPrune(_SaveDirBase):
                                            json_out=json_out)
         return buf.getvalue(), code
 
-    def _make_archives(self, count, dup_oldest=0):
-        """count 份归档，mtime 递增；最旧 dup_oldest 份内容与最新一份重复。"""
+    def _make_archives(self, count, dup_oldest=0, same_mtime=False):
+        """count 份归档，mtime 递增；最旧 dup_oldest 份内容与最新一份重复。
+        same_mtime=True：全部归档同一 mtime（A P2-1 整秒截断反转面）。"""
         import time as _time
         game = self.save_dir / "game.ios"
         game.write_bytes(b"GAME")
@@ -437,10 +448,13 @@ class TestBackupPrune(_SaveDirBase):
         contents = [f"ARCH-{i}".encode() for i in range(count)]
         for i in range(dup_oldest):
             contents[i] = contents[-1]
+        fixed_stamp = _time.time()  # 同一值 → st_mtime_ns 全等（纯 tiebreak 面）
         for i, content in enumerate(contents):
             archive = self.save_dir / f"game.ios.bak.2026111{i}_000000_{i}"
             archive.write_bytes(content)
             stamp = _time.time() - (count - i) * 100
+            if same_mtime:
+                stamp = fixed_stamp
             import os as _os
             _os.utime(archive, (stamp, stamp))
         (self.save_dir / "game.ios.snap.keepme").write_bytes(b"SNAP")
@@ -469,6 +483,34 @@ class TestBackupPrune(_SaveDirBase):
         out, _ = self._prune(keep_archives=3)
         self.assertIn("重复内容", out)
         self.assertIn("×3", out, "2 份重复归档 + 最新 1 份同内容")
+        # B P2-1 回归钉：reclaimable 只计进入删除集的重复份（曾因
+        # deletion_paths 在同组删除集之前快照而恒为 0）
+        import json as _json
+        jout, _ = self._prune(keep_archives=3, json_out=True)
+        payload = _json.loads(jout)
+        dup = [g for g in payload["duplicate_groups"] if g["count"] > 1]
+        self.assertTrue(dup, "重复组必须被报告")
+        self.assertGreater(dup[0]["reclaimable_bytes"], 0,
+                           "超窗重复份可回收字节必须 > 0（B P2-1 曾恒 0）")
+        # 4 份归档 keep=3 → 删除集恰 1 份（最旧的重复份）：reclaimable
+        # 必须恰等于该删除行字节——窗口内保留的重复份不得虚报
+        self.assertEqual(dup[0]["reclaimable_bytes"],
+                         payload["deletions"][0]["size_bytes"])
+
+    def test_same_mtime_keeps_newest(self):
+        """A P2-1 回归钉：同秒 mtime 归档保留方向必须仍是"留最新"。
+        （mtime_epoch 整秒截断 + 稳定排序曾反转——删最新留最旧。）"""
+        self._make_archives(5, same_mtime=True)
+        out, code = self._prune(keep_archives=3)
+        self.assertEqual(code, 0)
+        rm_lines = [l for l in out.splitlines() if l.startswith('    rm "')]
+        self.assertEqual(len(rm_lines), 2, "5 份 - 窗口 3 = 2 份超窗")
+        tails = [l.rsplit("/", 1)[-1] for l in rm_lines]
+        self.assertTrue(any(t.endswith('_000000_0"') for t in tails),
+                        f"删除建议必须指向最旧两份（A P2-1）：{tails}")
+        self.assertTrue(any(t.endswith('_000000_1"') for t in tails))
+        self.assertFalse(any(t.endswith(('_000000_3"', '_000000_4"'))
+                             for t in tails), "同秒场景不得误删最新归档")
 
     def test_json_schema_and_purity(self):
         import json as _json
@@ -498,6 +540,24 @@ class TestBackupPrune(_SaveDirBase):
         self.assertNotIn(f'rm "{oldest}"', out,
                          "journal 引用的归档必须被保护跳过")
         self.assertIn("journal 保护跳过 1 项", out)
+
+    def test_corrupt_journal_warning_visible_human(self):
+        """R2 P3-3 回归钉：损坏 journal 前置信号人读模式必须可见（B P2-3）。"""
+        import io as _io
+        import contextlib as _ctxlib
+        self._make_archives(3)
+        journal_dir = self.save_dir / ".deterline" / "journal"
+        journal_dir.mkdir(parents=True)
+        (journal_dir / "broken.json").write_text("{broken", encoding="utf-8")
+        game = self.save_dir / "game.ios"
+        buf, err = _io.StringIO(), _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=game):
+            with _ctxlib.redirect_stdout(buf), _ctxlib.redirect_stderr(err):
+                code = ms.cmd_backup_prune(self.save_dir, None, keep_archives=3)
+        self.assertEqual(code, 0)
+        self.assertIn("损坏/不可解析运行记录", err.getvalue(),
+                      "人读模式必须可见损坏 journal 前置信号（B P2-3）")
 
     def test_keep_archives_zero_rejected(self):
         """审核席 A P2-2：--keep-archives 0 不得被静默吞成默认 3。"""
@@ -842,10 +902,6 @@ class TestDiffSnapshotsDispatch(unittest.TestCase):
         self.assertTrue(call.called, "显式 A/B 不应依赖默认游戏文件")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestDoctorJson(unittest.TestCase):
     """doctor --json（v2.5.5）：纯 JSON + fails 计数与退出码一致。"""
 
@@ -899,3 +955,98 @@ class TestDoctorJson(unittest.TestCase):
         self.assertEqual(payload["schema"], "deterline.doctor/v1")
         self.assertEqual(sum(1 for i in payload["items"] if not i["ok"]),
                          payload["fails"])
+
+    def test_json_non_dict_rooms_reported_fail(self):
+        """B P2-4 回归钉：非 dict 形态 rooms.json 不得报 ✓（曾 ✓ 0 条）。"""
+        import io as _io
+        import json as _json
+        import contextlib as _ctxlib
+        from deterline import rooms_data as _rooms_data
+        save_dir = fixtures_save.make_save_dir()
+        self.addCleanup(shutil.rmtree, str(save_dir), ignore_errors=True)
+        bad = save_dir / "rooms.json"
+        bad.write_text("[1, 2, 3]", encoding="utf-8")
+        game = save_dir / "game.ios"
+        game.write_bytes(b"NOT-BASELINE")
+        buf = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=game), \
+             mock.patch.object(_rooms_data, "_rooms_json_path",
+                               return_value=bad):
+            with _ctxlib.redirect_stdout(buf):
+                with self.assertRaises(SystemExit) as cm:
+                    ms.cmd_doctor(save_dir, json_out=True)
+        self.assertEqual(cm.exception.code, 1)
+        payload = _json.loads(buf.getvalue())
+        item = next(i for i in payload["items"]
+                    if i["label"].startswith("rooms.json 可解析"))
+        self.assertFalse(item["ok"], "非映射形态必须 ✗（B P2-4：曾 ✓ 0 条）")
+        self.assertIn("非映射形态", item["detail"])
+
+
+class TestAdapterJsonStderrPurity(unittest.TestCase):
+    """B P2-2 回归钉：backup-index/prune --json 时定位失败不得污染 stderr
+    （对照 _recovery_scan/_doctor 的同型守卫）。"""
+
+    def _run(self, handler_name, **extra):
+        import io as _io
+        import contextlib as _ctxlib
+        import types as _types
+        import deterline.command_handlers as _ch
+        args = _types.SimpleNamespace(dir="/nonexistent-dir-xyz", json=True,
+                                      **extra)
+
+        class _Parser:
+            def error(self, msg):
+                raise SystemExit(2)
+
+        buf, err = _io.StringIO(), _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_save_dir",
+                               side_effect=FileNotFoundError("找不到存档目录")):
+            with _ctxlib.redirect_stdout(buf), _ctxlib.redirect_stderr(err):
+                with self.assertRaises(SystemExit) as cm:
+                    getattr(_ch, handler_name)(args, _Parser(), None)
+        return buf.getvalue(), err.getvalue(), cm.exception.code
+
+    def test_backup_index_json_stderr_silent(self):
+        out, err, code = self._run("_backup_index")
+        self.assertEqual(err, "", "--json 模式 stderr 必须静默（B P2-2）")
+        payload = json.loads(out)
+        self.assertEqual(payload["schema"], "deterline.backup-index/v1")
+        self.assertTrue(any("存档目录未定位" in w for w in payload["warnings"]),
+                        "定位失败原因必须随 payload warnings 走")
+        self.assertEqual(code, 2)
+
+    def test_backup_prune_json_stderr_silent(self):
+        out, err, code = self._run("_backup_prune", keep_archives=3)
+        self.assertEqual(err, "", "--json 模式 stderr 必须静默（B P2-2）")
+        payload = json.loads(out)
+        self.assertEqual(payload["schema"], "deterline.backup-prune/v1")
+        self.assertTrue(any("存档目录未定位" in w for w in payload["warnings"]))
+        self.assertEqual(code, 2)
+
+
+class TestDirectRunParity(unittest.TestCase):
+    """R2 P3-2 回归钉：直跑（python3 tests/test_dispatch_coverage.py）与
+    loader 口径必须同数——__main__ 曾在类定义之前而静默缺类（45 vs 47）。"""
+
+    def test_direct_run_count_matches_loader(self):
+        if os.environ.get("DETERLINE_SKIP_DIRECT_RUN_PARITY") == "1":
+            self.skipTest("嵌套直跑防护（子进程已置位）")
+        import subprocess as _sub
+        import test_dispatch_coverage as _self_mod
+        expected = unittest.defaultTestLoader \
+            .loadTestsFromModule(_self_mod).countTestCases()
+        env = dict(os.environ, DETERLINE_SKIP_DIRECT_RUN_PARITY="1")
+        r = _sub.run([sys.executable, str(Path(__file__).resolve())],
+                     capture_output=True, text=True, encoding="utf-8",
+                     errors="replace", env=env, timeout=180)
+        m = re.search(r"^Ran (\d+) tests?", r.stdout + r.stderr, re.M)
+        self.assertIsNotNone(m, f"直跑无 Ran 汇总：{(r.stderr or '')[-200:]}")
+        self.assertEqual(int(m.group(1)), expected,
+                         "直跑与 loader 测试数不一致——__main__ 位置或加载漂移"
+                         "（R2 P3-2）")
+
+
+if __name__ == "__main__":
+    unittest.main()
