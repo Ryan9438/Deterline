@@ -1,376 +1,727 @@
-# Deterline 房间分类清单（ROOM GUIDE）
+# Deterline 房间分类清单（ROOMS_GUIDE——2026-11-14 审批重生成）
 
-> 生成自 game.ios ROOM chunk 全量扫描（2026-08-16）。共 336 个房间。
-> 用途：自定义房间时必须按此清单选择**已有房间**改造，**禁止新建房间序号**。
+> 本文件由 tools/gen_rooms_guide.py 从 rooms-scan（deterline.rooms-scan/v2）生成，
+> 经用户审批后于 2026-11-14 替换 2026-08-16 旧版（审批记录：CHANGELOG v2.5.8 / 09 §3）。
+> 重生成 diff = 本头部 + 采集时间戳；正文逐字节同生成器输出。
 
-## 分类说明
+- schema: deterline.rooms-scan/v2
+- 源文件 md5: `fc049850856dea4ef1427bbf5653fc47`
+- 采集时间: 2026-11-14T19:53:36
+- 房间总数: 336
+- 分类统计: A=237、B1=30、B2=11、D-candidate=5、uncategorized=53
 
-| 类别 | 定义 | 数量 |
-|------|------|------|
-| A | 多层视差参考房（2026-11 审计：tundra/dock/core/castle 等亦有单层视差公式，230 独特在 7 层多深度视差） | 1 |
-| B | 有背景图（数据启用 或 obj_backgrounder_* 对象），**可注入 GML 实现视差** | 52 |
-| C | 无背景、纯 Tile 地板 | 236 |
-| D | 全空（intro/credits/测试/战斗房） | 47 |
+## 映射体检（03 §3.2）
 
-**选择规则**（用户要求自定义/新建房间时强制遵守）：
-1. **禁止新建房间序号**——只能修改已有房间（`set-room-prop`/`set-room-view`/`set-room-bg`/`gml-bg`/Tile 编辑）
-2. 用户要求**加背景或视差** → 必须选 **B 类**（如 room_tundra_town 等可滚动长房最佳）
-3. 用户要求**纯地板场景** → 选 **C 类**
-4. 尺寸注意：320x240 小房视角静止（无滚动），横长房（W>320）才有视差观察空间
-5. 提供候选时列出房间号 + 尺寸 + 中文名，供用户挑选
+✓ rooms.json (244 条) 与 reverse 双射一致
 
-## A 类（1）
+扫描房名覆盖：登记 244 / 未登记 92（未登记房以“（未登记）”标注，登记走 rooms.json）
 
-| 房间号 | 内部名 | 尺寸 | 视角 | Tile数 | 中文名 |
-|------|--------|------|------|-------|--------|
-| 230 | room_lastruins_corridor | 2120x240 | 可滚动 | 589 |  (新家 - 电梯)
+未登记名单（前 20）：
+- TESTROOM
+- bullettest
+- room2
+- room_adate
+- room_afinaltest
+- room_asrielappears
+- room_asrielmemory
+- room_asrieltest
+- room_battle
+- room_bringitinguys
+- room_castle_exit
+- room_castle_trueexit
+- room_controltest
+- room_creditsdodger
+- room_dogshrine
+- room_empty
+- room_emptyblack
+- room_emptywhite
+- room_end_beach
+- room_end_castroll
 
-## B 类（52）
+## D 候选（多层视差启发式——人工复核带依据）（5）
 
-| 房间号 | 内部名 | 尺寸 | 视角 | Tile数 | 中文名 |
-|------|--------|------|------|-------|--------|
-|   4 | room_area1 | 680x260 | 可滚动 | 20 |  (遗迹 - 起始点)
-|   5 | room_area1_2 | 320x420 | 可滚动 | 0 |  (遗迹 - 小花的地方)
-|  30 | room_ruins18OLD | 320x240 | 静止 | 64 |  (遗迹 - 有玩具刀的房间)
-|  32 | room_torhouse1 | 320x240 | 静止 | 5 |  (托丽尔的家: 入口)
-|  33 | room_torhouse2 | 320x240 | 静止 | 5 |  (托丽尔的家: 阅读室)
-|  36 | room_asrielroom | 320x240 | 静止 | 0 |  (托丽尔的家: 你的房间)
-|  37 | room_kitchen | 320x240 | 静止 | 0 |  (托丽尔的家: 厨房)
-|  43 | room_ruinsexit | 320x420 | 可滚动 | 0 |  (托丽尔的地下室: 嘲讽你的小花)
-|  65 | room_tundra_iceexit | 600x240 | 可滚动 | 217 |  (雪镇 - 冰洞的入口)
-|  66 | room_tundra_poffzone | 560x240 | 可滚动 | 242 |  (雪镇 - 大犬汪)
-|  67 | room_tundra_dangerbridge | 1040x240 | 可滚动 | 278 |  (雪镇 - 帕派瑞斯直截了当的攻击谜题)
-|  68 | room_tundra_town | 2720x240 | 可滚动 | 1637 |  (雪镇 - 镇子 [SAVE])
-|  73 | room_tundra_grillby | 320x240 | 静止 | 0 |  (雪镇 - Grillby's 酒吧)
-|  76 | room_tundra_sanshouse | 320x240 | 静止 | 0 |
-|  77 | room_tundra_paproom | 320x240 | 静止 | 0 |
-|  78 | room_tundra_sansroom | 320x240 | 静止 | 0 |
-| 108 | room_water_waterfall3 | 1400x240 | 可滚动 | 2 |  (瀑布 - 宫殿远景)
-| 110 | room_water_preundyne | 720x240 | 可滚动 | 480 |  (瀑布 - 桥 [SAVE])
-| 111 | room_water_undynebridge | 1940x1240 | 可滚动 | 1894 |  (瀑布 - 桥上躲避安黛因)
-| 118 | room_water_undynehouse | 320x240 | 静止 | 0 |
-| 120 | room_water_blookhouse | 320x240 | 静止 | 1 |
-| 121 | room_water_hapstablook | 320x240 | 静止 | 1 |
-| 134 | room_water_undynefinal | 320x740 | 可滚动 | 125 |  (瀑布 - 安黛因竞技场)
-| 137 | room_fire1 | 520x240 | 可滚动 | 97 |  (热域 - 入口)
-| 138 | room_fire2 | 320x240 | 静止 | 125 |  (热域 - 饮水机)
-| 139 | room_fire_prelab | 600x240 | 可滚动 | 296 |  (热域 - 实验室入口 [SAVE])
-| 155 | room_fire_savepoint1 | 720x240 | 可滚动 | 180 |  (热域 - 核心景象 [SAVE])
-| 167 | room_fire_coreview2 | 720x240 | 可滚动 | 165 |  (热域 - 上层核心景象)
-| 179 | room_fire_operatest | 320x380 | 可滚动 | 24 |  (热域 - 剧院舞台)
-| 188 | room_fire_precore | 320x560 | 可滚动 | 245 |  (热域 - 核心入口)
-| 217 | room_castle_precastle | 1300x240 | 可滚动 | 463 |  (城堡 - 另一个电梯)
-| 218 | room_castle_hook | 320x940 | 可滚动 | 254 |  (城堡 - 黑暗的小径)
-| 220 | room_asghouse1 | 320x240 | 静止 | 5 |  (新家 - 入口)
-| 221 | room_asghouse2 | 320x240 | 静止 | 5 |  (新家 - 阅读室)
-| 224 | room_asrielroom_final | 320x240 | 静止 | 0 |  (新家 - 你的房间)
-| 225 | room_kitchen_final | 320x240 | 静止 | 0 |  (新家 - 厨房)
-| 231 | room_sanscorridor | 1400x240 | 可滚动 | 479 |  (最后的长廊 [SAVE])
-| 236 | room_castle_prebarrier | 680x260 | 可滚动 | 44 |  (终点 [SAVE])
-| 238 | room_castle_exit | 320x420 | 可滚动 | 0 |
-| 240 | room_castle_trueexit | 320x420 | 可滚动 | 0 |
-| 241 | room_outsideworld | 320x240 | 静止 | 0 |  (外面)
-| 279 | room_end_highway | 640x240 | 可滚动 | 146 |
-| 285 | room_end_myroom | 320x240 | 静止 | 77 |
-| 306 | room_battle | 640x480 | 可滚动 | 0 |
-| 307 | room_floweybattle | 640x480 | 可滚动 | 0 |
-| 308 | room_fastbattle | 640x480 | 可滚动 | 0 |
-| 309 | room_storybattle | 640x480 | 可滚动 | 0 |
-| 313 | room_shop3 | 320x240 | 静止 | 0 |
-| 314 | room_shop4 | 320x240 | 静止 | 0 |
-| 315 | room_shop5 | 320x240 | 静止 | 0 |
-| 319 | room_flowey_endchoice | 640x480 | 可滚动 | 0 |
-| 328 | room_friendtest | 640x480 | 可滚动 | 0 |
+- `room_asghouse1` id=220 — 新家 - 入口 | 320x240 | 实例 56 | Tile 5 | 启用背景: bg_asgoreparlorstairs、bg_asgoreparlor | 对象: obj_solidtall_2、obj_mainchara、obj_solidsmall、obj_markerA、obj_doorA、obj_markerB（共 25 种对象）
+  - 理由: 启发式：启用背景 2 层（≥2 层=多层视差候选，无文献背书，人工复核须带依据）
+- `room_end_highway` id=279 — （未登记） | 640x240 | 实例 1 | Tile 146 | 启用背景: bg_lastclouds、bg_lastcity | 对象: obj_endcaranim
+  - 理由: 启发式：启用背景 2 层（≥2 层=多层视差候选，无文献背书，人工复核须带依据）
+- `room_torhouse1` id=32 — 托丽尔的家: 入口 | 320x240 | 实例 56 | Tile 5 | 启用背景: bg_parlorstairs、bg_parlor1 | 对象: obj_solidtall_2、obj_mainchara、obj_solidsmall、obj_doorBmusicfade、obj_markerA、obj_housemusic（共 25 种对象）
+  - 理由: 启发式：启用背景 2 层（≥2 层=多层视差候选，无文献背书，人工复核须带依据）
+- `room_tundra_sanshouse` id=76 — （未登记） | 320x240 | 实例 70 | Tile 0 | 启用背景: bg_paphouse_a、bg_paphouse_c、bg_paphouse_b | 对象: obj_paptrash、obj_papfridge、obj_papsink、obj_papstove、obj_kitchenchecker、obj_sansdoor（共 28 种对象）
+  - 理由: 启发式：启用背景 3 层（≥2 层=多层视差候选，无文献背书，人工复核须带依据）
+- `room_water_undynefinal` id=134 — 瀑布 - 安黛因竞技场 | 320x740 | 实例 76 | Tile 125 | 启用背景: bg_waterfalltex、bg_undynecrag | 对象: obj_solidextall_2、obj_mainchara、obj_markerA、obj_undynetrigger_boss、obj_undynetrigger_boss2、obj_undynecoolmusic（共 12 种对象）
+  - 理由: 启发式：启用背景 2 层（≥2 层=多层视差候选，无文献背书，人工复核须带依据）
 
-## C 类（236）
+## B1 数据驱动背景（启用层含 BackgroundDefinition）（30）
 
-| 房间号 | 内部名 | 尺寸 | 视角 | Tile数 | 中文名 |
-|------|--------|------|------|-------|--------|
-|   6 | room_ruins1 | 320x480 | 可滚动 | 368 |  (遗迹 - 入口 [SAVE])
-|   7 | room_ruins2 | 320x240 | 静止 | 171 |  (遗迹 - 托丽尔踩砖谜题)
-|   8 | room_ruins3 | 740x240 | 可滚动 | 454 |  (遗迹 - 开关谜题)
-|   9 | room_ruins4 | 320x240 | 静止 | 160 |  (遗迹 - 人偶房间)
-|  10 | room_ruins5 | 1200x240 | 可滚动 | 648 |  (遗迹 - 尖刺谜题)
-|  11 | room_ruins6 | 2500x240 | 可滚动 | 1319 |  (遗迹 - 长走廊)
-|  12 | room_ruins7 | 320x480 | 可滚动 | 357 |  (遗迹 - 落叶堆 [SAVE])
-|  13 | room_ruins7A | 320x240 | 静止 | 150 |  (遗迹 - 糖果柱)
-|  14 | room_ruins8 | 320x640 | 可滚动 | 266 |  (遗迹 - 强制掉落陷阱)
-|  15 | room_ruins9 | 480x240 | 可滚动 | 261 |  (遗迹 - 第一个推石头谜题)
-|  16 | room_ruins10 | 580x760 | 可滚动 | 652 |  (遗迹 - 陷阱门走廊谜题)
-|  17 | room_ruins11 | 560x240 | 可滚动 | 310 |  (遗迹 - 会说话的岩石)
-|  18 | room_ruins12A | 320x240 | 静止 | 132 |  (遗迹 - 老鼠洞 [SAVE])
-|  19 | room_ruins12 | 320x240 | 静止 | 173 |  (遗迹 - 小幽灵 Napstablook)
-|  20 | room_ruins12B | 320x240 | 静止 | 117 |  (遗迹 - 蜘蛛烘焙义卖)
-|  21 | room_ruins13 | 640x300 | 可滚动 | 341 |  (遗迹 - 两只青蛙)
-|  22 | room_ruins14 | 640x720 | 可滚动 | 623 |  (遗迹 - 藏在陷阱们谜题下的开关)
-|  23 | room_ruins15A | 400x440 | 可滚动 | 274 |  (遗迹 - 三个柱子房间 1)
-|  24 | room_ruins15B | 400x440 | 可滚动 | 264 |  (遗迹 - 三个柱子房间 2)
-|  25 | room_ruins15C | 400x440 | 可滚动 | 265 |  (遗迹 - 三个柱子房间 3)
-|  26 | room_ruins15D | 400x440 | 可滚动 | 275 |  (遗迹 - 三个柱子房间 4)
-|  27 | room_ruins15E | 320x240 | 静止 | 152 |  (遗迹 - 柱子房间的坑)
-|  28 | room_ruins16 | 600x400 | 可滚动 | 507 |  (遗迹 - 三条路的分叉)
-|  29 | room_ruins17 | 320x640 | 可滚动 | 97 |  (遗迹 - 说托丽尔闲话的青蛙)
-|  31 | room_ruins19 | 320x540 | 可滚动 | 437 |  (遗迹 - 家 [SAVE])
-|  34 | room_torhouse3 | 800x240 | 可滚动 | 92 |  (托丽尔的家: 走廊)
-|  35 | room_torielroom | 320x240 | 静止 | 1 |  (托丽尔的家: 托丽尔的房间)
-|  38 | room_basement1 | 500x240 | 可滚动 | 179 |  (托丽尔的地下室 1)
-|  39 | room_basement2 | 500x240 | 可滚动 | 185 |  (托丽尔的地下室 2)
-|  40 | room_basement3 | 320x240 | 静止 | 102 |  (托丽尔的地下室 3)
-|  41 | room_basement4 | 320x240 | 静止 | 115 |  (托丽尔的地下室: 托丽尔的 Boss 战)
-|  42 | room_basement5 | 320x1620 | 可滚动 | 312 |  (托丽尔的地下室: 即将遇到小花的走廊)
-|  44 | room_tundra1 | 440x240 | 可滚动 | 238 |  (雪镇 - 遗迹出口)
-|  45 | room_tundra2 | 2720x240 | 可滚动 | 1203 |  (雪镇 - 黑暗的森林小径)
-|  46 | room_tundra3 | 400x240 | 可滚动 | 344 |  (雪镇 - 盒子路 [SAVE])
-|  47 | room_tundra3A | 320x240 | 静止 | 256 |  (雪镇 - 钓鱼竿)
-|  48 | room_tundra4 | 560x240 | 可滚动 | 482 |  (雪镇 - 帕派瑞斯的哨站)
-|  49 | room_tundra5 | 460x240 | 可滚动 | 200 |  (雪镇 - 遁狗)
-|  50 | room_tundra6 | 620x240 | 可滚动 | 406 |  (雪镇 - 指路标)
-|  51 | room_tundra6A | 320x240 | 静止 | 104 |  (雪镇 - 雪人)
-|  52 | room_tundra7 | 320x240 | 静止 | 219 |  (雪镇 - 电击迷宫)
-|  53 | room_tundra8 | 760x580 | 可滚动 | 1471 |  (雪镇 - 推雪球游戏)
-|  54 | room_tundra8A | 320x240 | 静止 | 193 |  (雪镇 - 两只狗守卫的房子)
-|  55 | room_tundra9 | 320x240 | 静止 | 340 |  (雪镇 - 怪物小孩的纵横谜题)
-|  56 | room_tundra_spaghetti | 320x240 | 静止 | 245 |  (雪镇 - 意大利面 [SAVE])
-|  57 | room_tundra_snowpuzz | 620x580 | 可滚动 | 1078 |  (雪镇 - 狗夫妇)
-|  58 | room_tundra_xoxosmall | 500x240 | 可滚动 | 448 |  (雪镇 - XO 谜题 1)
-|  59 | room_tundra_xoxopuzz | 820x240 | 可滚动 | 467 |  (雪镇 - XO 谜题 2)
-|  60 | room_tundra_randoblock | 320x240 | 静止 | 170 |  (雪镇 - 踩砖谜题)
-|  61 | room_tundra_lesserdog | 560x240 | 可滚动 | 265 |  (雪镇 - 狗屋 [SAVE])
-|  62 | room_tundra_icehole | 320x240 | 静止 | 120 |  (雪镇 - 帕派瑞斯和衫斯的雪雕)
-|  63 | room_tundra_iceentrance | 940x240 | 可滚动 | 723 |  (雪镇 - 冰面滑行的 XO 谜题)
-|  64 | room_tundra_iceexit_new | 600x240 | 可滚动 | 415 |  (雪镇 - 会瞬移的衫斯)
-|  69 | room_tundra_town2 | 800x240 | 可滚动 | 585 |  (雪镇 - 冰狼)
-|  70 | room_tundra_dock | 320x240 | 静止 | 235 |  (雪镇 - 船夫(妇))
-|  71 | room_tundra_inn | 320x240 | 静止 | 87 |  (雪镇 - 旅店)
-|  72 | room_tundra_inn_2f | 320x240 | 静止 | 110 |
-|  74 | room_tundra_library | 320x240 | 静止 | 101 |  (雪镇 - 图书馆)
-|  75 | room_tundra_garage | 320x240 | 静止 | 62 |
-|  79 | room_tundra_sansroom_dark | 1000x580 | 可滚动 | 1 |
-|  80 | room_tundra_sansbasement | 320x240 | 静止 | 67 |
-|  81 | room_fogroom | 900x240 | 可滚动 | 508 |  (雪镇 - 帕派瑞斯的战斗)
-|  82 | room_water1 | 640x240 | 可滚动 | 426 |  (瀑布 - 入口)
-|  83 | room_water2 | 320x240 | 静止 | 203 |  (瀑布 - 检查点 [SAVE])
-|  84 | room_water3 | 580x540 | 可滚动 | 394 |  (瀑布 - 坠落的石头)
-|  85 | room_water3A | 320x240 | 静止 | 98 |
-|  86 | room_water4 | 560x400 | 可滚动 | 373 |  (瀑布 - 门厅(?) [SAVE])
-|  87 | room_water_bridgepuzz1 | 520x240 | 可滚动 | 283 |  (瀑布 - 桥花)
-|  88 | room_water5 | 500x500 | 可滚动 | 602 |  (瀑布 - 垂直的桥花(?))
-|  89 | room_water5A | 320x240 | 静止 | 124 |
-|  90 | room_water6 | 740x380 | 可滚动 | 325 |  (瀑布 - 望远镜)
-|  91 | room_water7 | 1100x340 | 可滚动 | 251 |  (瀑布 - 船板)
-|  92 | room_water8 | 2100x300 | 可滚动 | 855 |  (瀑布 - 安黛因躲避 1)
-|  93 | room_water9 | 860x240 | 可滚动 | 226 |  (瀑布 - 躲避安黛因之后的草丛)
-|  94 | room_water_savepoint1 | 320x240 | 静止 | 140 |  (瀑布 - 水晶奶酪 [SAVE])
-|  95 | room_water11 | 660x340 | 可滚动 | 479 |  (瀑布 - 衫斯的望远镜)
-|  96 | room_water_nicecream | 320x440 | 可滚动 | 213 |  (瀑布 - 好棒冰)
-|  97 | room_water12 | 1280x820 | 可滚动 | 1370 |  (瀑布 - 分岔路(?))
-|  98 | room_water_shoe | 320x240 | 静止 | 49 |  (瀑布 - 芭蕾舞鞋)
-|  99 | room_water_bird | 320x240 | 静止 | 131 |  (瀑布 - 带你过河的鸟)
-| 100 | room_water_onionsan | 1220x240 | 可滚动 | 418 |  (瀑布 - 洋葱桑)
-| 101 | room_water14 | 740x240 | 可滚动 | 361 |  (瀑布 - 神器)
-| 102 | room_water_piano | 320x240 | 静止 | 142 |  (瀑布 - 钢琴)
-| 103 | room_water_dogroom | 320x240 | 静止 | 105 |  (瀑布 - 传说神器)
-| 104 | room_water_statue | 320x240 | 静止 | 146 |  (瀑布 - 淋雨的雕像)
-| 105 | room_water_prewaterfall | 340x240 | 可滚动 | 154 |  (瀑布 - 雨伞)
-| 106 | room_water_waterfall | 1640x240 | 可滚动 | 619 |  (瀑布 - 下雨的小路 1)
-| 107 | room_water_waterfall2 | 320x1040 | 可滚动 | 334 |  (瀑布 - 小雨的小路 2)
-| 109 | room_water_waterfall4 | 520x240 | 可滚动 | 177 |  (瀑布 - 雨伞归还处)
-| 112 | room_water_undynebridgeend | 820x1140 | 可滚动 | 111 |  (瀑布 - 桥 坠落)
-| 113 | room_water_trashzone1 | 820x240 | 可滚动 | 434 |  (瀑布 - 垃圾场 花床)
-| 114 | room_water_trashsavepoint | 320x240 | 静止 | 177 |  (瀑布 - 垃圾场 [SAVE])
-| 115 | room_water_trashzone2 | 320x940 | 可滚动 | 474 |  (瀑布 - 大表哥(发怒人偶)的复仇)
-| 116 | room_water_friendlyhub | 620x240 | 可滚动 | 549 |  (瀑布 - 宁静地带 [SAVE])
-| 117 | room_water_undyneyard | 320x240 | 静止 | 121 |  (瀑布 - 安黛因房子入口)
-| 119 | room_water_blookyard | 320x240 | 静止 | 154 |  (瀑布 - 两个幽灵的房子)
-| 122 | room_water_farm | 760x240 | 可滚动 | 493 |
-| 123 | room_water_prebird | 620x240 | 可滚动 | 63 |
-| 124 | room_water_shop | 320x240 | 静止 | 166 |  (瀑布 - 乌龟 Gerson 的商店)
-| 125 | room_water_dock | 320x240 | 静止 | 152 |  (瀑布 - 渔夫(妇))
-| 126 | room_water15 | 1020x240 | 可滚动 | 344 |  (瀑布 - 两个瀑布)
-| 127 | room_water16 | 620x640 | 可滚动 | 162 |  (瀑布 - 发光蘑菇迷宫)
-| 128 | room_water_temvillage | 660x300 | 可滚动 | 274 |  (瀑布 - 提米村 [SAVE])
-| 129 | room_water17 | 640x540 | 可滚动 | 222 |  (瀑布 - 黑暗迷宫)
-| 130 | room_water18 | 1020x240 | 可滚动 | 237 |  (瀑布 - "在你后面")
-| 131 | room_water19 | 320x640 | 可滚动 | 321 |  (瀑布 - 更多的回音花)
-| 132 | room_water20 | 620x240 | 可滚动 | 217 |  (瀑布 - 洞穴 桥)
-| 133 | room_water21 | 320x240 | 静止 | 135 |  (瀑布 - 洞穴 出口)
-| 135 | room_water_undynefinal2 | 320x480 | 可滚动 | 183 |  (瀑布 - 安黛因竞技场 + 1)
-| 136 | room_water_undynefinal3 | 720x240 | 可滚动 | 146 |  (瀑布 - 热域欢迎词)
-| 140 | room_fire_dock | 320x240 | 静止 | 127 |  (热域 - 船夫(妇))
-| 141 | room_fire_lab1 | 1100x240 | 可滚动 | 559 |  (热域 - 实验室)
-| 142 | room_fire_lab2 | 860x240 | 可滚动 | 584 |  (热域 - 实验室二楼)
-| 143 | room_fire3 | 480x340 | 可滚动 | 256 |  (热域 - 实验室出口)
-| 144 | room_fire5 | 320x1640 | 可滚动 | 611 |  (热域 - 传送带 1)
-| 145 | room_fire6 | 860x440 | 可滚动 | 605 |  (热域 - 岩浆房 [SAVE])
-| 146 | room_fire6A | 620x240 | 可滚动 | 218 |  (热域 - 烧焦的平底锅)
-| 147 | room_fire_lasers1 | 1160x240 | 可滚动 | 953 |  (热域 - 激光 1)
-| 148 | room_fire7 | 520x560 | 可滚动 | 635 |  (热域 - 谜题 门 1)
-| 149 | room_fire8 | 360x240 | 可滚动 | 188 |  (热域 - 左边谜题的入口)
-| 150 | room_fire_shootguy_2 | 320x240 | 静止 | 59 |  (热域 - 左边的谜题)
-| 151 | room_fire9 | 320x240 | 静止 | 166 |  (热域 - 右边谜题的入口)
-| 152 | room_fire_shootguy_1 | 320x240 | 静止 | 51 |  (热域 - 右边的谜题)
-| 153 | room_fire_turn | 800x240 | 可滚动 | 201 |  (热域 - 通往击毁敌船谜题的桥)
-| 154 | room_fire_cookingshow | 640x480 | 可滚动 | 414 |  (热域 - 厨房)
-| 156 | room_fire_elevator_r1 | 320x240 | 静止 | 104 |  (热域 - 电梯 R1)
-| 157 | room_fire_elevator_r2 | 320x240 | 静止 | 85 |  (热域 - 电梯 R2)
-| 158 | room_fire_hotdog | 320x240 | 静止 | 130 |  (热域 - 热狗站)
-| 159 | room_fire_walkandbranch | 820x240 | 可滚动 | 236 |  (热域 - 美术俱乐部入口)
-| 160 | room_fire_sorry | 320x240 | 静止 | 106 |  (热域 - 美术俱乐部（So Sorry）)
-| 161 | room_fire_apron | 520x240 | 可滚动 | 140 |  (热域 - 染色围裙)
-| 162 | room_fire10 | 840x240 | 可滚动 | 325 |  (热域 - 传送带开关谜题)
-| 163 | room_fire_rpuzzle | 620x540 | 可滚动 | 528 |  (热域 - 击毁敌船谜题)
-| 164 | room_fire_mewmew2 | 520x240 | 可滚动 | 145 |  (热域 - 蠢念头区域 [SAVE])
-| 165 | room_fire_boysnightout | 620x440 | 可滚动 | 324 |  (热域 - 守卫好基友)
-| 166 | room_fire_newsreport | 980x660 | 可滚动 | 737 |  (热域 - 镁塔顿的新闻报道)
-| 168 | room_fire_elevator_l2 | 320x240 | 静止 | 106 |  (热域 - 电梯 L2)
-| 169 | room_fire_elevator_l3 | 320x240 | 静止 | 74 |  (热域 - 电梯 L3)
-| 170 | room_fire_spidershop | 480x240 | 可滚动 | 146 |  (热域 - 蜘蛛烘焙义卖)
-| 171 | room_fire_walkandbranch2 | 900x660 | 可滚动 | 362 |  (热域 - F3 谜题 门)
-| 172 | room_fire_conveyorlaser | 1000x440 | 可滚动 | 379 |  (热域 - F3 南边谜题入口)
-| 173 | room_fire_shootguy_3 | 320x240 | 静止 | 59 |  (热域 - F3 南边谜题)
-| 174 | room_fire_preshootguy4 | 320x320 | 可滚动 | 83 |  (热域 - F3 北边谜题入口)
-| 175 | room_fire_shootguy_4 | 320x240 | 静止 | 54 |  (热域 - F3 北边谜题)
-| 176 | room_fire_savepoint2 | 500x240 | 可滚动 | 153 |  (热域 - 蜘蛛 入口 [SAVE])
-| 177 | room_fire_spider | 1020x240 | 可滚动 | 124 |  (热域 - 蜘蛛 房间)
-| 178 | room_fire_pacing | 320x240 | 静止 | 88 |  (热域 - 镁塔顿海报)
-| 180 | room_fire_multitile | 1360x240 | 可滚动 | 223 |  (热域 - 踩砖谜题 2)
-| 181 | room_fire_hotelfront_1 | 520x240 | 可滚动 | 177 |  (热域 - 好棒冰站 2)
-| 182 | room_fire_hotelfront_2 | 480x400 | 可滚动 | 443 |  (热域 - 酒店入口)
-| 183 | room_fire_hotellobby | 520x600 | 可滚动 | 371 |  (热域 - 酒店大厅 [SAVE])
-| 184 | room_fire_restaurant | 1020x320 | 可滚动 | 514 |  (热域 - 酒店餐馆)
-| 185 | room_fire_hoteldoors | 820x240 | 可滚动 | 97 |  (热域 - 酒店走廊)
-| 186 | room_fire_hotelbed | 320x240 | 静止 | 116 |  (热域 - 酒店旁的小巷)
-| 187 | room_fire_elevator_r3 | 320x240 | 静止 | 65 |  (热域 - 电梯 R3)
-| 189 | room_fire_core1 | 320x300 | 可滚动 | 319 |  (热域 - 核心电梯)
-| 190 | room_fire_core2 | 320x340 | 可滚动 | 26 |  (热域 - 核心 洞)
-| 191 | room_fire_core3 | 320x420 | 可滚动 | 188 |  (热域 - 核心 北边的电梯)
-| 192 | room_fire_core4 | 680x240 | 可滚动 | 190 |  (热域 - 核心 顺序错误的激光)
-| 193 | room_fire_core5 | 320x240 | 静止 | 159 |  (热域 - 核心 十字路口)
-| 194 | room_fire_core_freebattle | 320x240 | 静止 | 123 |  (热域 - 核心 死路)
-| 195 | room_fire_core_laserfun | 1200x240 | 可滚动 | 234 |  (热域 - 核心 能量激光谜题)
-| 196 | room_fire_core_branch | 320x240 | 静止 | 227 |  (热域 - 核心 分支 [SAVE])
-| 197 | room_fire_core_bottomleft | 320x240 | 静止 | 129 |  (热域 - 核心 冰块储存(?))
-| 198 | room_fire_core_left | 320x240 | 静止 | 110 |  (热域 - 核心 西边谜题入口)
-| 199 | room_fire_core_topleft | 320x240 | 静止 | 252 |  (热域 - 核心 西边谜题入口 + 1)
-| 200 | room_fire_core_top | 320x240 | 静止 | 272 |  (热域 - 核心 西边谜题入口 + 2)
-| 201 | room_fire_core_topright | 320x240 | 静止 | 212 |  (热域 - 核心 南边有 100G 的垃圾桶)
-| 202 | room_fire_core_right | 320x240 | 静止 | 186 |  (热域 - 核心 尽头 - 3)
-| 203 | room_fire_core_bottomright | 320x240 | 静止 | 70 |  (热域 - 核心 尽头 - 4)
-| 204 | room_fire_core_center | 320x240 | 静止 | 129 |  (热域 - 核心 迷路)
-| 205 | room_fire_shootguy_5 | 320x240 | 静止 | 61 |  (热域 - 核心 西边的谜题)
-| 206 | room_fire_core_treasureleft | 320x240 | 静止 | 101 |  (热域 - 核心 有魅力汉堡的垃圾桶)
-| 207 | room_fire_core_treasureright | 320x240 | 静止 | 101 |  (热域 - 核心 有 100G 的垃圾桶)
-| 208 | room_fire_core_warrior | 780x240 | 可滚动 | 148 |  (热域 - 核心 终极怪物桥)
-| 209 | room_fire_core_bridge | 620x240 | 可滚动 | 188 |  (热域 - 核心 尽头 - 1)
-| 210 | room_fire_core_premett | 320x240 | 静止 | 152 |  (热域 - 核心 尽头 [SAVE])
-| 211 | room_fire_core_metttest | 320x1000 | 可滚动 | 350 |  (热域 - 核心 镁塔顿的房间)
-| 212 | room_fire_core_final | 1220x240 | 可滚动 | 385 |  (热域 - 核心 最终电梯的入口)
-| 213 | room_fire_elevator | 320x240 | 静止 | 42 |
-| 214 | room_fire_elevator_l1 | 320x240 | 静止 | 68 |  (热域 - 电梯 L1)
-| 215 | room_fire_finalelevator | 320x240 | 静止 | 42 |  (热域 - 核心 电梯入口)
-| 216 | room_castle_elevatorout | 520x240 | 可滚动 | 319 |  (城堡 - 电梯 [SAVE])
-| 219 | room_castle_front | 320x540 | 可滚动 | 529 |  (新家 [SAVE])
-| 222 | room_asghouse3 | 800x240 | 可滚动 | 93 |  (新家 - 走廊)
-| 223 | room_asgoreroom | 320x240 | 静止 | 1 |  (新家 - 艾斯戈尔的房间)
-| 226 | room_basement1_final | 500x240 | 可滚动 | 358 |  (新家 - 地下室 1)
-| 227 | room_basement2_final | 500x240 | 可滚动 | 321 |  (新家 - 地下室 2)
-| 228 | room_basement3_final | 320x240 | 静止 | 198 |  (新家 - 地下室 3)
-| 229 | room_basement4_final | 320x240 | 静止 | 211 |  (新家 - 地下室 4)
-| 232 | room_castle_finalshoehorn | 820x540 | 可滚动 | 543 |  (王座 入口 [SAVE])
-| 233 | room_castle_coffins1 | 320x540 | 可滚动 | 81 |  (王座 入口 - 下楼)
-| 234 | room_castle_coffins2 | 520x240 | 可滚动 | 177 |  (王座 入口 - 棺材)
-| 235 | room_castle_throneroom | 320x600 | 可滚动 | 485 |  (王座 房间 [SAVE])
-| 242 | room_fire_labelevator | 320x240 | 静止 | 42 |  (实验室电梯)
-| 243 | room_truelab_elevatorinside | 320x240 | 静止 | 30 |  (真实验室 - 电梯)
-| 244 | room_truelab_elevator | 320x240 | 静止 | 50 |  (真实验室 - 电梯入口)
-| 245 | room_truelab_hall1 | 840x240 | 可滚动 | 104 |  (真实验室 - 南边的走廊)
-| 246 | room_truelab_hub | 500x620 | 可滚动 | 146 |  (真实验室 [SAVE])
-| 247 | room_truelab_hall2 | 420x240 | 可滚动 | 48 |  (真实验室 - 西边的走廊 1)
-| 248 | room_truelab_operatingroom | 580x240 | 可滚动 | 121 |  (真实验室 - 西边的坠落(?))
-| 249 | room_truelab_redlever | 320x240 | 静止 | 31 |  (真实验室 - 西边的红色钥匙孔)
-| 250 | room_truelab_prebed | 600x240 | 可滚动 | 63 |  (真实验室 - 北边的走廊 1)
-| 251 | room_truelab_bedroom | 540x540 | 可滚动 | 305 |  (真实验室 - 卧室 [SAVE])
-| 252 | room_truelab_mirror | 1000x240 | 可滚动 | 298 |  (真实验室 - 南北边的走廊)
-| 253 | room_truelab_bluelever | 320x240 | 静止 | 31 |  (真实验室 - 南北边的蓝色钥匙孔)
-| 254 | room_truelab_hall3 | 1160x240 | 可滚动 | 149 |  (真实验室 - 北边的走廊 2)
-| 255 | room_truelab_shower | 320x240 | 静止 | 27 |  (真实验室 - 绿色钥匙)
-| 256 | room_truelab_determination | 460x240 | 可滚动 | 63 |  (真实验室 - 西北边的决心提取器)
-| 257 | room_truelab_tv | 320x240 | 静止 | 75 |  (真实验室 - 黄色钥匙孔 + 电视)
-| 258 | room_truelab_cooler | 720x240 | 可滚动 | 187 |  (真实验室 - 西北边的冰箱)
-| 259 | room_truelab_greenlever | 320x240 | 静止 | 31 |  (真实验室 - 绿色钥匙孔)
-| 260 | room_truelab_fan | 580x240 | 可滚动 | 33 |  (真实验室 - 风扇)
-| 261 | room_truelab_castle_elevator | 320x240 | 静止 | 40 |  (真实验室 - 电梯 2)
-| 262 | room_truelab_prepower | 580x240 | 可滚动 | 63 |  (真实验室 - 动力室走廊)
-| 263 | room_truelab_power | 320x420 | 可滚动 | 130 |  (真实验室 - 动力室)
-| 265 | room_icecave1 | 320x580 | 可滚动 | 111 |  (雪镇 - 冰洞 1)
-| 266 | room_ice_dog | 320x240 | 静止 | 97 |
-| 268 | room_water_fakehallway | 320x240 | 静止 | 112 |
-| 269 | room_mysteryman | 320x240 | 静止 | 40 |
-| 273 | room_water13 | 320x640 | 可滚动 | 252 |
-| 280 | room_end_beach | 320x240 | 静止 | 65 |
-| 281 | room_end_metta | 320x240 | 静止 | 238 |
-| 282 | room_end_school | 320x480 | 可滚动 | 330 |
-| 289 | room_controltest | 320x240 | 静止 | 18 |
-| 296 | room_fire4 | 1420x540 | 可滚动 | 299 |
-| 297 | room_fire10_old | 1320x240 | 可滚动 | 260 |
-| 298 | room_fire10A_old | 1220x240 | 可滚动 | 300 |
-| 299 | room_tundra_placeholder | 320x800 | 可滚动 | 566 |
-| 300 | room_ruins12B_old | 320x240 | 静止 | 81 |
-| 301 | room_tundra_rollsnow | 320x240 | 静止 | 65 |
-| 302 | room_water7_older | 800x340 | 可滚动 | 208 |
-| 303 | room_meetundyne_old | 560x240 | 可滚动 | 222 |
-| 304 | room_water_mushroom | 320x240 | 静止 | 81 |
-| 316 | room_riverman_transition | 660x240 | 可滚动 | 166 |
-| 335 | room_dogshrine | 320x240 | 静止 | 136 |
+- `room_area1` id=4 — 遗迹 - 起始点 | 680x260 | 实例 27 | Tile 20 | 启用背景: bg_firstroom | 对象: obj_solidtall、obj_sur、obj_sul、obj_mainchara、obj_solidsmall、obj_sdr（共 14 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_area1_2` id=5 — 遗迹 - 小花的地方 | 320x420 | 实例 43 | Tile 0 | 启用背景: bg_floweyglow | 对象: obj_solidtall、obj_mainchara、obj_solidsmall、obj_doorB、obj_markerA、obj_floweytrigger（共 12 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_asghouse2` id=221 — 新家 - 阅读室 | 320x240 | 实例 55 | Tile 5 | 启用背景: bg_asgore_livingroom | 对象: obj_chairiel、obj_sur、obj_mainchara、obj_solidsmall、obj_markerA、obj_doorB（共 22 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_asrielroom` id=36 — 托丽尔的家: 你的房间 | 320x240 | 实例 60 | Tile 0 | 启用背景: bg_asrielroom | 对象: obj_mainchara、obj_solidsmall、obj_doorD、obj_markerC、obj_readable_room2、obj_readable_room1（共 11 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_asrielroom_final` id=224 — 新家 - 你的房间 | 320x240 | 实例 60 | Tile 0 | 启用背景: bg_asrielroom_tint | 对象: obj_mainchara、obj_solidsmall、obj_doorD、obj_markerC、obj_readable_room2、obj_readable_room1（共 11 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_castle_exit` id=238 — （未登记） | 320x420 | 实例 38 | Tile 0 | 启用背景: bg_floweyglow | 对象: obj_solidtall、obj_mainchara、obj_solidsmall、obj_npc_marker、obj_demodoorA、obj_npc_room（共 9 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_castle_hook` id=218 — 城堡 - 黑暗的小径 | 320x940 | 实例 48 | Tile 254 | 启用背景: bg_lastruins_7 | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_doorA、obj_markerB（共 8 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_castle_prebarrier` id=236 — 终点 [SAVE] | 680x260 | 实例 49 | Tile 44 | 启用背景: bg_firstroom | 对象: obj_solidtall、obj_sur、obj_mainchara、obj_solidsmall、obj_sdr、obj_sdl（共 25 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_castle_trueexit` id=240 — （未登记） | 320x420 | 实例 35 | Tile 0 | 启用背景: bg_floweyglow | 对象: obj_solidtall、obj_mainchara、obj_solidsmall、obj_markerB、obj_door_ruins13、obj_markerA（共 9 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_fire1` id=137 — 热域 - 入口 | 520x240 | 实例 22 | Tile 97 | 启用背景: bg_hotlandrock | 对象: obj_hotlandrock_bg、obj_hotlandparalava、obj_mainchara、obj_sentrystation_bg、obj_doorB、obj_markerA（共 15 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_fire2` id=138 — 热域 - 饮水机 | 320x240 | 实例 54 | Tile 125 | 启用背景: bg_hotlandrock | 对象: obj_hotlandrock_bg、obj_hotlandparalava、obj_mainchara、obj_solidsmall、obj_doorA、obj_doorB（共 15 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_fire_operatest` id=179 — 热域 - 剧院舞台 | 320x380 | 实例 17 | Tile 24 | 启用背景: bg_operabg | 对象: obj_mainchara、obj_playmovement、obj_markerA、obj_doorBmusicfade、obj_markerD、obj_solidlong（共 8 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_fire_precore` id=188 — 热域 - 核心入口 | 320x560 | 实例 61 | Tile 245 | 启用背景: bg_core_distance | 对象: obj_mainchara、obj_markerX、obj_doorXmusicfade、obj_doorAmusicfade、obj_markerB、obj_precore_event（共 11 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_fire_prelab` id=139 — 热域 - 实验室入口 [SAVE] | 600x240 | 实例 50 | Tile 296 | 启用背景: bg_hotlandrock | 对象: obj_hotlandrock_bg、obj_alabdoor_l、obj_solidextall_2、obj_sur、obj_mainchara、obj_doorB（共 20 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_kitchen` id=37 — 托丽尔的家: 厨房 | 320x240 | 实例 18 | Tile 0 | 启用背景: bg_kitchen | 对象: obj_solidtall、obj_mainchara、obj_solidsmall、obj_markerX、obj_door_ruins13、obj_readable_room1（共 12 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_kitchen_final` id=225 — 新家 - 厨房 | 320x240 | 实例 18 | Tile 0 | 启用背景: bg_kitchen_tint | 对象: obj_solidtall、obj_mainchara、obj_solidsmall、obj_markerX、obj_door_ruins13、obj_readable_room1（共 12 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_outsideworld` id=241 — 外面 | 320x240 | 实例 9 | Tile 0 | 启用背景: bg_endingview | 对象: obj_mainchara、obj_toriel_friendc、obj_sans_friendc、obj_papyrus_friendc、obj_alphys_friendc、obj_asgore_friendc（共 9 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_ruins18OLD` id=30 — 遗迹 - 有玩具刀的房间 | 320x240 | 实例 12 | Tile 64 | 启用背景: bg_ruinsbg | 对象: obj_solidtall_2、obj_mainchara、obj_solidsmall、obj_doorB、obj_markerA、obj_knife_pickup（共 8 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_ruinsexit` id=43 — 托丽尔的地下室: 嘲讽你的小花 | 320x420 | 实例 41 | Tile 0 | 启用背景: bg_floweyglow | 对象: obj_solidtall、obj_mainchara、obj_solidsmall、obj_markerA、obj_floweytalker1、obj_npc_marker（共 13 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_shop3` id=313 — （未登记） | 320x240 | 实例 5 | Tile 0 | 启用背景: bg_brattybg | 对象: obj_brattysign、obj_shopkeeper_catty、obj_shopkeeper_bratty、obj_shop3、obj_shopmouth1
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_shop4` id=314 — （未登记） | 320x240 | 实例 2 | Tile 0 | 启用背景: bg_burgerpantsshop | 对象: obj_shop4、obj_shopmouth1
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_shop5` id=315 — （未登记） | 320x240 | 实例 2 | Tile 0 | 启用背景: bg_temshop | 对象: obj_shop5、obj_shopmouth1
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_torhouse2` id=33 — 托丽尔的家: 阅读室 | 320x240 | 实例 59 | Tile 5 | 启用背景: bg_livingroom | 对象: obj_chairiel、obj_sur、obj_mainchara、obj_solidsmall、obj_markerA、obj_doorB（共 18 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_tundra_grillby` id=73 — 雪镇 - Grillby's 酒吧 | 320x240 | 实例 44 | Tile 0 | 启用背景: bg_grillbyplaceholder | 对象: obj_bigdog、obj_solidtall、obj_grillbynpc_hotandbothered、obj_grillbynpc_foodmonster、obj_mainchara、obj_booth（共 27 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_tundra_iceexit` id=65 — 雪镇 - 冰洞的入口 | 600x240 | 实例 22 | Tile 217 | 启用背景: bg_tb | 对象: obj_mainchara、obj_doorB、obj_markerA、obj_tinybghouse、obj_tundramusic、obj_doorXmusicfade（共 11 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_tundra_paproom` id=77 — （未登记） | 320x240 | 实例 46 | Tile 0 | 启用背景: bg_paproom | 对象: obj_solidextall_2、obj_mainchara、obj_solidthin、obj_solidsmall、obj_readable_room2、obj_readable_room3（共 17 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_tundra_sansroom` id=78 — （未登记） | 320x240 | 实例 51 | Tile 0 | 启用背景: bg_sansroom | 对象: obj_mainchara、obj_door_t、obj_solidsmall、obj_markert、obj_readable_room1、obj_readable_room2（共 13 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_water_blookhouse` id=120 — （未登记） | 320x240 | 实例 32 | Tile 1 | 启用背景: bg_shed | 对象: obj_solidextall_2、obj_mainchara、obj_markerA、obj_solidsmall、obj_doorBmusicfade、obj_napstablookdate（共 14 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_water_hapstablook` id=121 — （未登记） | 320x240 | 实例 32 | Tile 1 | 启用背景: bg_hapstaroom | 对象: obj_solidextall_2、obj_mainchara、obj_solidsmall、obj_doorDmusicfade、obj_markerC、obj_blookdiary（共 9 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
+- `room_water_undynehouse` id=118 — （未登记） | 320x240 | 实例 39 | Tile 0 | 启用背景: bg_undynehouse_real | 对象: obj_bonedrawer、obj_undynewindow、obj_solidtall_2、obj_solidextall_2、obj_solidtall、obj_mainchara（共 21 种对象）
+  - 理由: 数据驱动背景（启用层含 BackgroundDefinition）
 
-## D 类（47）
+## B2 对象驱动背景（obj_backgrounder_* 实例）（11）
 
-| 房间号 | 内部名 | 尺寸 | 视角 | Tile数 | 中文名 |
-|------|--------|------|------|-------|--------|
-|   0 | room_start | 640x480 | 可滚动 | 0 |
-|   1 | room_introstory | 320x240 | 静止 | 0 |
-|   2 | room_introimage | 320x240 | 静止 | 0 |
-|   3 | room_intromenu | 320x240 | 静止 | 0 |
-| 237 | room_castle_barrier | 320x240 | 静止 | 0 |  (结界)
-| 239 | room_undertale_end | 320x240 | 静止 | 0 |
-| 264 | room_gaster | 320x240 | 静止 | 0 |
-| 267 | room2 | 640x480 | 可滚动 | 0 |
-| 270 | room_soundtest | 640x480 | 可滚动 | 0 |
-| 271 | TESTROOM | 640x480 | 可滚动 | 0 |
-| 272 | room_water_redacted | 320x240 | 静止 | 0 |
-| 274 | room_overworld | 1280x640 | 可滚动 | 0 |
-| 275 | room_overworld3 | 640x480 | 可滚动 | 0 |
-| 276 | bullettest | 640x480 | 可滚动 | 0 |
-| 277 | room_water16A | 320x240 | 静止 | 0 |
-| 278 | room_end_castroll | 640x480 | 可滚动 | 0 |
-| 283 | room_end_mtebott | 640x480 | 可滚动 | 0 |
-| 284 | room_creditsdodger | 640x480 | 可滚动 | 0 |
-| 286 | room_end_theend | 640x480 | 可滚动 | 0 |
-| 287 | room_spritecheck | 640x480 | 可滚动 | 0 |
-| 288 | room_settings | 320x240 | 静止 | 0 |
-| 290 | room_f_start | 320x240 | 静止 | 0 |
-| 291 | room_f_intro | 320x240 | 静止 | 0 |
-| 292 | room_f_menu | 320x240 | 静止 | 0 |
-| 293 | room_f_room | 320x520 | 可滚动 | 0 |
-| 294 | room_floweyx | 640x480 | 可滚动 | 0 |
-| 295 | room_f_phrase | 640x480 | 可滚动 | 0 |
-| 305 | room_monsteralign_test | 640x480 | 可滚动 | 0 |
-| 310 | room_gameover | 640x480 | 可滚动 | 0 |
-| 311 | room_shop1 | 320x240 | 静止 | 0 |
-| 312 | room_shop2 | 320x240 | 静止 | 0 |
-| 317 | room_papdate | 640x480 | 可滚动 | 0 |
-| 318 | room_adate | 640x480 | 可滚动 | 0 |
-| 320 | room_flowey_regret | 320x240 | 静止 | 0 |
-| 321 | room_empty | 320x240 | 静止 | 0 |
-| 322 | room_emptywhite | 640x480 | 可滚动 | 0 |
-| 323 | room_emptyblack | 640x480 | 可滚动 | 0 |
-| 324 | room_nothingness | 320x240 | 静止 | 0 |
-| 325 | room_undertale | 320x240 | 静止 | 0 |
-| 326 | room_of_dog | 320x240 | 静止 | 0 |
-| 327 | room_quizholder | 640x480 | 可滚动 | 0 |
-| 329 | room_bringitinguys | 640x480 | 可滚动 | 0 |
-| 330 | room_asrielappears | 640x480 | 可滚动 | 0 |
-| 331 | room_goodbyeasriel | 320x240 | 静止 | 0 |  (艾斯瑞尔/小羊的房间)
-| 332 | room_asrielmemory | 640x480 | 可滚动 | 0 |
-| 333 | room_asrieltest | 640x480 | 可滚动 | 0 |
-| 334 | room_afinaltest | 640x480 | 可滚动 | 0 |
+- `room_castle_precastle` id=217 — 城堡 - 另一个电梯 | 1300x240 | 实例 28 | Tile 463 | 启用背景: bg_lastruins_1、bg_lastruins_2、bg_lastruins_3、bg_lastruins_4、bg_lastruins_5、bg_lastruins_6、bg_lastruins_7 | 对象: obj_elevatordoor、obj_mainchara、obj_backgrounder_lastruins、obj_markerA、obj_doorB、obj_doorA（共 12 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）；同时有启用背景 7 层
+- `room_fire_coreview2` id=167 — 热域 - 上层核心景象 | 720x240 | 实例 33 | Tile 165 | 启用背景: — | 对象: obj_backgrounder_core、obj_solidextall_2、obj_solidtall_2、obj_mainchara、obj_coreambiencemusic、obj_solidsmall（共 13 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）
+- `room_fire_savepoint1` id=155 — 热域 - 核心景象 [SAVE] | 720x240 | 实例 26 | Tile 180 | 启用背景: — | 对象: obj_backgrounder_core、obj_mainchara、obj_markerB、obj_savepoint、obj_doorAmusicfade、obj_markerA（共 13 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）
+- `room_lastruins_corridor` id=230 — 新家 - 电梯 | 2120x240 | 实例 40 | Tile 589 | 启用背景: bg_lastruins_1、bg_lastruins_2、bg_lastruins_3、bg_lastruins_4、bg_lastruins_5、bg_lastruins_6、bg_lastruins_7 | 对象: obj_elevatordoor、obj_solidlongleft、obj_mainchara、obj_backgrounder_lastruins、obj_solidsmall、obj_doorB（共 13 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）；同时有启用背景 7 层
+- `room_sanscorridor` id=231 — 最后的长廊 [SAVE] | 1400x240 | 实例 62 | Tile 479 | 启用背景: — | 对象: obj_backgrounder_pillar、obj_mainchara、obj_savepoint、obj_lastsans_trigger、obj_doorA、obj_markerB（共 15 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）
+- `room_tundra_dangerbridge` id=67 — 雪镇 - 帕派瑞斯直截了当的攻击谜题 | 1040x240 | 实例 86 | Tile 278 | 启用背景: — | 对象: obj_sul、obj_mainchara、obj_solidsmall、obj_papyrus7、obj_doorB、obj_markerA（共 16 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）
+- `room_tundra_poffzone` id=66 — 雪镇 - 大犬汪 | 560x240 | 实例 45 | Tile 242 | 启用背景: — | 对象: obj_sur、obj_mainchara、obj_dogpoff、obj_pofftrigger、obj_smalldoghouse、obj_snowpoff（共 18 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）
+- `room_tundra_town` id=68 — 雪镇 - 镇子 [SAVE] | 2720x240 | 实例 163 | Tile 1637 | 启用背景: — | 对象: obj_waterdivot_test、obj_bigdog、obj_sul、obj_solidextall_2、obj_sur、obj_mainchara（共 59 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）
+- `room_water_preundyne` id=110 — 瀑布 - 桥 [SAVE] | 720x240 | 实例 20 | Tile 480 | 启用背景: — | 对象: obj_watercave_fader、obj_mainchara、obj_doorB、obj_markerA、obj_doorA、obj_markerB（共 13 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）
+- `room_water_undynebridge` id=111 — 瀑布 - 桥上躲避安黛因 | 1940x1240 | 实例 265 | Tile 1894 | 启用背景: — | 对象: obj_nospear、obj_solidlongleft、obj_solidextall_2、obj_solidtall_2、obj_mainchara、obj_undyneencounter3（共 17 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）
+- `room_water_waterfall3` id=108 — 瀑布 - 宫殿远景 | 1400x240 | 实例 12 | Tile 2 | 启用背景: bg_waterfalltex、bg_waterfall_castle | 对象: obj_mainchara、obj_backgrounder_castle、obj_doorB、obj_markerA、obj_mkid_shadow、obj_doorA（共 10 种对象）
+  - 理由: 对象驱动背景（obj_backgrounder_* 实例）；同时有启用背景 2 层
+
+## A 纯 Tile（237）
+
+- `room_asghouse3` id=222 — 新家 - 走廊 | 800x240 | 实例 30 | Tile 93 | 启用背景: — | 对象: obj_mirrorreflection、obj_solidtall、obj_mainchara、obj_solidsmall、obj_doorD、obj_markerC（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_asgoreroom` id=223 — 新家 - 艾斯戈尔的房间 | 320x240 | 实例 34 | Tile 1 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_solidsmall、obj_readable_room1（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_basement1` id=38 — 托丽尔的地下室 1 | 500x240 | 实例 19 | Tile 179 | 启用背景: — | 对象: obj_downstairs、obj_solidtall、obj_mainchara、obj_sdl、obj_solidsmall、obj_door_ruins13（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_basement1_final` id=226 — 新家 - 地下室 1 | 500x240 | 实例 20 | Tile 358 | 启用背景: — | 对象: obj_downstairs、obj_solidtall、obj_mainchara、obj_sdl、obj_solidsmall、obj_markerX（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_basement2` id=39 — 托丽尔的地下室 2 | 500x240 | 实例 12 | Tile 185 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_doorA、obj_markerB、obj_doorB、obj_markerA（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_basement2_final` id=227 — 新家 - 地下室 2 | 500x240 | 实例 13 | Tile 321 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_doorA、obj_markerB、obj_doorB、obj_markerA（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_basement3` id=40 — 托丽尔的地下室 3 | 320x240 | 实例 21 | Tile 102 | 启用背景: — | 对象: obj_solidtall、obj_solidtall_2、obj_mainchara、obj_doorB、obj_doorA、obj_markerA（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_basement3_final` id=228 — 新家 - 地下室 3 | 320x240 | 实例 19 | Tile 198 | 启用背景: — | 对象: obj_solidtall、obj_solidtall_2、obj_mainchara、obj_doorB、obj_doorA、obj_markerA（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_basement4` id=41 — 托丽尔的地下室: 托丽尔的 Boss 战 | 320x240 | 实例 28 | Tile 115 | 启用背景: — | 对象: obj_finaldoor、obj_solidtall_2、obj_mainchara、obj_doorB、obj_torieltrigger12、obj_markerA（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_basement4_final` id=229 — 新家 - 地下室 4 | 320x240 | 实例 19 | Tile 211 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_doorA、obj_markerB（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_basement5` id=42 — 托丽尔的地下室: 即将遇到小花的走廊 | 320x1620 | 实例 14 | Tile 312 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_solidsmall、obj_markerA、obj_doorA、obj_doorB（共 8 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_castle_coffins1` id=233 — 王座 入口 - 下楼 | 320x540 | 实例 12 | Tile 81 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_doorBmusicfade、obj_markerA、obj_doorA、obj_markerB（共 7 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_castle_coffins2` id=234 — 王座 入口 - 棺材 | 520x240 | 实例 32 | Tile 177 | 启用背景: — | 对象: obj_coffin、obj_mainchara、obj_solidsmall、obj_doorB、obj_markerA、obj_readable_room1（共 7 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_castle_elevatorout` id=216 — 城堡 - 电梯 [SAVE] | 520x240 | 实例 26 | Tile 319 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_doorA、obj_markerB、obj_savepoint（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_castle_finalshoehorn` id=232 — 王座 入口 [SAVE] | 820x540 | 实例 34 | Tile 543 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_savepoint、obj_doorB、obj_markerA、obj_markerB（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_castle_front` id=219 — 新家 [SAVE] | 320x540 | 实例 32 | Tile 529 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_savepoint、obj_markerB、obj_doorBmusicfade、obj_markerA（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_castle_throneroom` id=235 — 王座 房间 [SAVE] | 320x600 | 实例 49 | Tile 485 | 启用背景: — | 对象: obj_solidextall_2、obj_solidtall、obj_garden_overlayshadow、obj_mainchara、obj_asgorethrone、obj_torielthrone（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_controltest` id=289 — （未登记） | 320x240 | 实例 1 | Tile 18 | 启用背景: — | 对象: obj_controltest
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_dogshrine` id=335 — （未登记） | 320x240 | 实例 13 | Tile 136 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_solidexwide、obj_overworldcontroller、obj_dogshrine、obj_doorXmusicfade（共 7 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_end_beach` id=280 — （未登记） | 320x240 | 实例 1 | Tile 65 | 启用背景: — | 对象: obj_endbeachanim
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_end_metta` id=281 — （未登记） | 320x240 | 实例 1 | Tile 238 | 启用背景: — | 对象: obj_endmettevent
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_end_myroom` id=285 — （未登记） | 320x240 | 实例 1 | Tile 77 | 启用背景: — | 对象: obj_endmyroom
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_end_school` id=282 — （未登记） | 320x480 | 实例 1 | Tile 330 | 启用背景: — | 对象: obj_endschoolanim
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire10` id=162 — 热域 - 传送带开关谜题 | 840x240 | 实例 62 | Tile 325 | 启用背景: — | 对象: obj_triswitch、obj_conveyorl、obj_conveyorr、obj_mainchara、obj_doorA、obj_markerB（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire10A_old` id=298 — （未登记） | 1220x240 | 实例 9 | Tile 300 | 启用背景: — | 对象: obj_conveyorr、obj_mainchara、obj_conveyorsnapper、obj_echoflower、obj_doorB、obj_markerA（共 8 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire10_old` id=297 — （未登记） | 1320x240 | 实例 72 | Tile 260 | 启用背景: — | 对象: obj_conveyorl、obj_conveyord、obj_solidextall_2、obj_mainchara、obj_conveyorpuzzle1、obj_solidsmall（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire3` id=143 — 热域 - 实验室出口 | 480x340 | 实例 42 | Tile 256 | 启用背景: — | 对象: obj_alabdoor_l、obj_solidextall_2、obj_sul、obj_mainchara、obj_lavaoogmusic、obj_markerC（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire4` id=296 — （未登记） | 1420x540 | 实例 30 | Tile 299 | 启用背景: — | 对象: obj_bounceright、obj_mainchara、obj_lavamusic、obj_notify_room、obj_doorA、obj_markerB（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire5` id=144 — 热域 - 传送带 1 | 320x1640 | 实例 189 | Tile 611 | 启用背景: — | 对象: obj_conveyoru、obj_conveyord、obj_conveyorr、obj_conveyorl、obj_solidextall_2、obj_solidtall（共 22 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire6` id=145 — 热域 - 岩浆房 [SAVE] | 860x440 | 实例 118 | Tile 605 | 启用背景: — | 对象: obj_true_lavawaver、obj_bounceright、obj_bounceleft、obj_bouncedown、obj_bounceup、obj_solidextall_2（共 23 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire6A` id=146 — 热域 - 烧焦的平底锅 | 620x240 | 实例 78 | Tile 218 | 启用背景: — | 对象: obj_true_lavawaver、obj_conveyoru、obj_conveyorr、obj_conveyorl、obj_conveyord、obj_bounceleft（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire7` id=148 — 热域 - 谜题 门 1 | 520x560 | 实例 90 | Tile 635 | 启用背景: — | 对象: obj_true_lavawaver、obj_chipdoor_l、obj_chipdoor_r、obj_bounceleft、obj_bounceright、obj_bouncedown（共 25 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire8` id=149 — 热域 - 左边谜题的入口 | 360x240 | 实例 31 | Tile 188 | 启用背景: — | 对象: obj_true_lavawaver、obj_bluelaser_o、obj_mainchara、obj_doorB、obj_markerA、obj_npc_room（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire9` id=151 — 热域 - 右边谜题的入口 | 320x240 | 实例 28 | Tile 166 | 启用背景: — | 对象: obj_true_lavawaver、obj_solidextall_2、obj_mainchara、obj_npc_room、obj_doorA、obj_markerB（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_apron` id=161 — 热域 - 染色围裙 | 520x240 | 实例 21 | Tile 140 | 启用背景: — | 对象: obj_solidextall_2、obj_solidtall_2、obj_mainchara、obj_solidsmall、obj_npc_room、obj_waveguy（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_boysnightout` id=165 — 热域 - 守卫好基友 | 620x440 | 实例 32 | Tile 324 | 启用背景: — | 对象: obj_solidtall、obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_markerB（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_conveyorlaser` id=172 — 热域 - F3 南边谜题入口 | 1000x440 | 实例 116 | Tile 379 | 启用背景: — | 对象: obj_conveyorr、obj_conveyoru、obj_conveyord、obj_conveyorl、obj_solidtall、obj_solidextall_2（共 26 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_cookingshow` id=154 — 热域 - 厨房 | 640x480 | 实例 48 | Tile 414 | 启用背景: — | 对象: obj_counterscroller、obj_mettcounter、obj_mainchara、obj_cookshowevent、obj_markerA、obj_doorBmusicfade（共 20 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core1` id=189 — 热域 - 核心电梯 | 320x300 | 实例 44 | Tile 319 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_doorBmusicfade、obj_coremusic、obj_markerA（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core2` id=190 — 热域 - 核心 洞 | 320x340 | 实例 35 | Tile 26 | 启用背景: — | 对象: obj_mainchara、obj_solidsmall、obj_doorB、obj_markerA、obj_phonecall_room、obj_hearthflame（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core3` id=191 — 热域 - 核心 北边的电梯 | 320x420 | 实例 33 | Tile 188 | 启用背景: — | 对象: obj_solidtall、obj_solidextall_2、obj_mainchara、obj_doorD、obj_markerC、obj_core_enemyevent（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core4` id=192 — 热域 - 核心 顺序错误的激光 | 680x240 | 实例 59 | Tile 190 | 启用背景: — | 对象: obj_core_laserswitch、obj_orangelaser_o、obj_bluelaser_o、obj_mainchara、obj_doorB、obj_markerA（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core5` id=193 — 热域 - 核心 十字路口 | 320x240 | 实例 31 | Tile 159 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_doorA、obj_markerB（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_bottomleft` id=197 — 热域 - 核心 冰块储存(?) | 320x240 | 实例 43 | Tile 129 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_doorA、obj_markerB（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_bottomright` id=203 — 热域 - 核心 尽头 - 4 | 320x240 | 实例 26 | Tile 70 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_markeru、obj_door_u（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_branch` id=196 — 热域 - 核心 分支 [SAVE] | 320x240 | 实例 56 | Tile 227 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_savepoint、obj_doorB、obj_markerA、obj_phonecall_room（共 22 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_bridge` id=209 — 热域 - 核心 尽头 - 1 | 620x240 | 实例 59 | Tile 188 | 启用背景: — | 对象: obj_mainchara、obj_markerX、obj_door_ruins13、obj_doorA、obj_markerB、obj_encount_core1（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_center` id=204 — 热域 - 核心 迷路 | 320x240 | 实例 37 | Tile 129 | 启用背景: — | 对象: obj_solidtall、obj_solidextall_2、obj_mainchara、obj_readable_room1、obj_markerX、obj_door_ruins13（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_final` id=212 — 热域 - 核心 最终电梯的入口 | 1220x240 | 实例 38 | Tile 385 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_alphysfollow_event（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_freebattle` id=194 — 热域 - 核心 死路 | 320x240 | 实例 34 | Tile 123 | 启用背景: — | 对象: obj_sul、obj_sur、obj_mainchara、obj_doorB、obj_markerA、obj_core_enemyevent2（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_laserfun` id=195 — 热域 - 核心 能量激光谜题 | 1200x240 | 实例 72 | Tile 234 | 启用背景: — | 对象: obj_solidextall_2、obj_powerlaser_event、obj_bluelaser_o、obj_orangelaser_o、obj_mainchara、obj_doorD（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_left` id=198 — 热域 - 核心 西边谜题入口 | 320x240 | 实例 35 | Tile 110 | 启用背景: — | 对象: obj_solidextall_2、obj_solidtall、obj_mainchara、obj_markerA、obj_doorA、obj_markerB（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_metttest` id=211 — 热域 - 核心 镁塔顿的房间 | 320x1000 | 实例 41 | Tile 350 | 启用背景: — | 对象: obj_mettboss_event、obj_solidextall_2、obj_mainchara、obj_doorBmusicfade、obj_markerA、obj_labmusic（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_premett` id=210 — 热域 - 核心 尽头 [SAVE] | 320x240 | 实例 47 | Tile 152 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_savepoint、obj_coremusic、obj_door_u（共 22 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_right` id=202 — 热域 - 核心 尽头 - 3 | 320x240 | 实例 58 | Tile 186 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_readable_room1、obj_readable_room2（共 21 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_top` id=200 — 热域 - 核心 西边谜题入口 + 2 | 320x240 | 实例 52 | Tile 272 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_doorA、obj_markerB（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_topleft` id=199 — 热域 - 核心 西边谜题入口 + 1 | 320x240 | 实例 30 | Tile 252 | 启用背景: — | 对象: obj_solidtall、obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_doorA（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_topright` id=201 — 热域 - 核心 南边有 100G 的垃圾桶 | 320x240 | 实例 32 | Tile 212 | 启用背景: — | 对象: obj_solidextall_2、obj_solidtall、obj_mainchara、obj_doorB、obj_markerA、obj_doorA（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_treasureleft` id=206 — 热域 - 核心 有魅力汉堡的垃圾桶 | 320x240 | 实例 23 | Tile 101 | 启用背景: — | 对象: obj_sur、obj_sul、obj_solidextall_2、obj_mainchara、obj_markerX、obj_door_ruins13（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_treasureright` id=207 — 热域 - 核心 有 100G 的垃圾桶 | 320x240 | 实例 22 | Tile 101 | 启用背景: — | 对象: obj_solidextall_2、obj_sul、obj_sur、obj_mainchara、obj_markerX、obj_door_ruins13（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_core_warrior` id=208 — 热域 - 核心 终极怪物桥 | 780x240 | 实例 36 | Tile 148 | 启用背景: — | 对象: obj_switch_room、obj_solidextall_2、obj_mainchara、obj_markerX、obj_door_ruins13、obj_warrior_event（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_dock` id=140 — 热域 - 船夫(妇) | 320x240 | 实例 29 | Tile 127 | 启用背景: — | 对象: obj_dogboat_thing、obj_mainchara、obj_markerA、obj_ambientwater、obj_doorBmusicfade、obj_solidsmall（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_elevator` id=213 — （未登记） | 320x240 | 实例 26 | Tile 42 | 启用背景: — | 对象: obj_elevatorpanel、obj_mainchara、obj_door_s_musfade、obj_markers、obj_solidsmall、obj_overworldcontroller
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_elevator_l1` id=214 — 热域 - 电梯 L1 | 320x240 | 实例 26 | Tile 68 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_solidsmall、obj_door_s_musfade、obj_markers（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_elevator_l2` id=168 — 热域 - 电梯 L2 | 320x240 | 实例 26 | Tile 106 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_markerA、obj_solidsmall、obj_door_s_musfade（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_elevator_l3` id=169 — 热域 - 电梯 L3 | 320x240 | 实例 29 | Tile 74 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_solidsmall、obj_door_s_musfade、obj_markers（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_elevator_r1` id=156 — 热域 - 电梯 R1 | 320x240 | 实例 28 | Tile 104 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_markerA、obj_solidsmall、obj_door_s_musfade（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_elevator_r2` id=157 — 热域 - 电梯 R2 | 320x240 | 实例 31 | Tile 85 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_solidsmall、obj_door_s_musfade、obj_markers（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_elevator_r3` id=187 — 热域 - 电梯 R3 | 320x240 | 实例 28 | Tile 65 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_solidsmall、obj_door_s_musfade、obj_markers（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_finalelevator` id=215 — 热域 - 核心 电梯入口 | 320x240 | 实例 28 | Tile 42 | 启用背景: — | 对象: obj_finalelevatorpanel、obj_mainchara、obj_door_s_musfade、obj_markers、obj_solidsmall、obj_overworldcontroller
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_hotdog` id=158 — 热域 - 热狗站 | 320x240 | 实例 28 | Tile 130 | 启用背景: — | 对象: obj_bottomglower、obj_mainchara、obj_hotdoggen、obj_sans_room、obj_sentrystation_bg、obj_markerA（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_hotelbed` id=186 — 热域 - 酒店旁的小巷 | 320x240 | 实例 25 | Tile 116 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_bedlump、obj_solidsmall、obj_doorBmusicfade、obj_markerA（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_hoteldoors` id=185 — 热域 - 酒店走廊 | 820x240 | 实例 22 | Tile 97 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_readable_room1、obj_knock_room、obj_slimejanitor、obj_doorD（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_hotelfront_1` id=181 — 热域 - 好棒冰站 2 | 520x240 | 实例 41 | Tile 177 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_doorD、obj_markerX、obj_markerC（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_hotelfront_2` id=182 — 热域 - 酒店入口 | 480x400 | 实例 56 | Tile 443 | 启用背景: — | 对象: obj_sur、obj_sul、obj_solidextall_2、obj_mainchara、obj_markerA、obj_doorXmusicfade（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_hotellobby` id=183 — 热域 - 酒店大厅 [SAVE] | 520x600 | 实例 74 | Tile 371 | 启用背景: — | 对象: obj_elevatordoor、obj_solidextall_2、obj_mainchara、obj_hotelmusic、obj_doorBmusicfade、obj_markerA（共 29 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_lab1` id=141 — 热域 - 实验室 | 1100x240 | 实例 77 | Tile 559 | 启用背景: — | 对象: obj_slidingdoor、obj_mettwallhole、obj_dogfoodbag、obj_alphysconveyor、obj_undynetrash、obj_labdarkness（共 31 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_lab2` id=142 — 热域 - 实验室二楼 | 860x240 | 实例 77 | Tile 584 | 启用背景: — | 对象: obj_alphysconveyor、obj_sideconveyorl、obj_solidextall_2、obj_mainchara、obj_solidthin、obj_doorB（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_labelevator` id=242 — 实验室电梯 | 320x240 | 实例 28 | Tile 42 | 启用背景: — | 对象: obj_finalelevatorpanel、obj_mainchara、obj_door_s_musfade、obj_markers、obj_solidsmall、obj_overworldcontroller
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_lasers1` id=147 — 热域 - 激光 1 | 1160x240 | 实例 41 | Tile 953 | 启用背景: — | 对象: obj_laserswitch1、obj_solidextall_2、obj_orangelaser_o、obj_bluelaser_o、obj_mainchara、obj_phonecall_room（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_mewmew2` id=164 — 热域 - 蠢念头区域 [SAVE] | 520x240 | 实例 24 | Tile 145 | 启用背景: — | 对象: obj_mousehole、obj_mainchara、obj_doorB、obj_doorA、obj_markerB、obj_markerA（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_multitile` id=180 — 热域 - 踩砖谜题 2 | 1360x240 | 实例 224 | Tile 223 | 启用背景: — | 对象: obj_tilegreen、obj_tilepink、obj_tilered、obj_tileyellow、obj_tileorange、obj_tileblue（共 21 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_newsreport` id=166 — 热域 - 镁塔顿的新闻报道 | 980x660 | 实例 110 | Tile 737 | 启用背景: — | 对象: obj_laserswitch1、obj_conveyoru、obj_bounceleft、obj_bounceup、obj_solidextall_2、obj_solidtall_2（共 23 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_pacing` id=178 — 热域 - 镁塔顿海报 | 320x240 | 实例 13 | Tile 88 | 启用背景: — | 对象: obj_sul、obj_mainchara、obj_doorBmusicfade、obj_markerA、obj_doorAmusicfade、obj_markerB（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_preshootguy4` id=174 — 热域 - F3 北边谜题入口 | 320x320 | 实例 34 | Tile 83 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_door_t、obj_doorA、obj_markerB、obj_markert（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_restaurant` id=184 — 热域 - 酒店餐馆 | 1020x320 | 实例 138 | Tile 514 | 启用背景: — | 对象: obj_restaurant_darker、obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_sansdate3（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_rpuzzle` id=163 — 热域 - 击毁敌船谜题 | 620x540 | 实例 132 | Tile 528 | 启用背景: — | 对象: obj_rtile、obj_conveyoru、obj_conveyorr、obj_conveyord、obj_bounceleft、obj_bounceright（共 25 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_savepoint2` id=176 — 热域 - 蜘蛛 入口 [SAVE] | 500x240 | 实例 42 | Tile 153 | 启用背景: — | 对象: obj_spiderstrand、obj_sur、obj_mainchara、obj_markerX、obj_door_ruins13、obj_savepoint（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_shootguy_1` id=152 — 热域 - 右边的谜题 | 320x240 | 实例 29 | Tile 51 | 启用背景: — | 对象: obj_whitebox_o、obj_targetguy、obj_shootguy、obj_solidtall_2、obj_mainchara、obj_solidsmall（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_shootguy_2` id=150 — 热域 - 左边的谜题 | 320x240 | 实例 31 | Tile 59 | 启用背景: — | 对象: obj_whitebox_o、obj_targetguy、obj_shootguy、obj_solidtall_2、obj_mainchara、obj_solidsmall（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_shootguy_3` id=173 — 热域 - F3 南边谜题 | 320x240 | 实例 31 | Tile 59 | 启用背景: — | 对象: obj_whitebox_o、obj_targetguy、obj_shootguy、obj_solidtall_2、obj_mainchara、obj_solidsmall（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_shootguy_4` id=175 — 热域 - F3 北边谜题 | 320x240 | 实例 30 | Tile 54 | 启用背景: — | 对象: obj_whitebox_o、obj_targetguy、obj_shootguy、obj_solidtall_2、obj_mainchara、obj_solidsmall（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_shootguy_5` id=205 — 热域 - 核心 西边的谜题 | 320x240 | 实例 31 | Tile 61 | 启用背景: — | 对象: obj_whitebox_o、obj_targetguy、obj_shootguy、obj_solidtall_2、obj_mainchara、obj_solidsmall（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_sorry` id=160 — 热域 - 美术俱乐部（So Sorry） | 320x240 | 实例 19 | Tile 106 | 启用背景: — | 对象: obj_mainchara、obj_overworldcontroller、obj_markerA、obj_solidextall_2、obj_solidexwide、obj_solidsmall（共 8 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_spider` id=177 — 热域 - 蜘蛛 房间 | 1020x240 | 实例 92 | Tile 124 | 启用背景: — | 对象: obj_spiderstrand、obj_solidlongleft、obj_sul、obj_sur、obj_mainchara、obj_solidsmall（共 20 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_spidershop` id=170 — 热域 - 蜘蛛烘焙义卖 | 480x240 | 实例 58 | Tile 146 | 启用背景: — | 对象: obj_mainchara、obj_smallweb、obj_bigweb、obj_spidertable、obj_solidsmall、obj_readable_room1（共 20 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_turn` id=153 — 热域 - 通往击毁敌船谜题的桥 | 800x240 | 实例 32 | Tile 201 | 启用背景: — | 对象: obj_bottomglower、obj_bounceright、obj_solidextall_2、obj_mainchara、obj_markert、obj_door_t（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_walkandbranch` id=159 — 热域 - 美术俱乐部入口 | 820x240 | 实例 50 | Tile 236 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorC、obj_markerD、obj_markerB、obj_markerA（共 21 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fire_walkandbranch2` id=171 — 热域 - F3 谜题 门 | 900x660 | 实例 122 | Tile 362 | 启用背景: — | 对象: obj_chipdoor_l、obj_chipdoor_r、obj_bounceright、obj_bounceup、obj_bouncedown、obj_bounceleft（共 28 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_fogroom` id=81 — 雪镇 - 帕派瑞斯的战斗 | 900x240 | 实例 81 | Tile 508 | 启用背景: — | 对象: obj_waterdivot_test、obj_sur、obj_sul、obj_fogmaker、obj_mainchara、obj_icecube_room（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ice_dog` id=266 — （未登记） | 320x240 | 实例 23 | Tile 97 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_markerA、obj_doorBmusicfade、obj_papcomputer、obj_iceroom_dog（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_icecave1` id=265 — 雪镇 - 冰洞 1 | 320x580 | 实例 39 | Tile 111 | 启用背景: — | 对象: obj_mysterydoor、obj_glowshroom、obj_solidtall、obj_solidtall_2、obj_icecave_fader、obj_glowfly1（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_meetundyne_old` id=303 — （未登记） | 560x240 | 实例 14 | Tile 222 | 启用背景: — | 对象: obj_mainchara、obj_sign_room、obj_undyne1、obj_fearundynenpc1、obj_fearundynenpc2、obj_markerB（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_mysteryman` id=269 — （未登记） | 320x240 | 实例 15 | Tile 40 | 启用背景: — | 对象: obj_mainchara、obj_overworldcontroller、obj_solidextall_2、obj_solidexwide、obj_mysteryman、obj_door_s_musfade（共 7 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_riverman_transition` id=316 — （未登记） | 660x240 | 实例 4 | Tile 166 | 启用背景: — | 对象: obj_dogboat_thing、obj_mainchara、obj_markerX、obj_overworldcontroller
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins1` id=6 — 遗迹 - 入口 [SAVE] | 320x480 | 实例 61 | Tile 368 | 启用背景: — | 对象: obj_solidtall、obj_sur、obj_sul、obj_solidtall_2、obj_mainchara、obj_solidsmall（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins10` id=16 — 遗迹 - 陷阱门走廊谜题 | 580x760 | 实例 50 | Tile 652 | 启用背景: — | 对象: obj_holedown、obj_solidtall_2、obj_solidtall、obj_mainchara、obj_solidsmall、obj_holeup（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins11` id=17 — 遗迹 - 会说话的岩石 | 560x240 | 实例 48 | Tile 310 | 启用背景: — | 对象: obj_fakewatershadowr、obj_fakewatershadowl、obj_fakewaterl、obj_fakewaterr、obj_spikes_room、obj_solidtall_2（共 22 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins12` id=19 — 遗迹 - 小幽灵 Napstablook | 320x240 | 实例 28 | Tile 173 | 启用背景: — | 对象: obj_mainchara、obj_solidsmall、obj_markerA、obj_doorB、obj_markerX、obj_door_ruins13（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins12A` id=18 — 遗迹 - 老鼠洞 [SAVE] | 320x240 | 实例 25 | Tile 132 | 启用背景: — | 对象: obj_mousehole、obj_solidwide、obj_solidlong、obj_solidsmall、obj_solidtall_2、obj_mainchara（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins12B` id=20 — 遗迹 - 蜘蛛烘焙义卖 | 320x240 | 实例 15 | Tile 117 | 启用背景: — | 对象: obj_solidtall、obj_solidlong、obj_solidwide、obj_mainchara、obj_bigweb、obj_sign_room（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins12B_old` id=300 — （未登记） | 320x240 | 实例 13 | Tile 81 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_candydish2、obj_markerC、obj_doorD、obj_solidlong（共 8 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins13` id=21 — 遗迹 - 两只青蛙 | 640x300 | 实例 25 | Tile 341 | 启用背景: — | 对象: obj_solidtall、obj_solidtall_2、obj_mainchara、obj_markerX、obj_door_ruins13、obj_encounterer_ruins5（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins14` id=22 — 遗迹 - 藏在陷阱们谜题下的开关 | 640x720 | 实例 43 | Tile 623 | 启用背景: — | 对象: obj_spikes_room、obj_holedown3、obj_solidtall、obj_solidtall_2、obj_mainchara、obj_solidsmall（共 21 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins15A` id=23 — 遗迹 - 三个柱子房间 1 | 400x440 | 实例 37 | Tile 274 | 启用背景: — | 对象: obj_spikes_room、obj_solidtall_2、obj_solidtall、obj_mainchara、obj_pillar_1、obj_markerA（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins15B` id=24 — 遗迹 - 三个柱子房间 2 | 400x440 | 实例 38 | Tile 264 | 启用背景: — | 对象: obj_spikes_room、obj_solidtall、obj_solidtall_2、obj_mainchara、obj_pillar_1、obj_markerA（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins15C` id=25 — 遗迹 - 三个柱子房间 3 | 400x440 | 实例 37 | Tile 265 | 启用背景: — | 对象: obj_spikes_room、obj_solidtall、obj_solidlong、obj_solidtall_2、obj_solidwide、obj_solidsmall（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins15D` id=26 — 遗迹 - 三个柱子房间 4 | 400x440 | 实例 46 | Tile 275 | 启用背景: — | 对象: obj_spikes_room、obj_solidtall、obj_solidlong、obj_solidtall_2、obj_solidwide、obj_solidsmall（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins15E` id=27 — 遗迹 - 柱子房间的坑 | 320x240 | 实例 9 | Tile 152 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_door_ruins13、obj_markerX、obj_solidlong、obj_overworldcontroller
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins16` id=28 — 遗迹 - 三条路的分叉 | 600x400 | 实例 33 | Tile 507 | 启用背景: — | 对象: obj_solidtall_2、obj_mainchara、obj_doorA、obj_markerB、obj_doorD、obj_markerC（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins17` id=29 — 遗迹 - 说托丽尔闲话的青蛙 | 320x640 | 实例 15 | Tile 97 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_doorB、obj_markerA、obj_markerB、obj_doorA（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins19` id=31 — 遗迹 - 家 [SAVE] | 320x540 | 实例 35 | Tile 437 | 启用背景: — | 对象: obj_nastrytree_bottom、obj_solidtall、obj_mainchara、obj_markerX、obj_door_ruins13、obj_savepoint（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins2` id=7 — 遗迹 - 托丽尔踩砖谜题 | 320x240 | 实例 33 | Tile 171 | 启用背景: — | 对象: obj_floorswitch1、obj_wallswitchcut1、obj_ruinsdoor1、obj_solidtall、obj_mainchara、obj_solidsmall（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins3` id=8 — 遗迹 - 开关谜题 | 740x240 | 实例 72 | Tile 454 | 启用背景: — | 对象: obj_fakewateropenr、obj_fakewateropenl、obj_fakewaterl、obj_fakewaterr、obj_fakewatershadowl、obj_fakewatershadowr（共 29 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins4` id=9 — 遗迹 - 人偶房间 | 320x240 | 实例 25 | Tile 160 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_solidsmall、obj_doorB、obj_markerA、obj_doorA（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins5` id=10 — 遗迹 - 尖刺谜题 | 1200x240 | 实例 161 | Tile 648 | 启用背景: — | 对象: obj_spiketile1、obj_spiketile2、obj_fakewateropenr、obj_fakewateropenl、obj_fakewateropenm、obj_fakewaterl（共 24 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins6` id=11 — 遗迹 - 长走廊 | 2500x240 | 实例 23 | Tile 1319 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_solidsmall、obj_markerA、obj_torinteractable6、obj_toroverworld7（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins7` id=12 — 遗迹 - 落叶堆 [SAVE] | 320x480 | 实例 35 | Tile 357 | 启用背景: — | 对象: obj_solidtall、obj_solidtall_2、obj_mainchara、obj_solidsmall、obj_markerA、obj_doorC（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins7A` id=13 — 遗迹 - 糖果柱 | 320x240 | 实例 39 | Tile 150 | 启用背景: — | 对象: obj_fakewatershadowr、obj_fakewatershadowl、obj_fakewaterr、obj_fakewaterl、obj_solidtall_2、obj_solidtall（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins8` id=14 — 遗迹 - 强制掉落陷阱 | 320x640 | 实例 20 | Tile 266 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_encounter_ruins1、obj_holeup、obj_holedown2、obj_markerB（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_ruins9` id=15 — 遗迹 - 第一个推石头谜题 | 480x240 | 实例 33 | Tile 261 | 启用背景: — | 对象: obj_spikes_room、obj_solidtall、obj_solidtall_2、obj_mainchara、obj_solidsmall、obj_encounter_ruins1（共 20 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_torhouse3` id=34 — 托丽尔的家: 走廊 | 800x240 | 实例 29 | Tile 92 | 启用背景: — | 对象: obj_mirrorreflection、obj_solidtall、obj_mainchara、obj_solidsmall、obj_doorD、obj_markerC（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_torielroom` id=35 — 托丽尔的家: 托丽尔的房间 | 320x240 | 实例 44 | Tile 1 | 启用背景: — | 对象: obj_solidsmall、obj_mainchara、obj_doorB、obj_markerA、obj_readable_room2、obj_readable_room1（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_bedroom` id=251 — 真实验室 - 卧室 [SAVE] | 540x540 | 实例 70 | Tile 305 | 启用背景: — | 对象: obj_bed_dark、obj_wallmonitor、obj_bed_watcher、obj_solidextall_2、obj_labfog、obj_mainchara（共 24 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_bluelever` id=253 — 真实验室 - 南北边的蓝色钥匙孔 | 320x240 | 实例 14 | Tile 31 | 启用背景: — | 对象: obj_colorlever、obj_torn_note、obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_castle_elevator` id=261 — 真实验室 - 电梯 2 | 320x240 | 实例 42 | Tile 40 | 启用背景: — | 对象: obj_finalelevatorpanel、obj_labelevator_b、obj_mainchara、obj_solidsmall、obj_markerX、obj_readable_room1（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_cooler` id=258 — 真实验室 - 西北边的冰箱 | 720x240 | 实例 47 | Tile 187 | 启用背景: — | 对象: obj_labfan、obj_darkfridge、obj_wallmonitor、obj_solidextall_2、obj_labfog、obj_mainchara（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_determination` id=256 — 真实验室 - 西北边的决心提取器 | 460x240 | 实例 40 | Tile 63 | 启用背景: — | 对象: obj_wallmonitor、obj_solidextall_2、obj_amalgam_save、obj_mainchara、obj_readable_room1、obj_doorA（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_elevator` id=244 — 真实验室 - 电梯入口 | 320x240 | 实例 18 | Tile 50 | 启用背景: — | 对象: obj_labdoor、obj_solidextall_2、obj_mainchara、obj_doorA、obj_markerB、obj_solidsmall（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_elevatorinside` id=243 — 真实验室 - 电梯 | 320x240 | 实例 32 | Tile 30 | 启用背景: — | 对象: obj_finalelevatorpanel、obj_labelevator_open、obj_mainchara、obj_solidsmall、obj_doorAmusicfade、obj_markerB（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_fan` id=260 — 真实验室 - 风扇 | 580x240 | 实例 36 | Tile 33 | 启用背景: — | 对象: obj_labfan、obj_wallmonitor、obj_labfog、obj_mainchara、obj_amalgam_dogevent、obj_readable_room1（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_greenlever` id=259 — 真实验室 - 绿色钥匙孔 | 320x240 | 实例 14 | Tile 31 | 启用背景: — | 对象: obj_colorlever、obj_torn_note、obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_hall1` id=245 — 真实验室 - 南边的走廊 | 840x240 | 实例 25 | Tile 104 | 启用背景: — | 对象: obj_wallmonitor、obj_solidlongleft、obj_solidextall_2、obj_mainchara、obj_solidsmall、obj_doorB（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_hall2` id=247 — 真实验室 - 西边的走廊 1 | 420x240 | 实例 12 | Tile 48 | 启用背景: — | 对象: obj_wallmonitor、obj_mainchara、obj_doorB、obj_doorA、obj_markerB、obj_readable_room1（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_hall3` id=254 — 真实验室 - 北边的走廊 2 | 1160x240 | 实例 36 | Tile 149 | 启用背景: — | 对象: obj_wallmonitor、obj_solidtall_2、obj_mainchara、obj_readable_room1、obj_readable_room2、obj_markert（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_hub` id=246 — 真实验室 [SAVE] | 500x620 | 实例 47 | Tile 146 | 启用背景: — | 对象: obj_labdoor、obj_wallmonitor、obj_torn_note、obj_solidtall、obj_solidextall_2、obj_mainchara（共 23 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_mirror` id=252 — 真实验室 - 南北边的走廊 | 1000x240 | 实例 31 | Tile 298 | 启用背景: — | 对象: obj_mirrorreflection、obj_mirror_overlay、obj_wallmonitor、obj_solidlongleft、obj_labfog、obj_amalgam_exc（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_operatingroom` id=248 — 真实验室 - 西边的坠落(?) | 580x240 | 实例 51 | Tile 121 | 启用背景: — | 对象: obj_wallmonitor、obj_solidextall_2、obj_labfog、obj_mainchara、obj_readable_room1、obj_operatingtable（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_power` id=263 — 真实验室 - 动力室 | 320x420 | 实例 23 | Tile 130 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_solidsmall、obj_lab_powerswitch（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_prebed` id=250 — 真实验室 - 北边的走廊 1 | 600x240 | 实例 21 | Tile 63 | 启用背景: — | 对象: obj_wallmonitor、obj_solidextall_2、obj_mainchara、obj_door_t、obj_markert、obj_doorA（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_prepower` id=262 — 真实验室 - 动力室走廊 | 580x240 | 实例 23 | Tile 63 | 启用背景: — | 对象: obj_wallmonitor、obj_solidextall_2、obj_mainchara、obj_truelabmusic、obj_readable_room1、obj_solidsmall（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_redlever` id=249 — 真实验室 - 西边的红色钥匙孔 | 320x240 | 实例 14 | Tile 31 | 启用背景: — | 对象: obj_torn_note、obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_colorlever（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_shower` id=255 — 真实验室 - 绿色钥匙 | 320x240 | 实例 10 | Tile 27 | 启用背景: — | 对象: obj_showercurtain、obj_solidtall、obj_mainchara、obj_doorB、obj_markerA、obj_solidlong（共 7 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_truelab_tv` id=257 — 真实验室 - 黄色钥匙孔 + 电视 | 320x240 | 实例 28 | Tile 75 | 启用背景: — | 对象: obj_colorlever、obj_wallmonitor、obj_torn_note、obj_solidextall_2、obj_labtv_event、obj_mainchara（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra1` id=44 — 雪镇 - 遗迹出口 | 440x240 | 实例 25 | Tile 238 | 启用背景: — | 对象: obj_ruins_reentrance、obj_sur、obj_mainchara、obj_solidsmall、obj_markerB、obj_doorA（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra2` id=45 — 雪镇 - 黑暗的森林小径 | 2720x240 | 实例 48 | Tile 1203 | 启用背景: — | 对象: obj_stick、obj_solidlongleft、obj_solidtall_2、obj_mainchara、obj_creeptree1、obj_creeptree_stickbreak（共 20 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra3` id=46 — 雪镇 - 盒子路 [SAVE] | 400x240 | 实例 52 | Tile 344 | 启用背景: — | 对象: obj_sul、obj_sur、obj_mainchara、obj_solidsmall、obj_sdr、obj_doorC（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra3A` id=47 — 雪镇 - 钓鱼竿 | 320x240 | 实例 26 | Tile 256 | 启用背景: — | 对象: obj_waterdivot_test、obj_solidtall、obj_mainchara、obj_solidsmall、obj_markerA、obj_doorB（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra4` id=48 — 雪镇 - 帕派瑞斯的哨站 | 560x240 | 实例 82 | Tile 482 | 启用背景: — | 对象: obj_sul、obj_sur、obj_mainchara、obj_markerC、obj_doorD、obj_doorA（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra5` id=49 — 雪镇 - 遁狗 | 460x240 | 实例 44 | Tile 200 | 启用背景: — | 对象: obj_sul、obj_sur、obj_mainchara、obj_solidsmall、obj_dogehouse、obj_dogehouseback（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra6` id=50 — 雪镇 - 指路标 | 620x240 | 实例 93 | Tile 406 | 启用背景: — | 对象: obj_solidtall_2、obj_sul、obj_sur、obj_mainchara、obj_solidsmall、obj_iceevent（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra6A` id=51 — 雪镇 - 雪人 | 320x240 | 实例 28 | Tile 104 | 启用背景: — | 对象: obj_sul、obj_sur、obj_mainchara、obj_doorB、obj_markerA、obj_nicesnowman（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra7` id=52 — 雪镇 - 电击迷宫 | 320x240 | 实例 37 | Tile 219 | 启用背景: — | 对象: obj_sur、obj_mainchara、obj_doorD、obj_markerC、obj_papyrus2、obj_shockblock（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra8` id=53 — 雪镇 - 推雪球游戏 | 760x580 | 实例 198 | Tile 1471 | 启用背景: — | 对象: obj_golfhole、obj_solidtall、obj_sul、obj_sur、obj_mainchara、obj_doorB（共 27 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra8A` id=54 — 雪镇 - 两只狗守卫的房子 | 320x240 | 实例 30 | Tile 193 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_doorB、obj_markerA、obj_dogehouseback、obj_dogehouse（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra9` id=55 — 雪镇 - 怪物小孩的纵横谜题 | 320x240 | 实例 24 | Tile 340 | 启用背景: — | 对象: obj_sur、obj_sul、obj_mainchara、obj_doorA、obj_markerB、obj_papyrus3（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_dock` id=70 — 雪镇 - 船夫(妇) | 320x240 | 实例 23 | Tile 235 | 启用背景: — | 对象: obj_dogboat_thing、obj_mainchara、obj_markerA、obj_ambientwater、obj_doorBmusicfade、obj_markerX（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_garage` id=75 — （未登记） | 320x240 | 实例 17 | Tile 62 | 启用背景: — | 对象: obj_solidtall、obj_solidtall_2、obj_mainchara、obj_dogfood、obj_doggiebed、obj_spagnot（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_iceentrance` id=63 — 雪镇 - 冰面滑行的 XO 谜题 | 940x240 | 实例 250 | Tile 723 | 启用背景: — | 对象: obj_xoxo、obj_xoxocontroller1、obj_sul、obj_solidtall_2、obj_solidtall、obj_mainchara（共 23 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_iceexit_new` id=64 — 雪镇 - 会瞬移的衫斯 | 600x240 | 实例 44 | Tile 415 | 启用背景: — | 对象: obj_solidtall、obj_sur、obj_solidtall_2、obj_mainchara、obj_sans_room、obj_doublesans（共 21 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_icehole` id=62 — 雪镇 - 帕派瑞斯和衫斯的雪雕 | 320x240 | 实例 16 | Tile 120 | 启用背景: — | 对象: obj_solidtall、obj_solidtall_2、obj_mainchara、obj_sanssnowman、obj_papyrussnowman、obj_doorA（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_inn` id=71 — 雪镇 - 旅店 | 320x240 | 实例 54 | Tile 87 | 启用背景: — | 对象: obj_mainchara、obj_solidsmall、obj_townmusic、obj_townnpc_innlady、obj_readable_room1、obj_markert（共 8 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_inn_2f` id=72 — （未登记） | 320x240 | 实例 7 | Tile 110 | 启用背景: — | 对象: obj_innevent1、obj_mainchara、obj_markerA、obj_snoozer、obj_overworldcontroller
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_lesserdog` id=61 — 雪镇 - 狗屋 [SAVE] | 560x240 | 实例 55 | Tile 265 | 启用背景: — | 对象: obj_solidtall_2、obj_mainchara、obj_dogpillarparent、obj_dogneckparent、obj_dogneck2、obj_dogpillar2（共 30 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_library` id=74 — 雪镇 - 图书馆 | 320x240 | 实例 38 | Tile 101 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_libcounter、obj_cutetable、obj_readable_modernbook、obj_librarynpc_lizard2（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_placeholder` id=299 — （未登记） | 320x800 | 实例 189 | Tile 566 | 启用背景: — | 对象: obj_solidtall、obj_solidtall_2、obj_mainchara、obj_solidsmall、obj_iceeventup、obj_iceeventx4（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_randoblock` id=60 — 雪镇 - 踩砖谜题 | 320x240 | 实例 77 | Tile 170 | 启用背景: — | 对象: obj_specialtile、obj_mainchara、obj_doorA、obj_markerB、obj_papyrus4、obj_switch（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_rollsnow` id=301 — （未登记） | 320x240 | 实例 7 | Tile 65 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_rollgrow、obj_solidlong、obj_overworldcontroller
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_sansbasement` id=80 — （未登记） | 320x240 | 实例 24 | Tile 67 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_solidsmall、obj_readable_room1、obj_readable_room2、obj_readable_room3（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_sansroom_dark` id=79 — （未登记） | 1000x580 | 实例 22 | Tile 1 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_markert、obj_solidsmall、obj_door_t、obj_darkroom_event（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_snowpuzz` id=57 — 雪镇 - 狗夫妇 | 620x580 | 实例 154 | Tile 1078 | 启用背景: — | 对象: obj_spikes_room、obj_snowfloor、obj_sur、obj_sul、obj_solidtall、obj_mainchara（共 24 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_spaghetti` id=56 — 雪镇 - 意大利面 [SAVE] | 320x240 | 实例 37 | Tile 245 | 启用背景: — | 对象: obj_mousehole、obj_mainchara、obj_savepoint、obj_spaghetti、obj_microwave、obj_spagnot（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_town2` id=69 — 雪镇 - 冰狼 | 800x240 | 实例 55 | Tile 585 | 启用背景: — | 对象: obj_iceconveyorbelt、obj_silo1、obj_throwwolf、obj_solidtall、obj_solidextall_2、obj_solidtall_2（共 21 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_xoxopuzz` id=59 — 雪镇 - XO 谜题 2 | 820x240 | 实例 104 | Tile 467 | 启用背景: — | 对象: obj_spikes_room、obj_xoxo、obj_xoxocontroller1、obj_sur、obj_sul、obj_mainchara（共 22 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_tundra_xoxosmall` id=58 — 雪镇 - XO 谜题 1 | 500x240 | 实例 56 | Tile 448 | 启用背景: — | 对象: obj_xoxo、obj_xoxocontroller1、obj_spikes_room、obj_solidtall、obj_sur、obj_mainchara（共 19 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water1` id=82 — 瀑布 - 入口 | 640x240 | 实例 34 | Tile 426 | 启用背景: — | 对象: obj_waterdivot_test、obj_icecube_water1、obj_foreground_waterfall、obj_mainchara、obj_markerA、obj_ambientwater（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water11` id=95 — 瀑布 - 衫斯的望远镜 | 660x340 | 实例 103 | Tile 479 | 启用背景: — | 对象: obj_solidtall_2、obj_solidextall_2、obj_cosmetic_glowstar、obj_mainchara、obj_sans_room、obj_npc_room（共 25 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water12` id=97 — 瀑布 - 分岔路(?) | 1280x820 | 实例 233 | Tile 1370 | 启用背景: — | 对象: obj_solidlongleft、obj_solidextall_2、obj_solidtall_2、obj_mainchara、obj_glowparticlegen_1、obj_echoflower（共 25 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water13` id=273 — （未登记） | 320x640 | 实例 302 | Tile 252 | 启用背景: — | 对象: obj_runaway、obj_waterboard、obj_solidextall_2、obj_mainchara、obj_tallgrass、obj_waterspot（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water14` id=101 — 瀑布 - 神器 | 740x240 | 实例 53 | Tile 361 | 启用背景: — | 对象: obj_solidextall_2、obj_solidtall_2、obj_foreground_waterfall、obj_mainchara、obj_doorB、obj_markerA（共 21 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water15` id=126 — 瀑布 - 两个瀑布 | 1020x240 | 实例 81 | Tile 344 | 启用背景: — | 对象: obj_glowfly1、obj_mainchara、obj_watermusic、obj_doorA、obj_markerB、obj_encounterer_water2（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water16` id=127 — 瀑布 - 发光蘑菇迷宫 | 620x640 | 实例 189 | Tile 162 | 启用背景: — | 对象: obj_glowshroom、obj_mainchara、obj_solidsmall、obj_solidthin、obj_doorB、obj_markerA（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water17` id=129 — 瀑布 - 黑暗迷宫 | 640x540 | 实例 231 | Tile 222 | 启用背景: — | 对象: obj_darknesslantern、obj_mainchara、obj_darknesspuzzle、obj_solidthin、obj_solidsmall、obj_doorD（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water18` id=130 — 瀑布 - "在你后面" | 1020x240 | 实例 80 | Tile 237 | 启用背景: — | 对象: obj_undyne_echoflower、obj_solidextall_2、obj_mainchara、obj_darkness_undyne、obj_markerA、obj_inwaterspot（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water19` id=131 — 瀑布 - 更多的回音花 | 320x640 | 实例 71 | Tile 321 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_pollener、obj_doorB、obj_markerA、obj_doorA（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water2` id=83 — 瀑布 - 检查点 [SAVE] | 320x240 | 实例 36 | Tile 203 | 启用背景: — | 对象: obj_mainchara、obj_sansmusic、obj_doorBmusicfade、obj_markerA、obj_savepoint、obj_doorAmusicfade（共 18 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water20` id=132 — 瀑布 - 洞穴 桥 | 620x240 | 实例 31 | Tile 217 | 启用背景: — | 对象: obj_mainchara、obj_doorB、obj_doorA、obj_markerB、obj_markerA、obj_solidsmall（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water21` id=133 — 瀑布 - 洞穴 出口 | 320x240 | 实例 30 | Tile 135 | 启用背景: — | 对象: obj_mainchara、obj_markerA、obj_doorB、obj_monsterkidtrigger8、obj_markerB、obj_ambientwater（共 12 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water3` id=84 — 瀑布 - 坠落的石头 | 580x540 | 实例 113 | Tile 394 | 启用背景: — | 对象: obj_fakefalls、obj_fakefalls_bg、obj_solidtall_2、obj_solidlongleft、obj_mainchara、obj_waterripple（共 24 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water3A` id=85 — （未登记） | 320x240 | 实例 15 | Tile 98 | 启用背景: — | 对象: obj_glowshroom、obj_solidtall、obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water4` id=86 — 瀑布 - 门厅(?) [SAVE] | 560x400 | 实例 31 | Tile 373 | 启用背景: — | 对象: obj_mainchara、obj_undyne1、obj_markerB、obj_doorD、obj_markerC、obj_doorA（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water5` id=88 — 瀑布 - 垂直的桥花(?) | 500x500 | 实例 311 | Tile 602 | 启用背景: — | 对象: obj_glowshroom、obj_waterboard、obj_bellblossom、obj_solidlongleft、obj_solidtall_2、obj_mainchara（共 26 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water5A` id=89 — （未登记） | 320x240 | 实例 47 | Tile 124 | 启用背景: — | 对象: obj_mainchara、obj_echoflower、obj_doorB、obj_markerA、obj_npc_room、obj_solidsmall（共 8 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water6` id=90 — 瀑布 - 望远镜 | 740x380 | 实例 88 | Tile 325 | 启用背景: — | 对象: obj_fakedoor、obj_solidtall_2、obj_cosmetic_glowstar、obj_mainchara、obj_doorD、obj_markerC（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water7` id=91 — 瀑布 - 船板 | 1100x340 | 实例 77 | Tile 251 | 启用背景: — | 对象: obj_purpledude、obj_boardride_a、obj_solidtall、obj_solidtall_2、obj_mainchara、obj_markerA（共 26 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water7_older` id=302 — （未登记） | 800x340 | 实例 74 | Tile 208 | 启用背景: — | 对象: obj_fakefalls、obj_fakefalls_bg、obj_groundtorch、obj_solidlongleft、obj_sur、obj_sul（共 24 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water8` id=92 — 瀑布 - 安黛因躲避 1 | 2100x300 | 实例 152 | Tile 855 | 启用背景: — | 对象: obj_sul、obj_sur、obj_solidlongleft、obj_solidtall_2、obj_mainchara、obj_doorB（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water9` id=93 — 瀑布 - 躲避安黛因之后的草丛 | 860x240 | 实例 86 | Tile 226 | 启用背景: — | 对象: obj_purpledude、obj_solidlongleft、obj_mainchara、obj_doorB、obj_markerA、obj_markerB（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_bird` id=99 — 瀑布 - 带你过河的鸟 | 320x240 | 实例 32 | Tile 131 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_door_t、obj_markert、obj_carrybird、obj_glowparticlegen_1（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_blookyard` id=119 — 瀑布 - 两个幽灵的房子 | 320x240 | 实例 50 | Tile 154 | 启用背景: — | 对象: obj_solidextall_2、obj_napstablook_actor、obj_mainchara、obj_blookhouses、obj_quietwatermusic、obj_markerw（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_bridgepuzz1` id=87 — 瀑布 - 桥花 | 520x240 | 实例 70 | Tile 283 | 启用背景: — | 对象: obj_waterboard、obj_solidlongleft、obj_solidextall_2、obj_mainchara、obj_doorA、obj_solidsmall（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_dock` id=125 — 瀑布 - 渔夫(妇) | 320x240 | 实例 30 | Tile 152 | 启用背景: — | 对象: obj_dogboat_thing、obj_mainchara、obj_markerA、obj_ambientwater、obj_doorBmusicfade、obj_solidsmall（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_dogroom` id=103 — 瀑布 - 传说神器 | 320x240 | 实例 15 | Tile 105 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_rarependant、obj_doorB、obj_markerA、obj_solidexwide（共 7 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_fakehallway` id=268 — （未登记） | 320x240 | 实例 12 | Tile 112 | 启用背景: — | 对象: obj_mainchara、obj_overworldcontroller、obj_solidlong、obj_door_ruins13、obj_door_u、obj_markerX（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_farm` id=122 — （未登记） | 760x240 | 实例 48 | Tile 493 | 启用背景: — | 对象: obj_mainchara、obj_markers、obj_door_s_musfade、obj_door_v、obj_markerv、obj_sansmusic（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_friendlyhub` id=116 — 瀑布 - 宁静地带 [SAVE] | 620x240 | 实例 73 | Tile 549 | 启用背景: — | 对象: obj_mainchara、obj_savepoint、obj_markerA、obj_doorBmusicfade、obj_quietwatermusic、obj_sign_room（共 22 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_mushroom` id=304 — （未登记） | 320x240 | 实例 24 | Tile 81 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_doorB、obj_markerA、obj_markerB、obj_doorA（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_nicecream` id=96 — 瀑布 - 好棒冰 | 320x440 | 实例 48 | Tile 213 | 启用背景: — | 对象: obj_glowshroom、obj_solidtall_2、obj_sul、obj_sur、obj_mainchara、obj_nicecreamguy（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_onionsan` id=100 — 瀑布 - 洋葱桑 | 1220x240 | 实例 16 | Tile 418 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_onionsan_event、obj_doorA、obj_markerB、obj_markerw（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_piano` id=102 — 瀑布 - 钢琴 | 320x240 | 实例 28 | Tile 142 | 启用背景: — | 对象: obj_fakedoor、obj_solidextall_2、obj_solidtall_2、obj_mainchara、obj_piano、obj_markerA（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_prebird` id=123 — （未登记） | 620x240 | 实例 59 | Tile 63 | 启用背景: — | 对象: obj_mainchara、obj_watermusic、obj_markerX、obj_door_ruins13、obj_markers、obj_door_s_musfade（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_prewaterfall` id=105 — 瀑布 - 雨伞 | 340x240 | 实例 22 | Tile 154 | 启用背景: — | 对象: obj_foreground_waterfall、obj_mainchara、obj_sign_room、obj_umbrellabox、obj_doorA、obj_markerB（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_savepoint1` id=94 — 瀑布 - 水晶奶酪 [SAVE] | 320x240 | 实例 26 | Tile 140 | 启用背景: — | 对象: obj_mousehole、obj_solidtall_2、obj_mainchara、obj_savepoint、obj_markerA、obj_echoflower（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_shoe` id=98 — 瀑布 - 芭蕾舞鞋 | 320x240 | 实例 27 | Tile 49 | 启用背景: — | 对象: obj_glowshroom、obj_solidextall_2、obj_solidtall_2、obj_mainchara、obj_npc_room、obj_doorB（共 13 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_shop` id=124 — 瀑布 - 乌龟 Gerson 的商店 | 320x240 | 实例 29 | Tile 166 | 启用背景: — | 对象: obj_solidextall_2、obj_mainchara、obj_markert、obj_door_t、obj_doorXmusicfade、obj_markerX（共 17 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_statue` id=104 — 瀑布 - 淋雨的雕像 | 320x240 | 实例 17 | Tile 146 | 启用背景: — | 对象: obj_mainchara、obj_musicstatue、obj_ambientrain、obj_doorA、obj_markerB、obj_door_s_musfade（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_temvillage` id=128 — 瀑布 - 提米村 [SAVE] | 660x300 | 实例 48 | Tile 274 | 启用背景: — | 对象: obj_solidtall、obj_solidextall_2、obj_mainchara、obj_sign_room、obj_temnpc、obj_npc_room（共 22 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_trashsavepoint` id=114 — 瀑布 - 垃圾场 [SAVE] | 320x240 | 实例 50 | Tile 177 | 启用背景: — | 对象: obj_garbagepile、obj_mainchara、obj_indryspot、obj_inwaterspot、obj_solidsmall、obj_doorA（共 15 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_trashzone1` id=113 — 瀑布 - 垃圾场 花床 | 820x240 | 实例 96 | Tile 434 | 启用背景: — | 对象: obj_garbagepile、obj_solidtall、obj_mainchara、obj_wakeupchara、obj_ambientwater、obj_indryspot（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_trashzone2` id=115 — 瀑布 - 大表哥(发怒人偶)的复仇 | 320x940 | 实例 63 | Tile 474 | 启用背景: — | 对象: obj_garbagepile、obj_assortedtrash、obj_garbagecooler、obj_damndummy、obj_solidtall、obj_solidextall_2（共 20 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_undynebridgeend` id=112 — 瀑布 - 桥 坠落 | 820x1140 | 实例 11 | Tile 111 | 启用背景: — | 对象: obj_nospear、obj_solidextall_2、obj_mainchara、obj_markerA、obj_speartilegen、obj_undyneencounter4（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_undynefinal2` id=135 — 瀑布 - 安黛因竞技场 + 1 | 320x480 | 实例 16 | Tile 183 | 启用背景: — | 对象: obj_solidtall、obj_mainchara、obj_doorB、obj_doorA、obj_markerB、obj_markerA（共 9 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_undynefinal3` id=136 — 瀑布 - 热域欢迎词 | 720x240 | 实例 13 | Tile 146 | 启用背景: — | 对象: obj_hotlandsign、obj_mainchara、obj_doorB、obj_markerA、obj_markerB、obj_undynea_chaser（共 10 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_undyneyard` id=117 — 瀑布 - 安黛因房子入口 | 320x240 | 实例 49 | Tile 121 | 启用背景: — | 对象: obj_mainchara、obj_markerA、obj_solidthin、obj_solidsmall、obj_knock_room、obj_npc_room（共 11 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_waterfall` id=106 — 瀑布 - 下雨的小路 1 | 1640x240 | 实例 39 | Tile 619 | 启用背景: — | 对象: obj_puddle、obj_solidlongleft、obj_solidextall_2、obj_rainer、obj_foreground_waterfall、obj_mainchara（共 16 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_waterfall2` id=107 — 瀑布 - 小雨的小路 2 | 320x1040 | 实例 29 | Tile 334 | 启用背景: — | 对象: obj_solidextall_2、obj_solidtall、obj_rainer、obj_mainchara、obj_echoflower、obj_doorB（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+- `room_water_waterfall4` id=109 — 瀑布 - 雨伞归还处 | 520x240 | 实例 32 | Tile 177 | 启用背景: — | 对象: obj_rainer、obj_mainchara、obj_doorB、obj_markerA、obj_markerB、obj_solidsmall（共 14 种对象）
+  - 理由: 纯 Tile（无启用背景、无 backgrounder）
+
+## 未归类（零背景观测——人工归类）（53）
+
+- `TESTROOM` id=271 — （未登记） | 640x480 | 实例 4 | Tile 0 | 启用背景: — | 对象: OBJ_BLCON、OBJ_WRITERCREATOR
+  - 理由: 无背景/backgrounder 观测（4 实例/0 Tile——记录待人工归类）
+- `bullettest` id=276 — （未登记） | 640x480 | 实例 4 | Tile 0 | 启用背景: — | 对象: obj_heart、obj_battlecontroller、obj_bulletgenthatched、obj_lasergen1
+  - 理由: 无背景/backgrounder 观测（4 实例/0 Tile——记录待人工归类）
+- `room2` id=267 — （未登记） | 640x480 | 实例 3 | Tile 0 | 启用背景: — | 对象: object59
+  - 理由: 无背景/backgrounder 观测（3 实例/0 Tile——记录待人工归类）
+- `room_adate` id=318 — （未登记） | 640x480 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_adate_body、obj_adate
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_afinaltest` id=334 — （未登记） | 640x480 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_afinal_body、obj_heart_another
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_asrielappears` id=330 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_asrielappear
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_asrielmemory` id=332 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_asrielpanels
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_asrieltest` id=333 — （未登记） | 640x480 | 实例 3 | Tile 0 | 启用背景: — | 对象: obj_roundedge、obj_heart_another、obj_asriel_body
+  - 理由: 无背景/backgrounder 观测（3 实例/0 Tile——记录待人工归类）
+- `room_battle` id=306 — （未登记） | 640x480 | 实例 13 | Tile 0 | 启用背景: — | 对象: obj_battlebg、obj_fightbt、obj_talkbt、obj_itembt、obj_sparebt、obj_heart（共 13 种对象）
+  - 理由: 无背景/backgrounder 观测（13 实例/0 Tile——记录待人工归类）
+- `room_bringitinguys` id=329 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_bringitinguys
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_castle_barrier` id=237 — 结界 | 320x240 | 实例 5 | Tile 0 | 启用背景: — | 对象: obj_finalbarrier、obj_mainchara、obj_markerA、obj_barrierevent、obj_overworldcontroller
+  - 理由: 无背景/backgrounder 观测（5 实例/0 Tile——记录待人工归类）
+- `room_creditsdodger` id=284 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_creditsloader
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_empty` id=321 — （未登记） | 320x240 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_mainchara、obj_overworldcontroller
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_emptyblack` id=323 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_black_ender
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_emptywhite` id=322 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_white_ender
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_end_castroll` id=278 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_castroll
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_end_mtebott` id=283 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_ebottfadein
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_end_theend` id=286 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_the_end_really
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_f_intro` id=291 — （未登记） | 320x240 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_gameintro_fake、obj_interactable
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_f_menu` id=292 — （未登记） | 320x240 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_gamemenu_fake
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_f_phrase` id=295 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_f_frasier
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_f_room` id=293 — （未登记） | 320x520 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_mainchara_fake、obj_savepoint_fake
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_f_start` id=290 — （未登记） | 320x240 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_f_gamestart
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_fastbattle` id=308 — （未登记） | 640x480 | 实例 7 | Tile 0 | 启用背景: — | 对象: obj_fakeheart、obj_floweydraw、obj_quickgen、obj_lborder、obj_dborder、obj_uborder（共 7 种对象）
+  - 理由: 无背景/backgrounder 观测（7 实例/0 Tile——记录待人工归类）
+- `room_flowey_endchoice` id=319 — （未登记） | 640x480 | 实例 7 | Tile 0 | 启用背景: — | 对象: obj_fakeheart、obj_flowey_wilt、obj_lborder、obj_dborder、obj_uborder、obj_rborder（共 7 种对象）
+  - 理由: 无背景/backgrounder 观测（7 实例/0 Tile——记录待人工归类）
+- `room_flowey_regret` id=320 — （未登记） | 320x240 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_endflowey_regret
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_floweybattle` id=307 — （未登记） | 640x480 | 实例 8 | Tile 0 | 启用背景: — | 对象: obj_floweydraw、obj_floweybattle1、obj_fakeheart、obj_lborder、obj_dborder、obj_uborder（共 8 种对象）
+  - 理由: 无背景/backgrounder 观测（8 实例/0 Tile——记录待人工归类）
+- `room_floweyx` id=294 — （未登记） | 640x480 | 实例 12 | Tile 0 | 启用背景: — | 对象: obj_bgpipe、obj_vsflowey_heart、obj_floweyarm、obj_vines_flowey、obj_sidestalk、obj_flowey_bgdraw（共 8 种对象）
+  - 理由: 无背景/backgrounder 观测（12 实例/0 Tile——记录待人工归类）
+- `room_friendtest` id=328 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_friendscene
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_gameover` id=310 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_gameover
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_gaster` id=264 — （未登记） | 320x240 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_gaster_room
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_goodbyeasriel` id=331 — 艾斯瑞尔/小羊的房间 | 320x240 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_markerA、obj_asriel_overworldanim
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_introimage` id=2 — （未登记） | 320x240 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_titleimage
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_intromenu` id=3 — （未登记） | 320x240 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_intromenu
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_introstory` id=1 — （未登记） | 320x240 | 实例 3 | Tile 0 | 启用背景: — | 对象: obj_introimage、obj_unfader
+  - 理由: 无背景/backgrounder 观测（3 实例/0 Tile——记录待人工归类）
+- `room_monsteralign_test` id=305 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_monster_extrabody
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_nothingness` id=324 — （未登记） | 320x240 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_nothingness_event
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_of_dog` id=326 — （未登记） | 320x240 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_roomofdog
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_overworld` id=274 — （未登记） | 1280x640 | 实例 33 | Tile 0 | 启用背景: — | 对象: obj_mainchara、obj_wanderparent、obj_solidsmall、obj_doorA、obj_markerB、obj_markerA（共 10 种对象）
+  - 理由: 无背景/backgrounder 观测（33 实例/0 Tile——记录待人工归类）
+- `room_overworld3` id=275 — （未登记） | 640x480 | 实例 4 | Tile 0 | 启用背景: — | 对象: obj_mainchara、obj_markerA、obj_doorB、obj_overworldcontroller
+  - 理由: 无背景/backgrounder 观测（4 实例/0 Tile——记录待人工归类）
+- `room_papdate` id=317 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_papdate
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_quizholder` id=327 — （未登记） | 640x480 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_questionasker、obj_mettatonb_body
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_settings` id=288 — （未登记） | 320x240 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_settingsmenu
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_shop1` id=311 — （未登记） | 320x240 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_shop1、obj_shopmouth1
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_shop2` id=312 — （未登记） | 320x240 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_shop2、obj_shopmouth1
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_soundtest` id=270 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_soundtest
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_spritecheck` id=287 — （未登记） | 640x480 | 实例 1 | Tile 0 | 启用背景: — | 对象: obj_spritecheck
+  - 理由: 无背景/backgrounder 观测（1 实例/0 Tile——记录待人工归类）
+- `room_start` id=0 — （未登记） | 640x480 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_time、obj_screen
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_storybattle` id=309 — （未登记） | 640x480 | 实例 7 | Tile 0 | 启用背景: — | 对象: obj_fakeheart、obj_floweydraw、obj_storybattle_gen、obj_lborder、obj_dborder、obj_uborder（共 7 种对象）
+  - 理由: 无背景/backgrounder 观测（7 实例/0 Tile——记录待人工归类）
+- `room_undertale` id=325 — （未登记） | 320x240 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_undertaletitle、obj_markerA
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_undertale_end` id=239 — （未登记） | 320x240 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_markerA、obj_credits_short
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_water16A` id=277 — （未登记） | 320x240 | 实例 2 | Tile 0 | 启用背景: — | 对象: obj_mainchara、obj_overworldcontroller
+  - 理由: 无背景/backgrounder 观测（2 实例/0 Tile——记录待人工归类）
+- `room_water_redacted` id=272 — （未登记） | 320x240 | 实例 32 | Tile 0 | 启用背景: — | 对象: obj_mainchara、obj_solidsmall、obj_markerC、obj_redacted_a、obj_doorDmusicfade、obj_overworldcontroller
+  - 理由: 无背景/backgrounder 观测（32 实例/0 Tile——记录待人工归类）
+
