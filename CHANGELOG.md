@@ -9,7 +9,13 @@
 - **recovery-apply**：`--direction rollback|complete` 显式择向（rollback=放弃本次，须全部目标==after；complete=继续本次，须全部 ∈{before,not-created}）；混合分类整批拒绝；副本指纹校验（staged==after / rollback==before）失败整批拒绝；**journal 复用方案 A**——不删不建运行记录，中段 SIGKILL → scan 重分类 → 可重入；完成后记录自然重分类为 not-started/done-confirm（clean 收尾）。默认预览零动作，--commit 逐目标 os.replace（副本即被消费）。
 - **recovery-clean**：**现场重分类（绝不信任存量 state）**——state=committing 但实况 mixed 的记录照样拒绝；可清 = state∈状态机 且纯重分类 ∈{not-started, done-confirm}（aborted-clean+全 before 归 not-started 可清——06 §4 拒绝清单不含它）；**逐条执行**（拒绝项不影响其他可清项，退出码 1 提示）；孤儿 .new 一并清理；清理 manifest 只进 stdout/--json，不写 journal 目录。
 - 实设修正：初版"无需 apply"门（not-started/done-confirm 一律拒）误挡 pending+全 before 的 complete 场景（=staging 后、首次替换前的合法继续窗口）——删除该门，裁决权交同质校验+副本校验；done-confirm+rollback=放弃本次为合法出口。
-- 分类 SSOT 重构：`_collect_findings`（scan/apply/clean 共用；records 携带 level_scan/level_pure 双口径）——**scan 输出逐字节不变**（重构后 393 基线全绿验证）。
+- 分类 SSOT 重构：`_collect_findings`（scan/apply/clean 共用；records 携带 level_scan/level_pure 双口径）——**scan --json 输出逐字节不变**（8 场景双版本对拍 0 字节差；人读尾行交叉引用有意更新）。
+
+### 复审清偿（R5/R6，双席变异实证）
+
+- **R5 P2-1** prune corrupt 口径与 scan 对齐（schema/targets 结构破损同算损坏——曾只查 JSON 解析，结构破损绕过硬前置）；**R5 P2-2** clean 在存在 corrupt-journal 时跳过孤儿清扫（corrupt 记录资产"宁缺毋滥"，处置后二次 clean）；**R5 P2-3** --preview × --commit 三 handler 互斥（parser.error）；**R5 P2-4/R6 P2-1** backup-prune SSOT 条目随 --commit 行为更新（summary/notes/gen_docs 重生成）。
+- **R6 P2-2 两处"应红不红"钉面补齐**：副本**存在但指纹不符**用例（M2b 曾全绿）；pruned/**可逆移动本体**断言（moved_to 文件存在，M8 move→unlink 曾全绿）；另补 commit+拒绝零执行、corrupt×孤儿跳过、--preview 互斥三用例。
+- P3 批：clean 删除失败计入退出码 + stderr 列出；拒绝指引不再死胡同（interrupted/aborted → scan cp 指引而非 apply）；scan not-started/done-confirm/aborted 动作文案随 apply/clean 交付更新；apply 执行失败文案改指 scan cp（mixed 后 apply 恒拒）；pruned ts 含微秒（同秒双次不覆盖 manifest）；apply notes 增 not-created 死角标注；CHANGELOG "committed 块"→`commit` 块；SKILL/QUESTIONNAIRE 旧 A/B/C/D 分类口径随 ROOMS_GUIDE 重生成更新；test_dispatch 头部 89→91。
 
 ### backup-prune --commit（06 §4）
 

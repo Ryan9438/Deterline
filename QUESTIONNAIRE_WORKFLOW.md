@@ -205,8 +205,8 @@ python run.py --action guided-add-dialogue \
 ```
 → 房间内部名（从 ROOMS_GUIDE.md 选已有房间，禁止新造）：room_xxx
 → 选房规则：
-   1. 要背景/视差 → 选 B 类（横长可滚动 W>320 最佳）
-   2. 要纯 Tile 地板 → 选 C 类
+   1. 要背景/视差 → 选 B1（数据驱动背景；横长可滚动 W>320 最佳）或 B2（对象驱动背景）
+   2. 要纯 Tile 地板 → 选 A
    ※ 提供候选时列出房间号 + 尺寸 + 中文名，让用户挑选
 → 尺寸：宽 ___ 高 ___ (默认 640x480)
 → 标题（中文/英文）：___
@@ -247,7 +247,7 @@ python run.py --action guided-add-dialogue \
 ### ⚠️ 已知限制
 
 - **禁止 `create-room`**：新建房间序号游戏运行时无法识别，会导致传送进错房间遇神烦狗
-- **Tile 房间背景不可用**：`gml-bg` 在 C 类 Tile 房间（8 层背景全 disabled）无效，渲染器跳过背景绘制。需先 `set-room-bg --enable true` 启用某层使其变 B 类，再注入 `gml-bg`
+- **Tile 房间背景不可用**：`gml-bg` 在 A 类 Tile 房间（8 层背景全 disabled）无效，渲染器跳过背景绘制。需先 `set-room-bg --enable true` 启用某层使其变 B1 类，再注入 `gml-bg`
 - **背景房间需要 backgrounder 对象**：需手动 `spawn-obj` 放置背景控制器
 - **View 必须 320×240**：port 640×480，2x 缩放。View=640×480 破坏视角跟随
 - **`set --key Room` 只能填 game.ios 中已存在的房间号**：写入不存在的房间会触发运行时错误（神烦狗）

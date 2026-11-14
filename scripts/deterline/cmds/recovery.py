@@ -191,10 +191,13 @@ def _collect_findings(save_dir: Path | None, dir_override: str | None):
                     referenced.add(str(Path(staged).resolve()))
                     _register_orphan_dir(Path(staged).parent)
             if level == "not-started":
-                actions.append("目标未被触及——删除该 journal 与 staged 残留即可")
+                actions.append("目标未被触及——recovery-clean 清理该 journal 与"
+                               " staged 残留（或 recovery-apply --direction "
+                               "complete 继续）")
             elif level == "done-confirm":
-                actions.append("全部目标已写入（== after）——核对内容后删除该 "
-                               "journal 与残留（recovery-clean 下批提供）")
+                actions.append("全部目标已写入（== after）——核对内容后 "
+                               "recovery-clean 清理（放弃则 recovery-apply "
+                               "--direction rollback）")
             elif level == "interrupted":
                 if actions:
                     actions.append("替换中断——上列 cp 命令二选一：全部回滚=放弃本次，"
@@ -207,7 +210,8 @@ def _collect_findings(save_dir: Path | None, dir_override: str | None):
                 actions.append("存在外部修改——人工核对目标内容，勿盲用回滚副本")
             elif level == "aborted":
                 actions.append("事务层已按回滚失败/成功归类（error 字段）——"
-                               "按 error 处理后删除 journal")
+                               "aborted-clean 可直接 recovery-clean；"
+                               "aborted-partial 按 error 处理后 recovery-clean")
             elif level == "unknown-state":
                 actions.append("state 字段不在已知状态机内——人工核对该记录来源")
             findings.append({
@@ -450,7 +454,8 @@ def cmd_recovery_apply(save_dir: Path | None, dir_override: str | None = None,
             except OSError as exc:
                 item["done"] = False
                 refusals.append(f"执行失败: {item['path']}（{exc}）"
-                                "——已完成目标保留（scan 重分类后可重入）")
+                                "——已完成目标保留；此后记录呈混合分类，"
+                                "按 scan 逐条 cp 指引手工收口后 clean")
                 break
 
     if json_out:
@@ -527,7 +532,8 @@ def cmd_recovery_clean(save_dir: Path | None, dir_override: str | None = None,
                 "path": str(rec["path"]), "state": rec["state"],
                 "level": rec["level_pure"],
                 "guidance": (
-                    "recovery-apply 处理（--direction 择向）"
+                    "按 scan 输出的逐条 cp 指引执行后重跑本命令"
+                    "（apply 对混合分类整批拒绝）"
                     if rec["level_pure"] in ("interrupted", "aborted")
                     else "存在外部修改——人工核对目标内容"
                     if rec["level_pure"] == "suspicious"
@@ -544,6 +550,7 @@ def cmd_recovery_clean(save_dir: Path | None, dir_override: str | None = None,
     orphans = [f for f in findings if f["kind"] == "orphan-staged"]
 
     deleted: list[str] = []
+    deletion_failures: list[str] = []
     if commit:
         # 逐条执行（06 §4）：拒绝项不影响其他可清项——拒绝只驱动退出码
         for rec in cleanable:
@@ -560,16 +567,22 @@ def cmd_recovery_clean(save_dir: Path | None, dir_override: str | None = None,
                             Path(copy).unlink()
                             deleted.append(str(copy))
                         except OSError as exc:
-                            warnings.append(f"副本删除失败: {copy}（{exc}）")
+                            deletion_failures.append(f"副本删除失败: {copy}（{exc}）")
             journal_dir = rec["path"].parent
             transactions._rmdir_if_empty(journal_dir)  # noqa: SLF001 同包私有复用
-        for f in orphans:
-            opath = Path(f["path"])
-            try:
-                opath.unlink()
-                deleted.append(str(opath))
-            except OSError as exc:
-                warnings.append(f"孤儿删除失败: {f['path']}（{exc}）")
+        if corrupt:
+            # R5 P2-2：corrupt 记录的暂存/回滚资产"宁缺毋滥"——存在 corrupt
+            # 时跳过孤儿清扫（人工处置 corrupt 后二次 clean），防误销毁
+            warnings.append("存在 corrupt-journal——孤儿暂存清扫跳过"
+                            "（corrupt 人工处置后二次 clean）")
+        else:
+            for f in orphans:
+                opath = Path(f["path"])
+                try:
+                    opath.unlink()
+                    deleted.append(str(opath))
+                except OSError as exc:
+                    deletion_failures.append(f"孤儿删除失败: {f['path']}（{exc}）")
 
     if json_out:
         print(json.dumps({
@@ -581,9 +594,10 @@ def cmd_recovery_clean(save_dir: Path | None, dir_override: str | None = None,
             "refused": refused,
             "orphans": [f["path"] for f in orphans],
             "deleted": deleted,
+            "deletion_failures": deletion_failures,
             "warnings": warnings,
         }, ensure_ascii=False, indent=2))
-        return 1 if refused else 0
+        return 1 if (refused or deletion_failures) else 0
 
     print(f"--- recovery-clean（{'执行' if commit else '预览，零动作'}） ---")
     for rec in cleanable:
@@ -607,6 +621,8 @@ def cmd_recovery_clean(save_dir: Path | None, dir_override: str | None = None,
             print("  预览完成——加 --commit 执行")
         else:
             print("  ✅ 无可清项")
+    for f in deletion_failures:
+        print(f"  ✗ {f}", file=sys.stderr)
     for w in warnings:
         print(f"  ⚠️ {w}", file=sys.stderr)
-    return 1 if refused else 0
+    return 1 if (refused or deletion_failures) else 0

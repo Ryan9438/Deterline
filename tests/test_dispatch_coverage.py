@@ -5,7 +5,7 @@ room-list P0 的土壤：接线层 bug 不被 CSX golden 钉住，而冷路径�
 
 1. 覆盖地图（动态计算）：commands.json 的每个 action，其 action 名或实现
    cmd_* 函数名必须在 tests/ 出现过——零覆盖集合必须 ⊆ ALLOWLIST
-   （2026-11-14 口径：89 actions = 69 已覆盖 + 20 条显式豁免）。
+   （2026-11-14 口径：91 actions = 71 已覆盖 + 20 条显式豁免）。
    新增命令不带测试即爆红。
 2. 三方 SSOT 扩展：commands.json actions == cli.ACTION_CHOICES == dispatch
    分支集合（docs lint 已有两腿，此处补齐 dispatch 腿的 In-tuple 形态）。

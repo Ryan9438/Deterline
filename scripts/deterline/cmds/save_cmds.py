@@ -640,7 +640,12 @@ def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
         for path in sorted(journal_root.glob("*.json")):
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
-                if not isinstance(record, dict):
+                # R5 P2-1：口径与 recovery-scan 对齐——schema/targets 结构破损
+                # 同样算 corrupt（此前只查 JSON 解析，结构破损记录绕过硬前置）
+                if (not isinstance(record, dict)
+                        or record.get("schema") != transactions.JOURNAL_SCHEMA
+                        or not isinstance(record.get("targets"), list)
+                        or not record["targets"]):
                     corrupt_count += 1
             except (OSError, ValueError):
                 corrupt_count += 1
@@ -748,7 +753,8 @@ def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
         if not commit_refused and deletions:
             import datetime as _dt
             import shutil as _shutil
-            ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+            # R5 P3-7：含微秒——同秒双次 --commit 不再覆盖 manifest
+            ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             root_dir = game_dir if game_dir is not None else save_dir
             pruned_dir = root_dir / ".deterline" / "pruned" / ts
             pruned_dir.mkdir(parents=True, exist_ok=True)

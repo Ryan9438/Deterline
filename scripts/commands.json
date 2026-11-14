@@ -751,15 +751,15 @@
       "action": "backup-prune",
       "group": "save",
       "verify": "static",
-      "summary": "保留策略预览（03 §2.4，只读零删除）：占盘统计 + 内容重复分组（sha256）+ 超窗归档清理建议（精确 rm 命令 + 可回收字节）；--keep-archives N 每目标保留最近 N 份；--json 输出 deterline.backup-prune/v1",
+      "summary": "保留策略预览/执行（03 §2.4 + 06 §4 执行入口）：占盘统计 + 内容重复分组（sha256）+ 超窗归档清理建议（精确 rm 命令 + 可回收字节）；--keep-archives N 每目标保留最近 N 份；默认预览零删除，--commit 将超窗归档移入 .deterline/pruned/<ts>/（可逆，manifest 含原路径+sha256）；--json 输出 deterline.backup-prune/v1（commit 模式附 committed 块）",
       "example": "backup-prune --keep-archives 3",
       "notes": [
         "保留条件：bak-latest / 命名快照 / 工作区副本与 legacy / journal 引用文件（活动恢复记录）/ 每目标最近 --keep-archives 份归档",
         "内容重复按 sha256 分组（同组保留最新一份；组内超窗部分已入删除集）；归档哈希全量流式计算——13×60MB 约 1-3 秒",
-        "本命令零删除零恢复——是否执行由用户根据预览决定（执行入口下批）",
-        "journal 引用的归档被保护跳过并单独计数；双侧定位均失败退出码 2",
-        "归档新旧按文件 mtime 排序（backup_file 保留源 mtime，可能与文件名时间戳分叉；平局按名字字典序）",
-        "执行清理前的前置条件：recovery-scan 无 corrupt-journal（损坏记录的保护可能不完整）"
+        "默认预览零删除；--commit（06 §4 执行入口）现场重算删除集 + 可逆移入 pruned/<ts>/ + manifest（purge 真删除另立显式入口，值守）",
+        "journal 引用的归档被保护跳过并单独计数；双侧定位均失败退出码 2；--commit 拒绝/移动失败退出码 1",
+        "归档新旧按纳秒级 mtime 排序（backup_file 保留源 mtime，可能与文件名时间戳分叉；同纳秒平局按名字字典序）",
+        "硬前置：recovery-scan 无 corrupt-journal（口径与 scan 对齐：解析失败/schema 不符/targets 缺失均算损坏）"
       ]
     },
     {
@@ -784,7 +784,8 @@
       "notes": [
         "journal 复用方案 A：不新建/不删除运行记录——apply 以原 journal 为运行记录，中段 SIGKILL → scan 重分类 → 可重入",
         "完成后记录自然重分类为 not-started/done-confirm，recovery-clean 清理 journal 与副本",
-        "副本指纹校验（staged==after / rollback==before）失败整批拒绝；多记录/无需 apply/suspicious/unknown 一律拒绝并指引",
+        "副本指纹校验（staged==after / rollback==before）失败整批拒绝；多记录/suspicious/unknown 一律拒绝并指引",
+        "含 not-created 目标的记录 complete 执行后转混合分类（v1 死角）——后续按 scan 逐条 cp 指引手工收口",
         "退出码：0=成功/可执行/无未完结；1=拒绝；2=定位失败"
       ]
     },

@@ -165,7 +165,7 @@ deterline/
 | `undo --value data_win` | 从 .bak 恢复最后一次写入（仅一步；--backup 指定时间戳版本） | static |
 | `list-backups --value data_win` | 列出所有备份（--value ini\|file0\|data_win） | static |
 | `doctor --file data_win` | 聚合体检（全只读零写盘）：rooms.json 健康 / 存档可解析 / 游戏文件 md5 与仓库基线比对 / 备份占盘 / 沙箱残留 / UTMT CLI 与 dotnet 可达 / CJK 字形表状态；--json 输出 deterline.doctor/v1；退出码 全✓0/有✗1 | static |
-| `backup-prune --keep-archives 3` | 保留策略预览（03 §2.4，只读零删除）：占盘统计 + 内容重复分组（sha256）+ 超窗归档清理建议（精确 rm 命令 + 可回收字节）；--keep-archives N 每目标保留最近 N 份；--json 输出 deterline.backup-prune/v1 | static |
+| `backup-prune --keep-archives 3` | 保留策略预览/执行（03 §2.4 + 06 §4 执行入口）：占盘统计 + 内容重复分组（sha256）+ 超窗归档清理建议（精确 rm 命令 + 可回收字节）；--keep-archives N 每目标保留最近 N 份；默认预览零删除，--commit 将超窗归档移入 .deterline/pruned/<ts>/（可逆，manifest 含原路径+sha256）；--json 输出 deterline.backup-prune/v1（commit 模式附 committed 块） | static |
 | `recovery-scan` | 恢复完整性（03 §2.2c）：只读扫描未完结运行记录（.deterline/journal）与孤儿暂存 → 中断窗口分类 + 可预览恢复指引（--json 输出 deterline.recovery-scan/v1）；零写盘零 UTMT；发现未完结项退出码 1 | static |
 | `recovery-apply --direction rollback --commit` | 恢复执行（06 §4，值守入口）：按 scan 分类执行恢复——--direction rollback=放弃本次(目标←回滚副本，须全部==after) / complete=继续本次(目标←暂存副本，须全部∈{before,not-created})；混合分类整批拒绝；默认预览，--commit 执行（逐目标 os.replace）；--json 输出 deterline.recovery-apply/v1 | static |
 | `recovery-clean --commit` | 恢复清理（06 §4，值守入口）：对每条记录现场重分类（绝不信任存量 state）——仅 not-started/done-confirm 可清（journal + 其 staged/rollback 副本）；suspicious/interrupted/aborted-partial/corrupt/unknown 一律拒绝并指引；孤儿 .new 一并清理；默认预览，--commit 执行；--json 输出 deterline.recovery-clean/v1 | static |
@@ -181,17 +181,18 @@ deterline/
 > ⚠️ `doctor`: 备份占盘 .bak* 单个约 250MB，长期不用可清（undo/experiment-restore 依赖）
 > ⚠️ `backup-prune`: 保留条件：bak-latest / 命名快照 / 工作区副本与 legacy / journal 引用文件（活动恢复记录）/ 每目标最近 --keep-archives 份归档
 > ⚠️ `backup-prune`: 内容重复按 sha256 分组（同组保留最新一份；组内超窗部分已入删除集）；归档哈希全量流式计算——13×60MB 约 1-3 秒
-> ⚠️ `backup-prune`: 本命令零删除零恢复——是否执行由用户根据预览决定（执行入口下批）
-> ⚠️ `backup-prune`: journal 引用的归档被保护跳过并单独计数；双侧定位均失败退出码 2
-> ⚠️ `backup-prune`: 归档新旧按文件 mtime 排序（backup_file 保留源 mtime，可能与文件名时间戳分叉；平局按名字字典序）
-> ⚠️ `backup-prune`: 执行清理前的前置条件：recovery-scan 无 corrupt-journal（损坏记录的保护可能不完整）
+> ⚠️ `backup-prune`: 默认预览零删除；--commit（06 §4 执行入口）现场重算删除集 + 可逆移入 pruned/<ts>/ + manifest（purge 真删除另立显式入口，值守）
+> ⚠️ `backup-prune`: journal 引用的归档被保护跳过并单独计数；双侧定位均失败退出码 2；--commit 拒绝/移动失败退出码 1
+> ⚠️ `backup-prune`: 归档新旧按纳秒级 mtime 排序（backup_file 保留源 mtime，可能与文件名时间戳分叉；同纳秒平局按名字字典序）
+> ⚠️ `backup-prune`: 硬前置：recovery-scan 无 corrupt-journal（口径与 scan 对齐：解析失败/schema 不符/targets 缺失均算损坏）
 > ⚠️ `recovery-scan`: 扫描 game 旁与存档目录旁两处 .deterline/journal（transactions 每次提交前落盘、成功后删除、SIGKILL 保留）
 > ⚠️ `recovery-scan`: 分类：未开始（清理）/ 已全部写入（确认清理）/ 替换中断（逐目标给出回滚或完成的 cp 命令）/ 存在外部修改（人工核对）/ aborted（含 error 字段）
 > ⚠️ `recovery-scan`: 孤儿暂存（.{name}.*.new 无记录引用）单独列出；本命令零恢复零清理——执行恢复留待 recovery-apply/clean
 > ⚠️ `recovery-scan`: 写命令提交前检测到同名目标未完结记录会拒绝并指引本命令
 > ⚠️ `recovery-apply`: journal 复用方案 A：不新建/不删除运行记录——apply 以原 journal 为运行记录，中段 SIGKILL → scan 重分类 → 可重入
 > ⚠️ `recovery-apply`: 完成后记录自然重分类为 not-started/done-confirm，recovery-clean 清理 journal 与副本
-> ⚠️ `recovery-apply`: 副本指纹校验（staged==after / rollback==before）失败整批拒绝；多记录/无需 apply/suspicious/unknown 一律拒绝并指引
+> ⚠️ `recovery-apply`: 副本指纹校验（staged==after / rollback==before）失败整批拒绝；多记录/suspicious/unknown 一律拒绝并指引
+> ⚠️ `recovery-apply`: 含 not-created 目标的记录 complete 执行后转混合分类（v1 死角）——后续按 scan 逐条 cp 指引手工收口
 > ⚠️ `recovery-apply`: 退出码：0=成功/可执行/无未完结；1=拒绝；2=定位失败
 > ⚠️ `recovery-clean`: 清理 manifest 只进 stdout/--json，不写入 journal 目录
 > ⚠️ `recovery-clean`: 现场重分类：aborted-clean（回滚已成功）与全部 before 同判 not-started 可清；aborted-partial 混合分类拒绝
@@ -378,9 +379,9 @@ deterline/
 
 > ⚠️ **强制规则（必须遵守）**：用户要求自定义/新建房间时，**禁止 `create-room` 新建房间序号**（游戏运行时无法识别新增房间）。只能**修改已有房间**。房间选择必须查阅 **`ROOMS_GUIDE.md`**（Deterline 目录下，336 个房间全量分类清单）。
 >
-> 选房规则：
-> 1. 用户要求**加背景/视差** → 必须选 **B 类**（有背景图，可注入 GML 视差）；横长房（W>320）优先，小房（320×240）视角静止看不到视差
-> 2. 用户要求**纯地板场景** → 选 **C 类**（纯 Tile 地板）
+> 选房规则（2026-11-14 重生成口径：A=纯 Tile / B1=数据驱动背景 / B2=对象驱动背景）：
+> 1. 用户要求**加背景/视差** → 选 **B1**（数据驱动背景，可注入 GML 视差）或 **B2**（对象驱动背景——注意 B2 共存时 set-room-bg 无效）；横长房（W>320）优先，小房（320×240）视角静止看不到视差
+> 2. 用户要求**纯地板场景** → 选 **A**（纯 Tile 地板）
 > 3. 提供候选时列出房间号 + 尺寸 + 中文名，供用户挑选，不得擅自决定
 > 4. 用户要求**加背景时**，必须询问：是否要背景视差？视差速度（speedx）多少？（默认 0.3）
 > 5. 多层视差参考房：`room_lastruins_corridor`（230，B2 类，7 层多深度视差）。其余 obj_backgrounder_* 房间（tundra/dock/core/castle 等）也有单层视差公式

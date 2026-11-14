@@ -233,6 +233,20 @@ class TestRecoveryApply(RecoveryExecBase):
         self.assertIn("--direction", out)
         self.assertEqual((self.root / "t0.bin").read_bytes(), self.OLD[0])
 
+    def test_commit_refuses_tampered_copy_zero_action(self):
+        # R6 M2b 回归钉：副本"存在但指纹不符"（非缺失）——commit 模式整批
+        # 拒绝且零动作（此前只钉缺失分支，指纹比对分支无钉）
+        self._make_targets()
+        copies = self._make_copies()
+        copies["staged"][0].write_bytes(b"TAMPERED-STAGED")  # ≠ NEW0
+        self._write_journal("j", "pending", self._entries(copies))
+        out, code = self._apply(direction="complete", commit=True)
+        self.assertEqual(code, 1)
+        self.assertIn("副本校验失败", out)
+        self.assertEqual((self.root / "t1.bin").read_bytes(), self.OLD[1],
+                         "整批拒绝——未拒绝目标也不得执行")
+        self.assertTrue(copies["staged"][1].is_file())
+
     def test_apply_json_schema(self):
         self._make_targets()
         copies = self._make_copies()
@@ -280,7 +294,7 @@ class TestRecoveryClean(RecoveryExecBase):
         self.assertTrue(refused.is_file(), "拒绝项原样保留")
         self.assertTrue(mixed_copies["staged"][0].is_file(), "拒绝项副本保留")
         self.assertIn("拒绝", out)
-        self.assertIn("recovery-apply", out, "指引指向 apply")
+        self.assertIn("逐条 cp 指引", out, "指引指向 scan 的 cp 出口（apply 恒拒混合）")
 
     def test_commit_all_cleanable_exit_zero(self):
         self._make_targets()
@@ -326,6 +340,31 @@ class TestRecoveryClean(RecoveryExecBase):
         # manifest 不落盘（journal 目录已空/被摘除）
         journal_dir = self.root / ".deterline" / "journal"
         self.assertFalse(journal_dir.exists() and any(journal_dir.glob("*")))
+
+    def test_corrupt_journal_skips_orphan_sweep(self):
+        # R5 P2-2 回归钉：存在 corrupt-journal 时孤儿清扫跳过（corrupt 记录
+        # 资产"宁缺毋滥"），处置后二次 clean 才清孤儿
+        self._make_targets()
+        copies = self._make_copies()
+        self._write_journal("j", "pending", self._entries(copies))
+        journal_dir = self.root / ".deterline" / "journal"
+        (journal_dir / "broken.json").write_text("{broken", encoding="utf-8")
+        orphan = self.root / ".t0.bin.ghost.new"
+        orphan.write_bytes(b"GHOST")
+        buf, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(deterline.paths, "find_game_data_file",
+                               return_value=self.game):
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+                code = recovery.cmd_recovery_clean(
+                    self.root, str(self.root), commit=True, json_out=False)
+        out = buf.getvalue()
+        self.assertEqual(code, 1)
+        self.assertTrue(orphan.is_file(), "corrupt 存在 → 孤儿清扫跳过")
+        self.assertIn("孤儿暂存清扫跳过", err.getvalue())
+        (journal_dir / "broken.json").unlink()   # 人工处置 corrupt
+        out2, code2 = self._clean(commit=True)
+        self.assertEqual(code2, 0, out2)
+        self.assertFalse(orphan.is_file(), "二次 clean 清孤儿")
 
     def test_preview_zero_action(self):
         self._make_targets()
@@ -378,6 +417,13 @@ class TestBackupPruneCommit(RecoveryExecBase):
         self.assertEqual(len(manifest["entries"]), 2)
         self.assertEqual(sorted(e["original_path"] for e in manifest["entries"]),
                          sorted([str(archives[0]), str(archives[1])]))
+        # R6 M8 回归钉：可逆移动本体——moved_to 处文件真实存在且指纹一致
+        # （move→unlink 变异曾全绿：manifest 断言只查记录不查文件）
+        for entry in manifest["entries"]:
+            moved = Path(entry["moved_to"])
+            self.assertTrue(moved.is_file(), "可逆设计本体：文件必须在 pruned/ 中")
+            self.assertEqual(hashlib.sha256(moved.read_bytes()).hexdigest(),
+                             entry["sha256"])
         self.assertTrue(manifest["entries"][0]["sha256"])
         self.assertIn("undo --value", out, "undo 失效提示随行打印")
 
@@ -426,3 +472,41 @@ class TestBackupPruneCommit(RecoveryExecBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPreviewCommitMutex(unittest.TestCase):
+    """R5 P2-3 回归钉：--preview × --commit 三 handler 互斥（parser.error）。
+    --preview 设 state.PREVIEW——执行动词（--commit）不得与预览门并存。"""
+
+    def _expect_parser_error(self, handler_name, extra):
+        import types as _types
+        import contextlib as _ctxlib
+        import io as _io
+        import deterline.command_handlers as _ch
+        args = _types.SimpleNamespace(dir=None, json=False, commit=True,
+                                      preview=True, keep_archives=3,
+                                      direction=None)
+        for k, v in extra.items():
+            setattr(args, k, v)
+
+        class _Parser:
+            def error(self, msg):
+                raise SystemExit(2)
+
+        buf = _io.StringIO()
+        with mock.patch.object(deterline.paths, "find_save_dir",
+                               return_value=None), \
+             mock.patch.object(deterline.state, "PREVIEW", True):
+            with _ctxlib.redirect_stdout(buf):
+                with self.assertRaises(SystemExit) as cm:
+                    getattr(_ch, handler_name)(args, _Parser(), None)
+        self.assertEqual(cm.exception.code, 2)
+
+    def test_backup_prune_mutex(self):
+        self._expect_parser_error("_backup_prune", {})
+
+    def test_recovery_apply_mutex(self):
+        self._expect_parser_error("_recovery_apply", {"direction": "complete"})
+
+    def test_recovery_clean_mutex(self):
+        self._expect_parser_error("_recovery_clean", {})

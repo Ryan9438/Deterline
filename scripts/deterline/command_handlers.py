@@ -39,6 +39,8 @@ def _backup_prune(args, parser, target):
     keep_archives = 3 if raw is None else int(raw)
     if keep_archives < 1:
         parser.error(f"--keep-archives 必须 ≥ 1（收到 {keep_archives}）")
+    if bool(getattr(args, "commit", False)) and state.PREVIEW:
+        parser.error("--preview 与 --commit 互斥（R5 P2-3：执行动词不接受预览门）")
     code = save_cmds.cmd_backup_prune(
         save_dir, args.dir, keep_archives=keep_archives,
         json_out=bool(getattr(args, "json", False)),
@@ -77,6 +79,8 @@ def _recovery_apply(args, parser, target):
     commit = bool(getattr(args, "commit", False))
     if commit and direction not in ("rollback", "complete"):
         parser.error("--commit 需要 --direction rollback|complete")
+    if commit and state.PREVIEW:
+        parser.error("--preview 与 --commit 互斥（R5 P2-3：执行动词不接受预览门）")
     code = recovery.cmd_recovery_apply(
         save_dir, args.dir, direction=direction, commit=commit,
         json_out=json_out)
@@ -87,6 +91,8 @@ def _recovery_apply(args, parser, target):
 def _recovery_clean(args, parser, target):
     # 06 §4 执行入口：现场重分类；默认预览，--commit 清理可清项。
     json_out = bool(getattr(args, "json", False))
+    if bool(getattr(args, "commit", False)) and state.PREVIEW:
+        parser.error("--preview 与 --commit 互斥（R5 P2-3：执行动词不接受预览门）")
     try:
         save_dir = paths.find_save_dir(args.dir)
     except FileNotFoundError as exc:
