@@ -52,7 +52,7 @@ ASCII, ascii, 英文, 中文限制, 字体
 
 ## 技能版本
 
-2.5.10
+2.5.11
 
 ## 适用平台
 
@@ -146,7 +146,7 @@ deterline/
 ## 命令总览
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 92 个命令 · 版本 2.5.10 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 92 个命令 · 版本 2.5.11 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -479,9 +479,12 @@ python run.py --action recovery-clean --commit                        # 清理�
 | suspicious | 目标呈第三方内容 | **人工核对，勿盲用回滚副本**（apply/clean 一律拒绝） |
 | unknown-state | state 不在已知状态机 | 人工核对该记录来源 |
 | orphan-staged（kind） | 无记录引用的 `.new` 残留 | recovery-clean --commit 一并清理 |
+| journal-tmp（kind，A3 单列） | journal 原子写中断的 `.journal.*.new` 残留 | **只列出不自动清理**——人工查看内容后删除；若同名正式记录存在则以正式记录为准 |
 | corrupt-journal（kind） | 记录不可解析 | 人工查看后删除（**此时 journal 保护不完整，勿做清理决定**） |
 
 处理完重新运行原写命令即可通过。apply/clean 纪律（06 §4）：apply 以原 journal 为运行记录（不删不建——中段 SIGKILL → scan 重分类 → 可重入），完成后记录自然重分类为 not-started/done-confirm 再 clean 收尾；clean 现场重分类（绝不信任存量 state），清理 manifest 只进 stdout/--json。已知局限：跨目录混合提交（如 game+ini）崩溃后，只动另一目录的新提交看不到该记录——`recovery-scan` 会同时扫描 game 旁/存档旁/工作区层三处兜底。`backup-prune --commit` 同场次交付：超窗归档**移入** `.deterline/pruned/<ts>/`（可逆，manifest 含原路径+sha256），硬前置"recovery-scan 无 corrupt-journal"；purge 真删除入口 = `prune-purge`（v2.5.10 交付：默认预览，--commit 真删除不可逆，manifest 硬校验）。
+
+**退出码契约（B P3-6 文档化，A3 落）**——恢复链五命令同构：`0` = 干净/成功/可执行（含空集 no-op）；`1` = 发现未完结项 / 拒绝（混合分类、外部改动、副本缺失、损坏记录、删除失败等，**拒绝原因逐条打印**——stderr 或人读输出的 `✗` 行）；`2` = 两侧定位均失败（没扫到任何目录，不能报"干净"）。`recovery-scan` 只读恒安全；任何 `--commit` 拒绝都是**整批零执行**（clean 的逐条执行例外：拒绝项不影响其他可清项，但删除失败计入退出码）。拒绝即无副作用——可用目标/目录哈希对拍验证。符号链接目标一律拒绝写入（A3：os.replace 会替换链接本身而非目标文件；防线在 `FileEdit.prepare` / `write_many` baselines 分支 / 提交期紧贴 replace 重验三处）。**锁作用域**：per-target 独占文件锁（`<tmp>/deterline-locks-<uid>/<sha256(路径)>`，flock/msvcrt，进程死亡即释放）——两个进程争同一目标时胜者提交、败者在持锁后经基线重验拒绝，无部分写入。**允许根约束的分层**：事务层不做根白名单（相对路径按 cwd 解析、journal 落解析后目标旁），允许根由 CLI 层锚定（`--dir` 显式定位、无效**不回退**默认定位——防误打真实安装）。已知局限：**hardlink 别名不检测**（os.replace 单名替换后别名停留旧 inode、静默分叉，无破坏性——12 §A3 "别名"项余下部分，R11 P3-2 登记）。
 
 ---
 

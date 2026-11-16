@@ -247,6 +247,22 @@ def _collect_findings(save_dir: Path | None, dir_override: str | None):
                 "path": str(orphan),
                 "actions": ["无记录引用的暂存残留（目标未被触及）——确认后删除"],
             })
+    # journal 写入临时残留（A3 单列，12 计划）：mkstemp 原子写中断时
+    # `.journal.*.new` 残留在 journal 目录内——此前被孤儿扫描静默跳过
+    # （不可见）。只列出不自动清理：其内容可能是未落盘记录的快照，
+    # 宁缺毋滥（R5 P2-2 同口径）；若同名正式记录存在，以正式记录为准。
+    # 扫描域 = journal_roots 本体（根级 `.journal.*` 按旧契约忽略——
+    # 事务层的 mkstemp dir 恒为 journal 目录，根级残留非本层产物）。
+    for journal_root in journal_roots:
+        for tmp in sorted(journal_root.glob(".journal.*")):
+            if not tmp.is_file():
+                continue
+            findings.append({
+                "kind": "journal-tmp", "level": "unfinished",
+                "path": str(tmp),
+                "actions": ["journal 原子写临时残留——人工查看内容后删除；"
+                            "若同名正式记录存在则以正式记录为准"],
+            })
     return findings, warnings, roots, records
 
 

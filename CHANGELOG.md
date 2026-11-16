@@ -1,5 +1,35 @@
 # Changelog
 
+## v2.5.11 — 2026-11-17（12 计划 A 批次：可重放恢复验证 + 写入边界收紧）
+
+**性质：12 号四个月计划 A 线交付（无人值守场次，R11/R12 双席复审清偿后入库）。426→447 测试（+21：stress 7 + 边界 14）。**
+
+### A2 可重放恢复验证（tools/recovery_stress.py，新）
+
+- **独立进程强杀 + 确定性窗口注入**：窗口不靠时序竞态，子进程在真实 transactions/recovery 代码路径上 hook 打点（journal 状态写 pending/committing、暂存计数 staged、目标 os.replace after_replace1/after_replace_all、**journal 原子写内** journal_tmp——R11 P3-1 第三缺口补景），命中即 SIGKILL（Windows `os.kill(pid,9)`=TerminateProcess，`_SIGKILL=getattr(signal,"SIGKILL",9)`——R11 P1-1）。
+- **12 场景 oracle 矩阵**（s1–s10 + p1_prune，全部本机实测 12/12 pass）：每场景硬编码合法终态迁移表；混合分类双向整批拒绝 + `--commit` 零执行断言；手工收口 = scan 逐条 cp 指引的程序化复刻；"无 journal 的不明部分写入算失败"（12 §A2）硬编码为 violation。
+- **关键实测语义入库**（冒烟轮发现）：journal 的 **pending 记录 staged=None**——staged/rollback 路径要到 committing 态写才入记录；杀在暂存循环中 = 孤儿 `.new` 副本但记录不知情，唯一合法出口 = clean 连记录带孤儿收口（s9）。
+- **证据**：JSONL（run-header 带 seed/transactions_sha/evidence_scope="process-kill-only"——R12 P3-2；record 带 child rc/killed、scan levels、copy_hashes——R11 P3-1 副本半边、final_hashes、violations、verdict）；`--batches N` 随机批次扩展（R12 P3-1）；场景级 try/except 不炸整轮（R11 P3-3）。
+- **门禁**：`--confirm-synthetic` 必填 + 临时根 mkdtemp 自建；`--child` 子入口同样受门禁（只接受 `deterline_stress_` 前缀根——R11 P2-1）。
+- CI 子集 s1+s2+s5a+p1（Windows s1+p1——多窗口 TerminateProcess 保守逐级验证，07 §3 条3 更新）；全量/批次 = 本地 opt-in。
+
+### A3 写入边界收紧
+
+- **符号链接三道防线**（12 §A3）：`ensure_not_symlink` 公共助手——`FileEdit.prepare`（resolve **之前**判定）、`write_many` baselines 直传分支（**R11 P1-2 实证绕过修复**：ini alias 曾静默写穿）、提交期紧贴 os.replace 重验（R11 P2-2 TOCTOU）；`file0.py` 直构路径同样过防线。回归钉 ×3。
+- **journal 原子写残留单列**（`.journal.*.new`）：recovery-scan 新 kind `journal-tmp`——只列出不自动清理（内容可能是未落盘快照，宁缺毋滥）；扫描域 = journal_roots 本体（根级按旧契约忽略——旧钉面语义保持）。
+- **kept_counts 语义订正**（B P3-4 收口）：bak-archive 与 system-info（R11 P2-3/R12 P2-1 孪生）均改 kept = 未进删除集现存数——与"保留最近 N 份"承诺可对账。
+- **边界测试 14 项**（tests/test_boundary_hardening.py）：符号链接拒绝/零副作用、journal-tmp 列出且 clean 保留、kept_counts 对账、跨目录 journal 四钉（CHANGELOG v2.5.7 A P2-3 口径锚定——R12 P3-3）、相对路径 resolve/journal 落点、`..` 逃逸负形钉 + CLI 无回退钉（R12 P3-6）。
+- **SKILL 退出码契约 + 锁作用域 + 分层允许根 + hardlink 局限登记**（B P3-6 收口 + R11 P3-2/R12 P3-5）。
+- 并发回归沿用既有 `test_concurrent_commits_single_winner`（进程级竞争钉面随 A2 stress 的独立子进程覆盖补强）。
+
+### 复审清偿（R11 FAIL→清偿 / R12 PASS；双席全项落地）
+
+R11：P1-1 Windows SIGKILL 常量缺失（CI 必红）→ 一行修复；P1-2 symlink 主写路径绕过（实证探针）→ 三道防线重构 + 回归钉；P2-1 child 绕门禁 → 前缀校验；P2-2 TOCTOU → replace 循环重验；P2-3 sysinfo 口径 → 同步扣减；P3 ×3 → 全落地。R12：P1 双批次并发污染（过程性）→ A/B 线分离提交解决；P2 与 R11 重复；P3 ×7 → 全落地（含 07 §3 Windows 挂账更新：SIGKILL s1 已进 CI 级、symlink Windows 回归挂账）。
+
+### 前瞻登记
+
+- stress 副本哈希仅记录存续副本（apply 消费后即失）；hardlink 语义检测；`--journal` 多记录选择器（条件未触发，符合 12 §A3）；Windows symlink 回归（07 §3 条1）。
+
 ## v2.5.10 — 2026-11-14（深夜：prune-purge 入口 + 样例升级 in-game 级）
 
 **性质：值守场次交付收尾。** v2.5.9 修复后的样例（文本 ≤3 行重录）实机六项复验**全过 → 判级升级 in-game**（05 §5.3）；purge 真删除入口交付（06 §4 执行链最后一环）。**425 测试（+5）。**

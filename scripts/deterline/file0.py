@@ -393,6 +393,7 @@ def cmd_file0_set(save_dir: Path, key: str, value: str,
 
     numbers[idx] = val
     hint = _file0_field_hint(numbers, idx)
+    transactions.ensure_not_symlink(path)   # R11 P1-2：resolve 前防线（alias 写入拒绝）
     edit = transactions.FileEdit(path.resolve(), _serialize_file0(name, numbers), baseline)
     if submit is None:
         transactions.EditPlan((edit,)).apply()

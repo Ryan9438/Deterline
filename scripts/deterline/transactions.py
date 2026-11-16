@@ -131,6 +131,17 @@ def fingerprint(path: Path) -> str | None:
         return None
 
 
+def ensure_not_symlink(path: Path) -> None:
+    """A3 符号链接防线（12 计划；R11 P1-2 抽为公共助手）：os.replace 对
+    符号链接路径会**替换链接本身**（而非写穿到目标文件）。必须在 resolve
+    **之前**判定（resolve 会跟到真实路径，链接信息即失）。所有写入口
+    （prepare / write_many-baselines / file0 直构）统一调用。"""
+    if Path(path).is_symlink():
+        raise RuntimeError(
+            f"目标是符号链接，拒绝写入（os.replace 会替换链接本身而"
+            f"非目标文件）: {path} —— 请对 resolve 后的真实路径操作")
+
+
 @dataclass(frozen=True)
 class FileEdit:
     target: Path
@@ -140,7 +151,9 @@ class FileEdit:
 
     @classmethod
     def prepare(cls, target: Path, content: Payload, *, backup: bool = True):
-        target = target.resolve()
+        original = Path(target)
+        ensure_not_symlink(original)
+        target = original.resolve()
         return cls(target, content, fingerprint(target), backup)
 
 
@@ -311,6 +324,11 @@ class EditPlan:
             try:
                 for edit in self.edits:
                     target = edit.target
+                    if target.is_symlink():
+                        # 防线 2（A3）：绕过 prepare 直接构造的方案在提交期
+                        # 仍拦截（staging 失败路径 → aborted-clean，零替换）
+                        raise RuntimeError(
+                            f"目标是符号链接，拒绝写入: {target}")
                     self._check_baseline(edit)
                     exists = edit.baseline is not None
                     mode = stat.S_IMODE(target.stat().st_mode) if exists else None
@@ -334,6 +352,11 @@ class EditPlan:
                                  "committing", staged, rollback, content_shas)
             try:
                 for edit in self.edits:
+                    # R11 P2-2（TOCTOU）：is_symlink 紧贴最终 os.replace 重验——
+                    # staging 与替换之间目标被换成同内容符号链接的形态在此拦截
+                    if edit.target.is_symlink():
+                        raise RuntimeError(
+                            f"目标是符号链接，拒绝写入: {edit.target}")
                     self._check_baseline(edit)
                     os.replace(staged[edit.target], edit.target)
                     completed.append(edit.target)
@@ -384,6 +407,9 @@ def write_many(changes: dict[Path, Payload], *, backup: bool = True,
     edits = []
     for path, data in changes.items():
         if path in baselines:
+            # R11 P1-2：baseline 直传分支同样过符号链接防线（此前 resolve
+            # 在前，链接信息丢失，alias 写入静默放行）
+            ensure_not_symlink(path)
             edits.append(FileEdit(path.resolve(), data, baselines[path], backup))
         else:
             edits.append(FileEdit.prepare(path, data, backup=backup))

@@ -739,6 +739,20 @@ def cmd_backup_prune(save_dir: Path | None, dir_override: str | None = None,
                  "workspace-legacy", "orphan-snapshot", "system-info"):
         if kind in stats:
             kept_counts[kind] = stats[kind]["count"]
+    # B P3-4 语义订正（12 计划 A3）：kept_counts 此前不含 bak-archive——
+    # 被修剪对象本身反而无计数。kept = 未进删除集的现存数（含 journal
+    # 保护跳过）——与"保留最近 N 份"承诺可对账。
+    if "bak-archive" in stats:
+        bak_paths = {e["path"] for e in entries if e["kind"] == "bak-archive"}
+        deleted_bak = sum(1 for d in deletions if d["path"] in bak_paths)
+        kept_counts["bak-archive"] = stats["bak-archive"]["count"] - deleted_bak
+    # R11 P2-3 / R12 P2-1：system-info 同口径（带 backup 的行同样进删除集）
+    if "system-info" in stats:
+        sysinfo_paths = {e["path"] for e in entries if e["kind"] == "system-info"
+                         and (e.get("restore") or {}).get("backup")}
+        deleted_sysinfo = sum(1 for d in deletions if d["path"] in sysinfo_paths)
+        kept_counts["system-info"] = (stats["system-info"]["count"]
+                                      - deleted_sysinfo)
 
     reclaimable = sum(d["size_bytes"] for d in deletions)
 
