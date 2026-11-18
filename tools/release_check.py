@@ -22,8 +22,9 @@ VERSION_FILES = [
     ("scripts/modify_save.py", '__version__ = "([^"]+)"'),
     ("scripts/deterline/__init__.py", '__version__ = "([^"]+)"'),
     ("scripts/commands.json", '"version": "([^"]+)"'),
-    ("SKILL.md", r"## 技能版本\n\n([0-9.]+)"),
-    ("README.md", r"Agent Skill 完整文档（v?([0-9.]+)）"),
+    # v2.6.0-rc1 起带预发布后缀
+    ("SKILL.md", r"## 技能版本\n\n([0-9.]+(?:-rc[0-9]+)?)"),
+    ("README.md", r"Agent Skill 完整文档（v?([0-9.]+(?:-rc[0-9]+)?)）"),
 ]
 
 DISTRIBUTION_FILES = [

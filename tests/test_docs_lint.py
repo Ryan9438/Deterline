@@ -43,19 +43,21 @@ def _read(p: Path) -> str:
 class TestVersionConsistency(unittest.TestCase):
     def test_all_versions_match_modify_save(self):
         ver = re.search(r'__version__ = "([^"]+)"', _read_version_source()).group(1)
+        # v2.6.0-rc1 起版本带预发布后缀（-rcN）——正则允许 [0-9.]+-rcN
+        rel_pat = r"([0-9.]+(?:-rc[0-9]+)?)"
         for rel, pat in [
             ("run.py", r'__version__ = "([^"]+)"'),
             ("install.py", r'__version__ = "([^"]+)"'),
             ("scripts/bg_generator.py", r'__version__ = "([^"]+)"'),
-            ("SKILL.md", r"## 技能版本\n\n([0-9.]+)"),
-            ("README.md", r"SKILL\.md\s+← Agent Skill 完整文档（v?([0-9.]+)）"),
+            ("SKILL.md", r"## 技能版本\n\n" + rel_pat),
+            ("README.md", r"SKILL\.md\s+← Agent Skill 完整文档（v?" + rel_pat + r"）"),
         ]:
             m = re.search(pat, _read(REPO / rel))
             self.assertIsNotNone(m, f"{rel} 未找到版本声明")
             self.assertEqual(m.group(1), ver,
                              f"{rel} 版本 {m.group(1)} != {ver}（版本必须单点统一）")
         ps = _read(ROOT / "PROJECT_SUMMARY.md")
-        m = re.search(r"SKILL\.md\s+← Agent Skill 完整文档（v?([0-9.]+)）", ps)
+        m = re.search(r"SKILL\.md\s+← Agent Skill 完整文档（v?" + rel_pat + r"）", ps)
         if m:
             self.assertEqual(m.group(1), ver, "PROJECT_SUMMARY 版本漂移")
 

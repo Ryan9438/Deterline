@@ -1,5 +1,41 @@
 # Changelog
 
+## v2.6.0-rc1 — 2026-11-19（12 计划 C 批次 + A4：支线编排层 storyline-plan/build/apply + 新候选版）
+
+**性质：12 号四个月计划 C 线交付 + 新候选版（A4）。95 命令（+3）、462→481 测试（+19）。C1 实录（两分支 sandbox 全绿）+ C4 CLI 实跑（build/preview/commit/幂等/undo 全链）为验收证据。**
+
+### C2：storyline v1 合同（scripts/deterline/storyline/，新包）
+
+- **yaml_min**（安全 YAML 子集解析器，stdlib-only）：块映射/标量序列/引号串/int/bool/null；**显式拒绝**锚点 &、别名 *、标签 !、多文档 ---、流式 {}[]、tab、重复键、序列内映射（11/11 拒绝面测试）；错误带行号。
+- **合同**（deterline.storyline/v1）：严格封闭字段集（未知顶层/npc 字段拒绝）、schema 版本漂移拒绝、patch_id 正则、flag 独占区 500-999、prompt 须含 \C 且 ≤3 行、分支文本禁 \C、**v1 全 ASCII**（CJK 组合按 C1 结论另列验收）。
+- **flag 语义（诚实口径）**：flag_id 声明保留 + 冲突检查（同 flag 被其他回执占用即冲突）——**模板 v1 不写入**（无实机证据的写入路径按 12 §C2 禁用，记诊断）。
+
+### C3：storyline-build（工作区构建 + 声明差异闸门）
+
+- 自管 `game_edit` 上下文——批量提交在上下文**退出**时落盘（data_win 包装内读产物 = 基线副本，**CLI 实测教训入库**）；指纹/O7 比对在提交后进行。
+- **声明差异闸门**：O7 --detail 输出按通用类别解析（`<大写资源> <add|changed|del>`——**不设白名单**：解析层漏看 = 假绿，C3 验收自我修正记录）；期望资源集 = 模板常数（干净基线实证标定：STR add 9 / CODEF add 1-2 / CODEF changed 1-2 / INST add 1——随 append/create/native 路径变化）；未声明变更拒绝出候选（实跑验证：脏重建 STR×9 与干净构建 CODEF changed×1 均正确裁决）。
+- 构建回执落盘 `build.json`（apply 的核对依据）。
+
+### C4：storyline-apply（整包应用 + 幂等）
+
+- 核对依据分层：build.json（构建回执）→ 应用前裁决 → receipt.json（应用回执：before/after/defn_sha/undo 指引）。
+- **三种出口全部写前裁决**：幂等 = 同 patch_id + 目标==after + **同定义 defn_sha**（判据用回执 defn_sha 而非活产物——工作区单次消费后不在盘上）；同 ID 不同内容（定义变更）拒绝叠写；目标漂移拒绝。`--commit` 经 EditPlan 事务层（含备份 journal）；中断交给恢复分类（journal 复用方案 A），不靠猜测宣布已应用。
+- **CLI 实跑全链**（/tmp 副本）：build（候选 35d189a5，声明差异 {STR add 9, CODEF changed 1}）→ preview → commit（fc049850→5a6f9b66）→ 幂等 no-op → undo → fc049850 → recovery-scan findings:0。
+- `sandbox.remove_workspace` 容错化：`.deterline/` 下新增 storyline/ 兄弟目录时清理链停止（Errno 66 修复）。
+
+### A4：候选版 v2.6.0-rc1
+
+- 版本链 2.6.0-rc1（**预发布后缀支持**：docs-lint/release_check 版本正则扩展 `-rcN`）；95 actions 注册链全量（commands.json → COMMANDS → gen_docs 三文档 → help golden 重录 → FROZEN_EXPORTS 216→219）。
+- 分发自检：干净检出 release_check 全绿（见 08 候选版记录）。
+
+### 注册链与纪律
+
+- commands.json 95 条（storyline 组 safety 域）；dispatch coverage 口径 95 = 76 已覆盖 + 19 豁免（**npc-choice 移出豁免**：storyline 编排 mock 级 + C1 真实 UTMT 双证据）；包纪律（跨模块引用一律模块属性/运行时查找——`_pkg()` 模式）11 处违规清偿；write_policy/utmt_spine 顺序依赖污染修复（E2E 状态卫生）。
+
+### 前瞻登记
+
+- storyline flag 写入路径（B5/R2 实机证据后开放）；多 NPC/多房间扩展（D2 触发）；O7 "added" 类别行解析（当前资源级明细对 added 的行形态与 changed 不同——实测 {STR add 9, CODEF changed 1} 与手工计数一致，add 类别由增量计数覆盖）；CJK 支线组合验收（C1 结论）；实机 B5/R0-R2 矩阵。
+
 ## v2.5.12 — 2026-11-18（12 计划 B 批次：模板边界——3.5 评审包落地 + O3b 三分类）
 
 **性质：12 号四个月计划 B1/B2/B3 交付（无人值守场次；R11/R12 复审 A 线时同树并行，随 A 线分离提交）。447→462 测试（+15）。**

@@ -107,7 +107,7 @@ python run.py --action quest-init
 ### 全部命令（自动生成 · 与 SKILL.md/COMMANDS.md 逐字节一致）
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 92 个命令 · 版本 2.5.12 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 95 个命令 · 版本 2.6.0-rc1 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -310,6 +310,9 @@ python run.py --action quest-init
 | `experiment-snapshot --value "test1"` | 创建命名实验快照（game.ios + file0） | static |
 | `experiment-list` | 列出全部实验快照 | static |
 | `experiment-restore --value "test1"` | 从命名快照恢复（⚠️ 覆盖 game.ios + file0） | static |
+| `storyline-plan --value storyline.yaml --dir /path/game.ios --json` | 支线编排·只读计划（12 §C2）：解析版本化 YAML 定义（deterline.storyline/v1，严格封闭字段集/重复键拒绝/ASCII 合同）→ 房间/对象/goto 预解析 + 期望资源集 + flag 独占区冲突诊断——错房/歧义/冲突/缺字在写目标前拒绝；--json 输出 deterline.storyline-plan/v1；零写盘 | sandbox |
+| `storyline-build --value storyline.yaml --workspace det_demo --dir /path/game.ios` | 支线编排·工作区构建（12 §C3）：plan → 有名工作区构建（域生成器 npc-choice）→ 基线 vs 产物 O7 结构化差异 → 与计划期望资源集比对（未声明变更拒绝出候选）→ 构建回执（fingerprint/声明差异）；构建期间仅写工作区 | sandbox |
+| `storyline-apply --value storyline.yaml --workspace det_demo --dir /path/game.ios --commit` | 支线编排·整包应用（12 §C4）：构建回执核对 → 幂等（同 ID 同内容且目标==after → 已应用 no-op）/ 同 ID 不同内容或目标漂移拒绝 → EditPlan 事务层整包应用 → 回执落盘 .deterline/storyline/<patch_id>/receipt.json；中断交给恢复分类（journal 复用方案 A） | sandbox |
 
 > ⚠️ `verify-code`: V1 收窄版；注入实验后必跑，能区分活/死代码形态的指纹差异
 > ⚠️ `smoke-test`: ≈90 秒/次；环境敏感（无人值守开场动画可能卡住）；结束后自动还原并清理
@@ -319,6 +322,15 @@ python run.py --action quest-init
 > ⚠️ `diff-snapshots`: 阶段 1.3：--detail 输出资源级差异（字符串内容哈希 LCS 锚定 / 实例 add-remove-move / 代码反汇编指纹 / 字体字形+纹理页）；单次遍历同载摘要+明细
 > ⚠️ `diff-snapshots`: 阶段 1.4：--expected JSON 声明允许改变的资源范围（strings/code/fonts: any 或名单；instances: {房间: [move,add,remove]} 操作词表）——范围外差异退出码 1
 > ⚠️ `diff-snapshots`: 显式 A/B 输入 read-through 直读（工作区选择不会替换任一输入）；--utmt-timeout 默认 300s（--detail 全量反汇编）
+> ⚠️ `storyline-plan`: 定义字段集 v1：schema/patch_id/room/npc(object,x,y,prompt,yes_text,no_text,range,yes_goto,yes_item,once)/flag_id
+> ⚠️ `storyline-plan`: npc.prompt 须含 \C 且 ≤3 行；分支文本不得含 \C；v1 全 ASCII（CJK 组合另列验收）
+> ⚠️ `storyline-plan`: flag_id 为声明保留（模板 v1 不写入——无实机证据的写入路径禁用，12 §C2）；冲突=其他回执占用同 flag
+> ⚠️ `storyline-build`: 需要 --workspace（构建工作区名）；产物 = .deterline/<file>/<ws>/<file>
+> ⚠️ `storyline-build`: O7 差异类别超出计划声明（STR add/CODEF/INST add）→ 拒绝（deterline.storyline-build/v1）
+> ⚠️ `storyline-build`: 中断不触原文件——失败只留可识别临时材料
+> ⚠️ `storyline-apply`: 默认预览零动作；--commit 执行（含目标备份 undo --file data_win --value data_win）
+> ⚠️ `storyline-apply`: 幂等/漂移/同 ID 异内容三种出口全在写前裁决；证据等级 sandbox（B5/R2 实机证据待窗口）
+> ⚠️ `storyline-apply`: 回执含 before/after sha256 + undo 指引；重复执行同定义 = 已应用 no-op
 <!-- END generated:commands -->
 
 完整命令列表见 [COMMANDS.md](COMMANDS.md)，Agent Skill 文档见 [SKILL.md](SKILL.md)。
@@ -404,7 +416,7 @@ Skill 通过符号链接安装，工作区修改自动同步。
 ```
 deterline/
 ├── run.py              ← 快捷入口
-├── SKILL.md            ← Agent Skill 完整文档（2.5.12）
+├── SKILL.md            ← Agent Skill 完整文档（2.6.0-rc1）
 ├── COMMANDS.md         ← 常用指令速查
 ├── QUESTIONNAIRE_WORKFLOW.md ← 问卷工作流（Agent 必读）
 ├── README.md

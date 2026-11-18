@@ -108,7 +108,11 @@ def remove_workspace(copy: Path) -> None:
     if copy.parent.parent.parent.name == ".deterline":
         copy.parent.rmdir()  # <文件名>/default 工作区层
         # 清理空目录链（审核席 B P2-1：唯一工作区移除后 .deterline/<名>/ 与
-        # .deterline/ 会残留）；rmdir 仅在空目录时成功，非空即保留
+        # .deterline/ 会残留）；rmdir 仅在空目录时成功，非空即保留——
+        # C4 起 .deterline/ 下新增 storyline/ 回执兄弟目录，顶层非空属常态
         file_layer = copy.parent.parent
-        file_layer.rmdir()
-        file_layer.parent.rmdir()
+        for d in (file_layer, file_layer.parent):
+            try:
+                d.rmdir()
+            except OSError:
+                break   # 非空（如 storyline/ 回执）——保留，不视为错误

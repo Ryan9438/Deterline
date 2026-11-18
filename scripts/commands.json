@@ -9,7 +9,7 @@
     },
     "invariants": "action 集合必须与 modify_save.py --action choices 完全一致（test_docs_lint 校验）。新增命令流程：注册 command_handlers.py 路由 → 加本文件条目（含 golden test / doctor 项）→ python3 tools/gen_docs.py。"
   },
-  "version": "2.5.12",
+  "version": "2.6.0-rc1",
   "groups": [
     {
       "id": "save",
@@ -826,6 +826,42 @@
         "工作区行尾附 manifest history 摘要；损坏 manifest 容错（标 manifest损坏 不崩溃）",
         "--json：stdout 纯 JSON（schema=deterline.backup-index/v1）；两侧定位均失败退出码 2；orphan 行含 note 字段（向后兼容增量）",
         "恢复入口：undo / experiment-restore / sandbox-restore（本命令零恢复零清理）"
+      ]
+    },
+    {
+      "action": "storyline-plan",
+      "group": "safety",
+      "verify": "sandbox",
+      "summary": "支线编排·只读计划（12 §C2）：解析版本化 YAML 定义（deterline.storyline/v1，严格封闭字段集/重复键拒绝/ASCII 合同）→ 房间/对象/goto 预解析 + 期望资源集 + flag 独占区冲突诊断——错房/歧义/冲突/缺字在写目标前拒绝；--json 输出 deterline.storyline-plan/v1；零写盘",
+      "example": "storyline-plan --value storyline.yaml --dir /path/game.ios --json",
+      "notes": [
+        "定义字段集 v1：schema/patch_id/room/npc(object,x,y,prompt,yes_text,no_text,range,yes_goto,yes_item,once)/flag_id",
+        "npc.prompt 须含 \\C 且 ≤3 行；分支文本不得含 \\C；v1 全 ASCII（CJK 组合另列验收）",
+        "flag_id 为声明保留（模板 v1 不写入——无实机证据的写入路径禁用，12 §C2）；冲突=其他回执占用同 flag"
+      ]
+    },
+    {
+      "action": "storyline-build",
+      "group": "safety",
+      "verify": "sandbox",
+      "summary": "支线编排·工作区构建（12 §C3）：plan → 有名工作区构建（域生成器 npc-choice）→ 基线 vs 产物 O7 结构化差异 → 与计划期望资源集比对（未声明变更拒绝出候选）→ 构建回执（fingerprint/声明差异）；构建期间仅写工作区",
+      "example": "storyline-build --value storyline.yaml --workspace det_demo --dir /path/game.ios",
+      "notes": [
+        "需要 --workspace（构建工作区名）；产物 = .deterline/<file>/<ws>/<file>",
+        "O7 差异类别超出计划声明（STR add/CODEF/INST add）→ 拒绝（deterline.storyline-build/v1）",
+        "中断不触原文件——失败只留可识别临时材料"
+      ]
+    },
+    {
+      "action": "storyline-apply",
+      "group": "safety",
+      "verify": "sandbox",
+      "summary": "支线编排·整包应用（12 §C4）：构建回执核对 → 幂等（同 ID 同内容且目标==after → 已应用 no-op）/ 同 ID 不同内容或目标漂移拒绝 → EditPlan 事务层整包应用 → 回执落盘 .deterline/storyline/<patch_id>/receipt.json；中断交给恢复分类（journal 复用方案 A）",
+      "example": "storyline-apply --value storyline.yaml --workspace det_demo --dir /path/game.ios --commit",
+      "notes": [
+        "默认预览零动作；--commit 执行（含目标备份 undo --file data_win --value data_win）",
+        "幂等/漂移/同 ID 异内容三种出口全在写前裁决；证据等级 sandbox（B5/R2 实机证据待窗口）",
+        "回执含 before/after sha256 + undo 指引；重复执行同定义 = 已应用 no-op"
       ]
     }
   ]

@@ -151,7 +151,7 @@ class TestCompatSurface(unittest.TestCase):
 
 
 # 全量导出面冻结（风险席 2026-11-13：91 名只是测试引用子集，shim 活导出
-# 216 名中约 122 名无任何守护——一次 shim"清理"可静默删掉它们）。
+# 219 名中约 122 名无任何守护——一次 shim"清理"可静默删掉它们）。
 # 有意变更（新增/删除/改名）必须同步更新本清单并在提交信息归因。
 FROZEN_EXPORTS = [
     "ALLOW_CJK",
@@ -339,6 +339,9 @@ FROZEN_EXPORTS = [
     "cmd_sprite_preview",
     "cmd_sprite_replace",
     "cmd_sprite_search",
+    "cmd_storyline_apply",
+    "cmd_storyline_build",
+    "cmd_storyline_plan",
     "cmd_strg_add",
     "cmd_strg_delete",
     "cmd_strg_get",

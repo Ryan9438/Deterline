@@ -6,6 +6,38 @@ from pathlib import Path
 
 from . import config, file0, inifile, paths, sandbox, state, transactions, utmt
 from .cmds import cjk, code, dialogue, doctor, door, npc, recovery, room, save_cmds, sprite, verify
+from .storyline import commands as storyline
+
+
+def _storyline_plan_data_win(args, parser, game_file):
+    if args.value is None:
+        parser.error("storyline-plan 需要 --value (定义 YAML 路径)")
+    storyline.cmd_storyline_plan(game_file, args.value, json_out=args.json)
+
+
+def _storyline_build_any(args, parser, target):
+    # any 路由（对齐 recovery 执行入口）：自解析游戏文件 + 自管 game_edit
+    # 上下文——产物指纹/O7 差异必须在上下文**退出**（批量提交落盘）之后读取，
+    # data_win 包装内读到的永远是提交前的基线副本（C4 实测教训）
+    if args.value is None:
+        parser.error("storyline-build 需要 --value (定义 YAML 路径)")
+    if not args.workspace:
+        parser.error("storyline-build 需要 --workspace (构建工作区名)")
+    storyline.cmd_storyline_build(
+        paths.resolve_game_data_file(args.dir), args.value, args.workspace,
+        json_out=args.json)
+
+
+def _storyline_apply_any(args, parser, target):
+    # any 路由（对齐 recovery 执行入口）：自解析游戏文件（无回退），
+    # 整包应用直走事务层（EditPlan + journal），不经工作区编辑包装
+    if args.value is None:
+        parser.error("storyline-apply 需要 --value (定义 YAML 路径)")
+    if not args.workspace:
+        parser.error("storyline-apply 需要 --workspace (构建工作区名)")
+    storyline.cmd_storyline_apply(
+        None, paths.resolve_game_data_file(args.dir), args.value,
+        args.workspace, commit=bool(args.commit), json_out=args.json)
 
 
 def _backup_index(args, parser, target):
@@ -869,6 +901,9 @@ COMMANDS = {
     "recovery-apply": {"any": _recovery_apply},
     "recovery-clean": {"any": _recovery_clean},
     "md5": {"any": _md5},
+    "storyline-plan": {"data_win": _storyline_plan_data_win},
+    "storyline-build": {"any": _storyline_build_any},
+    "storyline-apply": {"any": _storyline_apply_any},
 }
 
 # Query commands keep reading the source by default; --sandbox/--workspace select a copy.
@@ -878,6 +913,7 @@ GAME_QUERIES = {
     "verify-code", "diff-snapshots", "list-doors", "room-info", "list-game-bgs",
     "room-bg-info", "list-sprites", "search-sprite", "get-obj", "list-textures",
     "export-sprite", "preview-sprite", "export-texture", "dump-sprites", "cjk-check",
+    "storyline-plan",
 }
 
 
