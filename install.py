@@ -17,7 +17,7 @@
   python install.py --help     查看完整帮助
 """
 
-__version__ = "2.5.11"
+__version__ = "2.5.12"
 
 import argparse
 import os

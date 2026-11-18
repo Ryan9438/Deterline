@@ -493,12 +493,13 @@ class TestGoldenDoorPitBattle(unittest.TestCase):
 
     def test_create_door_fresh_base(self):
         """O3b 前置钉（风险席 2026-11-13）：无既有 Create_0 → 从 BASE 起步
-        路径此前零 golden——空反编译应答走 fresh-base 分支，BASE 常量直录。"""
+        路径此前零 golden——应答用真实 "ERROR: not found" 形态走 fresh-base
+        分支（B3 三分类后空应答=协议异常须拒绝），BASE 常量直录。"""
         cap, _ = _capture_stateful(
             ms.cmd_create_door, Path("/tmp/golden_test/game.ios"),
             "room_golden", "room_golden_b", 320, 240, 100, 200,
             replies={'ScriptMessage("IDX:': "IDX:70",
-                     'ScriptMessage("GML_LINE:': ""})
+                     'ScriptMessage("GML_LINE:': "ERROR: not found"})
         _check_golden(self, "create_door_fresh_base", cap)
 
     def test_create_pit_fresh_base(self):
@@ -506,14 +507,14 @@ class TestGoldenDoorPitBattle(unittest.TestCase):
             ms.cmd_create_pit, Path("/tmp/golden_test/game.ios"),
             "room_golden", "room_golden_b", 320, 240, 100, 200,
             replies={'ScriptMessage("IDX:': "IDX:70",
-                     'ScriptMessage("GML_LINE:': ""})
+                     'ScriptMessage("GML_LINE:': "ERROR: not found"})
         _check_golden(self, "create_pit_fresh_base", cap)
 
     def test_create_battle_fresh_base(self):
         cap, _ = _capture_stateful(
             ms.cmd_create_battle, Path("/tmp/golden_test/game.ios"),
             "room_golden", battlegroup_id=3, border=1, x=320, y=240,
-            replies={'ScriptMessage("GML_LINE:': ""})
+            replies={'ScriptMessage("GML_LINE:': "ERROR: not found"})
         _check_golden(self, "create_battle_fresh_base", cap)
 
     def test_remove_door_all(self):

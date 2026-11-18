@@ -94,8 +94,17 @@ try {{
             print(line)
 
 
-def _decompile_to_lines(game_file: Path, code_name: str) -> list[str] | None:
-    """Decompile a code entry and return lines as list[str] (multi-line safe)."""
+def decompile_classified(game_file: Path, code_name: str) -> tuple[str, list[str] | None, str | None]:
+    """反编译结果三分类（12 计划 B3/O3b）——拆开"条目不存在"与"工具读失败"。
+
+    返回 (status, lines, detail)：
+    - ("ok", lines, None)：存在且已读（**含空内容**——fresh-base 与否由模板自裁决）；
+    - ("not-found", None, "ERROR: not found")：CSX 显式报告条目不存在；
+    - ("error", None, detail)：其他 ERROR（工具/反编译异常）、GML_COUNT 缺失
+      （输出截断/协议异常）、GML_LINE 序列不全——**不得当空脚本继续**，
+      fresh-base 只允许 ok 或 not-found（11 §2b：超时/工具错误/协议异常
+      不能作为空脚本继续）。
+    """
     esc = utmt._csx_escape(code_name)
     csx = f'''
 var code = Data.Code.ByName("{esc}");
@@ -116,19 +125,36 @@ try {{
 '''
     out = utmt._run_utmt(csx, game_file, save=False)
     lines_out = utmt._parse_msg(out)
+    err = [l for l in lines_out if l.startswith("ERROR:")]
+    if err:
+        if err[0] == "ERROR: not found":
+            return "not-found", None, err[0]
+        return "error", None, err[0]
     count_line = next((l for l in lines_out if l.startswith("GML_COUNT:")), None)
     if count_line is None:
-        err = [l for l in lines_out if l.startswith("ERROR:")]
-        if err:
-            print(err[0], file=sys.stderr)
-        return None
+        return "error", None, "GML_COUNT 缺失（输出截断/协议异常）"
     total = int(count_line.split(":")[1])
     line_map: dict[int, str] = {}
     for l in lines_out:
         if l.startswith("GML_LINE:"):
             _, idx_str, rest = l.split(":", 2)
             line_map[int(idx_str)] = rest
-    return [line_map[i] for i in range(total)]
+    missing = [i for i in range(total) if i not in line_map]
+    if missing:
+        return "error", None, f"GML_LINE 序列不全（缺 {missing[:3]}）"
+    return "ok", [line_map[i] for i in range(total)], None
+
+
+def _decompile_to_lines(game_file: Path, code_name: str) -> list[str] | None:
+    """Decompile a code entry and return lines as list[str] (multi-line safe).
+    兼容面：not-found/error 均折叠为 None（旧行为）；ERROR 行保留 stderr
+    打印（旧实现副作用）。分类需求用 decompile_classified。"""
+    status, lines, detail = decompile_classified(game_file, code_name)
+    if status == "ok":
+        return lines
+    if detail and detail.startswith("ERROR:"):
+        print(detail, file=sys.stderr)
+    return None
 
 
 def _get_decompiled_code(game_file: Path, code_name: str) -> str | None:

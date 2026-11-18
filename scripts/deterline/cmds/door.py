@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from .. import errors, rooms_data, utmt
-from . import code
+from . import code, template_common
 
 DOOR_GOTO_BACK_SCRIPT = '''/// door_goto_back()
 /// Return to the previous room
@@ -76,36 +76,22 @@ def cmd_create_door(game_file: Path, cur_room: str, target_room: str,
     OBJ_STEP = "gml_Object_obj_deterline_door_Step_0"
 
     esc_cur = utmt._csx_escape(cur_room)
-    esc_target = utmt._csx_escape(target_room)
+    esc_target = utmt._csx_escape(target_room)   # 写入 CSX 的 OK 消息仍引用
 
-    # Look up target room numeric index via CSX
-    idx_csx = f'''
-var r = Data.Rooms.ByName("{esc_target}");
-if (r == null) {{
-    for (int i = 0; i < Data.Rooms.Count; i++) {{
-        if (Data.Rooms[i].Name.Content.IndexOf("{esc_target}", StringComparison.OrdinalIgnoreCase) >= 0) {{
-            r = Data.Rooms[i];
-            break;
-        }}
-    }}
-}}
-if (r != null) {{
-    ScriptMessage("IDX:" + Data.Rooms.IndexOf(r));
-}} else {{
-    ScriptMessage("IDX:-1");
-}}
-'''
-    idx_out = utmt._run_utmt(idx_csx, game_file, save=False)
-    target_idx = -1
-    for line in utmt._parse_msg(idx_out):
-        if line.startswith("IDX:"):
-            target_idx = int(line.split(":")[1])
-            break
-    if target_idx < 0:
-        raise errors.NotFoundError(f"目标房间不存在: {target_room}")
+    # Look up target room numeric index（B2：两段式预查单点化——CSX 字节不变）
+    target_idx = template_common.idx_room_lookup(game_file, target_room)
+    template_common.reject_if(target_idx < 0,
+                              f"目标房间不存在: {target_room}",
+                              exc=errors.NotFoundError)
 
     # Read existing Create_0 code or start from base
-    existing_create = code._get_decompiled_code(game_file, OBJ_CREATE)
+    # （B3/O3b：三分类——读失败不得当空脚本 fresh-base）
+    status, gml_lines, detail = code.decompile_classified(game_file, OBJ_CREATE)
+    template_common.reject_if(
+        status == "error",
+        f"Create_0 反编译读失败——不作为空脚本处理（B3/O3b）: {detail}",
+        exc=errors.DeterlineError)
+    existing_create = "\n".join(gml_lines) if status == "ok" else None
     if existing_create and existing_create.strip():
         existing_create = existing_create.strip()
         # Check if this door branch already exists
@@ -247,36 +233,22 @@ def cmd_create_pit(game_file: Path, cur_room: str, target_room: str,
     OBJ_STEP = "gml_Object_obj_deterline_pit_Step_0"
 
     esc_cur = utmt._csx_escape(cur_room)
-    esc_target = utmt._csx_escape(target_room)
+    esc_target = utmt._csx_escape(target_room)   # 写入 CSX 的 OK 消息仍引用
 
-    # Look up target room numeric index
-    idx_csx = f'''
-var r = Data.Rooms.ByName("{esc_target}");
-if (r == null) {{
-    for (int i = 0; i < Data.Rooms.Count; i++) {{
-        if (Data.Rooms[i].Name.Content.IndexOf("{esc_target}", StringComparison.OrdinalIgnoreCase) >= 0) {{
-            r = Data.Rooms[i];
-            break;
-        }}
-    }}
-}}
-if (r != null) {{
-    ScriptMessage("IDX:" + Data.Rooms.IndexOf(r));
-}} else {{
-    ScriptMessage("IDX:-1");
-}}
-'''
-    idx_out = utmt._run_utmt(idx_csx, game_file, save=False)
-    target_idx = -1
-    for line in utmt._parse_msg(idx_out):
-        if line.startswith("IDX:"):
-            target_idx = int(line.split(":")[1])
-            break
-    if target_idx < 0:
-        raise errors.NotFoundError(f"目标房间不存在: {target_room}")
+    # Look up target room numeric index（B2：两段式预查单点化——CSX 字节不变）
+    target_idx = template_common.idx_room_lookup(game_file, target_room)
+    template_common.reject_if(target_idx < 0,
+                              f"目标房间不存在: {target_room}",
+                              exc=errors.NotFoundError)
 
     # Read existing Create_0 or start from base
-    existing_create = code._get_decompiled_code(game_file, OBJ_CREATE)
+    # （B3/O3b：三分类——读失败不得当空脚本 fresh-base）
+    status, gml_lines, detail = code.decompile_classified(game_file, OBJ_CREATE)
+    template_common.reject_if(
+        status == "error",
+        f"Create_0 反编译读失败——不作为空脚本处理（B3/O3b）: {detail}",
+        exc=errors.DeterlineError)
+    existing_create = "\n".join(gml_lines) if status == "ok" else None
     if existing_create and existing_create.strip():
         existing_create = existing_create.strip()
         marker = f'_rn == "{esc_cur}" && x == {x} && y == {y}'
@@ -410,7 +382,14 @@ def cmd_create_battle(game_file: Path, cur_room: str,
 
     esc_cur = utmt._csx_escape(cur_room)
 
-    existing_create = code._get_decompiled_code(game_file, OBJ_CREATE)
+    # B3/O3b：三分类——读失败不得当空脚本 fresh-base（battle 无前置 ensure_room，
+    # B1 延后口径不变）
+    status, gml_lines, detail = code.decompile_classified(game_file, OBJ_CREATE)
+    template_common.reject_if(
+        status == "error",
+        f"Create_0 反编译读失败——不作为空脚本处理（B3/O3b）: {detail}",
+        exc=errors.DeterlineError)
+    existing_create = "\n".join(gml_lines) if status == "ok" else None
     if existing_create and existing_create.strip():
         existing_create = existing_create.strip()
         marker = f'_rn == "{esc_cur}" && x == {x} && y == {y}'
@@ -501,7 +480,13 @@ ScriptMessage("OK: Battle trigger [" + newId + "] in " + room.Name.Content + " (
 def cmd_list_doors(game_file: Path, room_name: str) -> None:
     """List all Deterline doors in a room."""
     OBJ_CREATE = "gml_Object_obj_deterline_door_Create_0"
-    create_code = code._get_decompiled_code(game_file, OBJ_CREATE)
+    # B3/O3b：三分类——读失败不得误报"没有传送门"（写路径须显式拒绝）
+    status_r, gml_lines_r, detail_r = code.decompile_classified(game_file, OBJ_CREATE)
+    if status_r == "error":
+        print(f"Create_0 反编译读失败，拒绝操作（B3/O3b）: {detail_r}",
+              file=sys.stderr)
+        return
+    create_code = "\n".join(gml_lines_r) if status_r == "ok" else None
     if create_code is None:
         print("该房间没有传送门", file=sys.stderr)
         return
@@ -563,7 +548,13 @@ def cmd_remove_door(game_file: Path, room_name: str,
     esc_room = utmt._csx_escape(room_name)
 
     # Step 1: Remove from Create_0 code
-    create_code = code._get_decompiled_code(game_file, OBJ_CREATE)
+    # B3/O3b：三分类——读失败不得误报"没有传送门"（写路径须显式拒绝）
+    status_r, gml_lines_r, detail_r = code.decompile_classified(game_file, OBJ_CREATE)
+    if status_r == "error":
+        print(f"Create_0 反编译读失败，拒绝操作（B3/O3b）: {detail_r}",
+              file=sys.stderr)
+        return
+    create_code = "\n".join(gml_lines_r) if status_r == "ok" else None
     if create_code is None:
         print("该房间没有传送门", file=sys.stderr)
         return

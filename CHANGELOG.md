@@ -1,5 +1,33 @@
 # Changelog
 
+## v2.5.12 — 2026-11-18（12 计划 B 批次：模板边界——3.5 评审包落地 + O3b 三分类）
+
+**性质：12 号四个月计划 B1/B2/B3 交付（无人值守场次；R11/R12 复审 A 线时同树并行，随 A 线分离提交）。447→462 测试（+15）。**
+
+### B1（原 3.5 首切片）现状行为夹具（tests/test_template_resolution.py，+15）
+
+- 把模板解析语义钉在测试层（对照 11 §2b）：door/pit/battle cur 房与 door/pit target 房 = 两段式（exact `ByName` + `OrdinalIgnoreCase` 子串回退）；`room._spawn_obj_internal`（NPC 对话/选择命令 Step 3 落点）= 两段式房 + 两段式对象 + 双向子串建议；`npc._query_npc_target` = exact → ignoreCase → 子串回退 + 父链；`utmt._room_id_by_name` = **exact-only** + "smoke-test: " 前缀（现状钉——文案修正属单独决策）。
+- 覆盖棘轮教训入库：测试 docstring 出现 "npc-dialogue" 字样会被子串判据误判为已覆盖（ALLOWLIST 陈余误报）——措辞避让，判据 AST 化保持前向登记。
+
+### B2 模板公共层（cmds/template_common.py，新）
+
+- `idx_room_lookup`（两段式房间序号预查，自 door.py 1:1 平移——**CSX 字节不变，golden 零重录**）+ `reject_if` 语义化拒绝语法糖 + 解析策略地图 docstring（各模板保留的差异：battle cur 房内联两段式、npc 经 `_spawn_obj_internal`、verify exact-only）。
+- door/pit 换点；**battle 前置 ensure_room 延后**（B1 建议默认：全命令 capture 新增 CALL 段不能声称 golden 零重录——battle 三胞胎现状钉在夹具里）。
+
+### B3（O3b）反编译三分类（cmds/code.py）
+
+- `decompile_classified`：("ok", lines, None)（存在且已读，**含空内容**——fresh-base 由模板自裁决）| ("not-found", None, "ERROR: not found")（条目不存在）| ("error", None, detail)（其他 ERROR / GML_COUNT 缺失 / 行序列不全）——**读失败不得当空脚本 fresh-base**（11 §2b：超时/工具错误/协议异常不能作为空脚本继续）。
+- `_get_decompiled_code` 兼容面保持（None 折叠 + stderr 副作用不变）；door/pit/battle 三生成器 + list/remove-door 换点：error → `DeterlineError` 拒绝，**零写入 CSX**（钉面：读失败只发 idx 预查 + 读取两次只读调用）。
+- golden 零重录证实：fresh-base 夹具应答从空串改为**真实 `ERROR: not found` 形态**（B3 后空应答=协议异常须拒绝）——捕获 CSX 逐字节不变，59 golden 全绿。
+
+### 随批修复（Mimosa medium，A 线登记项）
+
+- sprite.py `cmd_sprite_colorize`：`tempfile.mktemp` TOCTOU → `mkdtemp` 原子创建（finally 清理不变）。
+
+### 前瞻登记
+
+- `_room_id_by_name` smoke 前缀文案（verify.py 消费方，单独决策）；battle ensure_room + 2 枚 golden 有意重录（B1 评审包裁决后）；覆盖判据 AST 化。
+
 ## v2.5.11 — 2026-11-17（12 计划 A 批次：可重放恢复验证 + 写入边界收紧）
 
 **性质：12 号四个月计划 A 线交付（无人值守场次，R11/R12 双席复审清偿后入库）。426→447 测试（+21：stress 7 + 边界 14）。**

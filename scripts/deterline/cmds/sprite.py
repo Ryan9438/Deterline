@@ -593,9 +593,9 @@ def cmd_sprite_colorize(game_file: Path, src_name: str, dst_name: str,
 
     # Step 1: duplicate
     cmd_sprite_duplicate(game_file, src_name, dst_name)
-    path_base = Path(tempfile.mktemp(suffix=""))
-    temp_dir = path_base.parent / f"_clr_{path_base.name}"
-    temp_dir.mkdir(exist_ok=True)
+    # 12 计划 A 线随批修复（Mimosa medium）：mktemp() 有 TOCTOU（名字可在
+    # 建目录前被抢占）——改 mkdtemp 原子创建
+    temp_dir = Path(tempfile.mkdtemp(prefix="_clr_"))
     try:
         # Step 2: export all frames
         cmd_sprite_export(game_file, dst_name, str(temp_dir))
