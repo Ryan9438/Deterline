@@ -126,13 +126,16 @@ class PlanTest(unittest.TestCase):
         with mock.patch("deterline.cmds.template_common.idx_room_lookup",
                         side_effect=_fake_idx), \
                 mock.patch("deterline.cmds.npc._query_npc_target",
-                           side_effect=_fake_npc_target):
+                           side_effect=_fake_npc_target), \
+                mock.patch("deterline.storyline._room_match_count",
+                           return_value=(1, 0)):
             plan = sl.build_plan(defn, game)
         self.assertEqual(plan["room"]["idx"], 42)
+        self.assertEqual(plan["room"]["exact_hits"], 1)
         self.assertEqual(plan["npc"]["object"], "obj_golden_npc")
         er = plan["expected_resources"]
-        self.assertEqual(er["str_adds"], 9)
-        self.assertEqual(er["code_adds"], 1)   # append 路径：仅 Create_0
+        self.assertEqual(er["str_total"], 9)
+        self.assertEqual(er["code_added"], 1)   # append 路径：仅 Create_0
         self.assertEqual(er["code_changed"], 3)  # textdata + Step_0 追加 + Alarm 守卫
         self.assertEqual(er["code_mode"], "append")
         self.assertTrue(er["alarm_guard"])
@@ -148,12 +151,27 @@ class PlanTest(unittest.TestCase):
                 sl.build_plan(defn, Path("/tmp/fake.ios"))
         self.assertIn("房间不存在", str(ctx.exception))
 
+    def test_plan_rejects_ambiguous_room(self):
+        """R13 P2-3：定义侧房间歧义（exact 1 + 其余子串命中）写前拒绝。"""
+        import deterline.storyline as sl
+        defn = dict(_read_definition(GOOD_DEFN))
+        defn["_sha256"] = "0" * 64
+        with mock.patch("deterline.cmds.template_common.idx_room_lookup",
+                        return_value=42), \
+                mock.patch("deterline.storyline._room_match_count",
+                           return_value=(2, 0)):
+            with self.assertRaises(Exception) as ctx:
+                sl.build_plan(defn, Path("/tmp/fake.ios"))
+        self.assertIn("歧义", str(ctx.exception))
+
     def test_plan_rejects_missing_object(self):
         import deterline.storyline as sl
         defn = dict(_read_definition(GOOD_DEFN))
         defn["_sha256"] = "0" * 64
         with mock.patch("deterline.cmds.template_common.idx_room_lookup",
                         return_value=42), \
+                mock.patch("deterline.storyline._room_match_count",
+                           return_value=(1, 0)), \
                 mock.patch("deterline.cmds.npc._query_npc_target",
                            return_value=None):
             with self.assertRaises(Exception) as ctx:
@@ -165,11 +183,18 @@ class StorylineEndToEnd(unittest.TestCase):
     """build/apply 编排层全流程：域生成器与 O7 打 mock（其行为已由
     golden/C1 实录钉死），**文件面全部真实**（工作区产物/EditPlan/回执）。"""
 
-    DECLARED_DIFF = ("    STR add len=14 sha=a1\n"
+    # 真实 O7 --detail 形态（R14 P1-1：汇总行全量计数 + STR 明细 op）——
+    # fake 输出必须与 verify.py 实际打印同构，捏造行会让闸门测试失真
+    DECLARED_DIFF = ("--- 资源级差异（--detail） ---\n"
+                     "  字符串: 9 处变化（add/change/remove，内容哈希锚定）\n"
+                     "  实例: add=1 remove=0 move=0\n"
+                     "  代码指纹: changed=3 added=1 removed=0\n"
+                     "  字体: changed=0 added=0 removed=0\n"
+                     "    STR add len=14 sha=a1\n"
                      "    STR add len=19 sha=c7\n"
                      "    STR add len=11 sha=d7\n"
-                     "    CODEF changed gml_Object_obj_golden_npc_Step_0\n"
-                     "    INST add idx=42\n"
+                     "    INST move id=1 x\n"   # 真实形态：实例明细仅 move 行
+                     "    CODEF changed gml_Script_textdata_en\n"
                      "  ⚠️ 资源级差异 5 处\n")
 
     def setUp(self):
@@ -194,15 +219,30 @@ class StorylineEndToEnd(unittest.TestCase):
         self._p2.start()
         self.addCleanup(self._p1.stop)
         self.addCleanup(self._p2.stop)
-        # 域生成器 mock：写真实工作区产物（基线 + 补丁标记）
+        self._p5 = mock.patch("deterline.storyline._room_match_count",
+                              return_value=(1, 0))
+        self._p5.start()
+        self.addCleanup(self._p5.stop)
+        # 域生成器 mock：写真实工作区产物 + **真实形状 manifest**（R13 P1-5：
+        # apply 现在要求 manifest 在场——source/source_sha256/history 末条
+        # = 产物 sha；确定性派生，不用 hash()，R14 P3-7）
         def fake_choice(game_file, *a, **k):
+            import hashlib as _h
             from deterline import sandbox, state as st
             product = sandbox.sandbox_path(game_file)
             product.parent.mkdir(parents=True, exist_ok=True)
-            product.write_bytes(
-                game_file.read_bytes() +
-                f"\n<patch:{st.WORKSPACE}:{abs(hash(str(a))) % 9999}>".encode())
-            print("OK: (mock npc-choice 写入工作区)")
+            tag = _h.sha256((st.WORKSPACE or "").encode()).hexdigest()[:8]
+            data = game_file.read_bytes() + f"\n<patch:{st.WORKSPACE}:{tag}>".encode()
+            product.write_bytes(data)
+            manifest = {
+                "source": str(game_file.resolve()),
+                "source_sha256": _h.sha256(game_file.read_bytes()).hexdigest(),
+                "history": [{"action": "mock-build",
+                             "sha256": _h.sha256(data).hexdigest()}],
+            }
+            product.with_name(product.name + ".json").write_text(
+                json.dumps(manifest), encoding="utf-8")
+            print("OK: (mock 域生成器写入工作区)")
         self._p3 = mock.patch("deterline.cmds.npc.cmd_npc_choice",
                               side_effect=fake_choice)
         self._p3.start()
@@ -238,24 +278,30 @@ class StorylineEndToEnd(unittest.TestCase):
         product = self._product("det_ws")
         self.assertTrue(product.is_file())
         self.assertNotEqual(product.read_bytes(), b"BASE-GAME-CONTENT")
-        # O7 mock 收到（基线, 产物）且 detail=True
+        # O7 mock 收到（基线, 产物）且 detail=True（build 入口 resolve 后路径）
         self.assertEqual(len(self._diff_calls), 1)
-        self.assertEqual(self._diff_calls[0][0], self.game)
-        self.assertEqual(self._diff_calls[0][1], product)
+        self.assertEqual(self._diff_calls[0][0], self.game.resolve())
+        self.assertEqual(self._diff_calls[0][1], product.resolve())
         self.assertTrue(self._diff_calls[0][2])
         # 构建回执落盘（apply 的核对依据）
         build_rcpt = (self.root / ".deterline" / "storyline" /
-                      "det_demo_c2" / "build.json")
+                      "game.ios" / "det_demo_c2" / "build.json")
         self.assertTrue(build_rcpt.is_file())
         self.assertEqual(json.loads(build_rcpt.read_text(encoding="utf-8"))
-                         ["declared_diff"].get("STR add"), 3)
+                         ["declared_diff"].get("STR total"), 9)
+        self.assertEqual(json.loads(build_rcpt.read_text(encoding="utf-8"))
+                         ["declared_str_ops"], ["add", "add", "add"])
 
     def test_build_refuses_undeclared_resource_change(self):
-        """C3 验收：未声明资源变更（TEX 类别）→ 拒绝出候选。"""
+        """C3 验收：未声明资源变更（真实 O7 形态：字体页变更）→ 拒绝出候选。"""
         self.diff_mock.stop()
 
         def fake_diff(file_a, file_b, detail=False, **k):
-            print("    TEX changed page=0")
+            print("--- 资源级差异（--detail） ---")
+            print("  字符串: 9 处变化（add/change/remove，内容哈希锚定）")
+            print("  实例: add=1 remove=0 move=0")
+            print("  代码指纹: changed=3 added=1 removed=0")
+            print("  字体: changed=1 added=0 removed=0")   # 未声明：字体页变更
             return 6
 
         self.diff_mock = mock.patch("deterline.cmds.verify.cmd_diff_snapshots",
@@ -266,6 +312,7 @@ class StorylineEndToEnd(unittest.TestCase):
             cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
         self.assertEqual(rc, 1)
         self.assertIn("未声明资源变更", err)
+        self.assertIn("FONT changed", err)
 
     def test_apply_preview_then_commit_and_idempotent(self):
         rc, _o, err = self._capture(
@@ -285,7 +332,7 @@ class StorylineEndToEnd(unittest.TestCase):
         self.assertEqual(rc, 0, msg=err)
         self.assertEqual(self.game.read_bytes(), built)
         receipt_path = (self.root / ".deterline" / "storyline" /
-                        "det_demo_c2" / "receipt.json")
+                        "game.ios" / "det_demo_c2" / "receipt.json")
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         self.assertEqual(receipt["schema"], APPLY_SCHEMA)
         self.assertEqual(receipt["after_sha256"],

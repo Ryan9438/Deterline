@@ -12,7 +12,9 @@ from .storyline import commands as storyline
 def _storyline_plan_data_win(args, parser, game_file):
     if args.value is None:
         parser.error("storyline-plan 需要 --value (定义 YAML 路径)")
-    storyline.cmd_storyline_plan(game_file, args.value, json_out=args.json)
+    rc = storyline.cmd_storyline_plan(game_file, args.value, json_out=args.json)
+    if rc:
+        sys.exit(rc)   # R13 P1-1：CLI 层退出码保真（拒绝≠成功）
 
 
 def _storyline_build_any(args, parser, target):
@@ -23,9 +25,11 @@ def _storyline_build_any(args, parser, target):
         parser.error("storyline-build 需要 --value (定义 YAML 路径)")
     if not args.workspace:
         parser.error("storyline-build 需要 --workspace (构建工作区名)")
-    storyline.cmd_storyline_build(
+    rc = storyline.cmd_storyline_build(
         paths.resolve_game_data_file(args.dir), args.value, args.workspace,
         json_out=args.json)
+    if rc:
+        sys.exit(rc)
 
 
 def _storyline_apply_any(args, parser, target):
@@ -35,9 +39,11 @@ def _storyline_apply_any(args, parser, target):
         parser.error("storyline-apply 需要 --value (定义 YAML 路径)")
     if not args.workspace:
         parser.error("storyline-apply 需要 --workspace (构建工作区名)")
-    storyline.cmd_storyline_apply(
+    rc = storyline.cmd_storyline_apply(
         None, paths.resolve_game_data_file(args.dir), args.value,
         args.workspace, commit=bool(args.commit), json_out=args.json)
+    if rc:
+        sys.exit(rc)
 
 
 def _backup_index(args, parser, target):

@@ -12,7 +12,8 @@ apply：构建回执 → 目标基线核对 + 幂等（同 ID 同内容且目标
 → 回执落盘 .deterline/storyline/<patch_id>/receipt.json。中断交给恢复
 分类（journal 复用方案 A），不靠猜测宣布已应用。
 
-退出码：0=成功/已应用；1=拒绝（合同/解析/差异/漂移/冲突）；2=定位失败。
+退出码：0=成功/已应用/预览；1=拒绝（合同/解析/差异/漂移/冲突）——定位失败
+在 dispatch 层呈拒绝形态（无 2 出口路径，R14 P3-3 如实化）。
 """
 
 import json
@@ -57,37 +58,83 @@ def cmd_storyline_plan(game_file: Path, defn_path: str, json_out: bool = False) 
 
 
 def _parse_diff_categories(diff_output: str) -> dict:
-    """从 O7 --detail 文本提取粗粒度差异类别（kind→计数）。
+    """解析 O7 --detail 输出（R14 P1-1 对齐真实形态）。
 
-    通用解析：`<大写资源类别> <add|changed|del> …` 形态的行（STR add /
-    CODEF changed / TEX changed / INST add …）——**不设类别白名单**：
-    未知类别必须被看见并进入声明比对（C3 验收：未声明变更 = 拒绝，
-    解析层漏看 = 假绿）。非差异行（表头/路径/统计）不匹配形态即忽略。"""
-    cats: dict[str, int] = {}
+    **吃汇总行**（verify.py 资源级段 726-734：全量计数，非 [:10] 截断明细）：
+      字符串: N 处变化… / 实例: add=N remove=N move=N /
+      代码指纹: changed=N added=N removed=N / 字体: changed=N added=N removed=N
+    另收 STR 明细行的 op 序列（add/change/remove——干净构建应全为 add）。
+    返回 {"counts": {类别: 计数}, "str_ops": [op, ...]}——九个类别全覆盖，
+    不设白名单：解析层漏看 = 假绿（C3 验收口径）。"""
+    counts: dict[str, int] = {}
+    str_ops: list[str] = []
+    import re as _re
     for line in diff_output.splitlines():
-        parts = line.strip().split()
-        if len(parts) >= 2 and parts[0].isupper() \
-                and parts[1] in ("add", "changed", "del"):
-            kind = f"{parts[0]} {parts[1]}"
-            cats[kind] = cats.get(kind, 0) + 1
-    return cats
+        s = line.strip()
+        m = _re.match(r"^字符串:\s*(\d+)\s*处变化", s)
+        if m:
+            counts["STR total"] = int(m.group(1))
+            continue
+        m = _re.match(r"^实例:\s*add=(\d+)\s*remove=(\d+)\s*move=(\d+)", s)
+        if m:
+            counts["INST add"], counts["INST remove"], counts["INST move"] = \
+                int(m.group(1)), int(m.group(2)), int(m.group(3))
+            continue
+        m = _re.match(r"^代码指纹:\s*changed=(\d+)\s*added=(\d+)\s*removed=(\d+)", s)
+        if m:
+            counts["CODEF changed"], counts["CODEF added"], counts["CODEF removed"] = \
+                int(m.group(1)), int(m.group(2)), int(m.group(3))
+            continue
+        m = _re.match(r"^字体:\s*changed=(\d+)\s*added=(\d+)\s*removed=(\d+)", s)
+        if m:
+            counts["FONT changed"], counts["FONT added"], counts["FONT removed"] = \
+                int(m.group(1)), int(m.group(2)), int(m.group(3))
+            continue
+        m = _re.match(r"^STR (add|change|remove)\b", s)
+        if m:
+            str_ops.append(m.group(1))
+    return {"counts": counts, "str_ops": str_ops}
 
 
 def _expected_categories(plan: dict) -> dict:
-    """计划期望 → 允许的 O7 类别集合（模板常数标定，见 contract）。"""
+    """计划期望 → 允许的 O7 汇总计数集合（与 _parse_diff_categories 同键）。
+    期望外的任何类别计数不等即拒绝（含期望为 0 而实测非 0 的形态——
+    R14 P1-1：变更/删除/移动/字体类别全部进闸门）。
+    注意：contract 的 code_changed **已含** Alarm 守卫（+native 时）——
+    此处不再叠加（R13 P1-3 双计修正：曾放行一条未声明代码改动）。"""
     er = plan["expected_resources"]
-    allowed = {"STR add": er["str_adds"], "CODEF add": er["code_adds"],
-               "CODEF changed": er["code_changed"],
-               "INST add": er["inst_adds"]}
-    if er.get("alarm_guard"):
-        allowed["CODEF changed"] += 1   # Alarm_0 守卫追加
-    return allowed
+    return {
+        "STR total": er["str_total"],
+        "INST add": er["inst_adds"], "INST remove": 0, "INST move": 0,
+        "CODEF changed": er["code_changed"],
+        "CODEF added": er["code_added"], "CODEF removed": 0,
+        "FONT changed": 0, "FONT added": 0, "FONT removed": 0,
+    }
+
+
+def _validate_workspace_name(workspace: str) -> None:
+    """P2-4：工作区名白名单——防 `../evil` / 分隔符注入把工作区/manifest
+    建到 `.deterline` 之外（API 直调可达，CLI 层 --workspace 同参）。"""
+    import re as _re
+    if not isinstance(workspace, str) \
+            or not _re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", workspace):
+        raise _pkg().StorylineError(
+            f"工作区名须匹配 [a-z0-9][a-z0-9_-]{{0,63}}（收到 {workspace!r}）")
 
 
 def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
                         json_out: bool = False) -> int:
-    """构建：plan → 工作区构建 → O7 差异核验 → 构建回执（仅写工作区）。"""
+    """构建：plan → 工作区构建 → O7 差异核验 → 构建回执（仅写工作区）。
+    `--preview` 不支持——构建即写工作区（EditPlan 预览不落盘会使产物
+    缺失，语义冲突，R13 P3）。"""
     try:
+        from .. import state
+        if state.PREVIEW:
+            raise _pkg().StorylineError(
+                "storyline-build 不支持 --preview（构建即写工作区；预览用 "
+                "storyline-plan 或 build 后的 storyline-apply 预览）")
+        _validate_workspace_name(workspace)
+        game_file = Path(game_file).resolve()
         defn = _pkg().load_definition(Path(defn_path))
         plan = _pkg().build_plan(defn, game_file)
         base_sha = transactions.fingerprint(game_file)
@@ -129,18 +176,24 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
         buf = _io.StringIO()
         with _ctx.redirect_stdout(buf):
             verify.cmd_diff_snapshots(game_file, product, detail=True)
-        cats = _parse_diff_categories(buf.getvalue())
+        parsed = _parse_diff_categories(buf.getvalue())
+        cats = parsed["counts"]
         allowed = _expected_categories(plan)
         undeclared = []
-        for kind, count in cats.items():
-            if kind not in allowed:
-                undeclared.append(f"{kind}×{count}")
-            elif count > allowed[kind]:
-                undeclared.append(f"{kind}×{count}（声明 {allowed[kind]}）")
+        # 全类别严格相等比对（期望 0 的类别实测非 0 同样拒绝——R14 P1-1）
+        for kind in sorted(set(cats) | set(allowed)):
+            got = cats.get(kind, 0)
+            want = allowed.get(kind, 0)
+            if got != want:
+                undeclared.append(f"{kind} {got}（声明 {want}）")
+        bad_ops = sorted({op for op in parsed["str_ops"]
+                          if op not in plan["expected_resources"]["str_ops"]})
+        if bad_ops:
+            undeclared.append("STR op 含非声明形态: " + ",".join(bad_ops))
         if undeclared:
             raise _pkg().StorylineError(
                 "发现未声明资源变更，拒绝出候选（12 §C3）: "
-                + "; ".join(undeclared) + f"（允许类别: {allowed}）")
+                + "; ".join(undeclared) + f"（允许: {allowed}）")
     except (_pkg().StorylineError, errors.DeterlineError, FileNotFoundError,
             OSError, RuntimeError) as exc:
         if json_out:
@@ -155,10 +208,12 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
         "defn_sha256": defn["_sha256"],
         "tool_version": plan["tool_version"],
         "baseline_sha256": base_sha,
+        "target": str(game_file),   # R13 复跑修正：回执绑定游戏文件（防跨文件复用）
         "workspace": workspace,
         "product": str(product),
         "product_sha256": product_sha,
         "declared_diff": cats,
+        "declared_str_ops": parsed["str_ops"],
         "expected_resources": plan["expected_resources"],
         "goto": plan.get("goto"),
         "flag": plan["flag"],
@@ -191,6 +246,8 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
     无回执）——不靠猜测宣布已应用。"""
     defn_err = None
     try:
+        _validate_workspace_name(workspace)
+        game_file = Path(game_file).resolve()
         defn = _pkg().load_definition(Path(defn_path))
         build_rcpt_path = _pkg().receipt_path(game_file, defn["patch_id"]).with_name(
             "build.json")
@@ -199,7 +256,16 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
         current = base_sha
         build_rcpt = None
         if build_rcpt_path.is_file():
-            build_rcpt = json.loads(build_rcpt_path.read_text(encoding="utf-8"))
+            try:
+                build_rcpt = json.loads(build_rcpt_path.read_text(encoding="utf-8"))
+            except ValueError:
+                raise _pkg().StorylineError(
+                    f"build.json 不可解析（损坏/被篡改为非对象）: "
+                    f"{build_rcpt_path}——重新 storyline-build")
+            if not isinstance(build_rcpt, dict):
+                raise _pkg().StorylineError(
+                    f"build.json 形状不符（应为对象）: {build_rcpt_path}——"
+                    "重新 storyline-build")
         prior = None
         if apply_rcpt_path.is_file():
             prior = json.loads(apply_rcpt_path.read_text(encoding="utf-8"))
@@ -239,7 +305,17 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
                 refusals.append(
                     "新构建与已应用回执产物不一致——拒绝叠写")
         else:
-            # 无应用回执：目标须等于构建时基线，产物须与构建回执一致
+            # 无应用回执：目标须等于构建时基线，产物须与构建回执一致，
+            # 且构建回执必须对应**当前定义**（R13 P1-2：陈旧构建 + 新定义
+            # 曾可上盘且回执 defn_sha 失真——首次 apply 的同 ID 异内容出口）
+            if build_rcpt.get("target") not in (None, str(game_file)):
+                refusals.append(
+                    f"构建回执属于其他游戏文件（target={build_rcpt.get('target')}"
+                    f" ≠ {game_file}）——回执按文件隔离后旧件失效，重建")
+            if build_rcpt.get("defn_sha256") != defn["_sha256"]:
+                refusals.append(
+                    "构建回执与当前定义不符（build.json 的 defn_sha ≠ 本次"
+                    "定义）——定义变更后必须先 storyline-build 重建")
             if current != build_rcpt.get("baseline_sha256"):
                 refusals.append(
                     "目标基线漂移（当前 != 构建回执 baseline）——拒绝")
@@ -248,6 +324,14 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
                     "工作区产物与构建回执不符（回执 "
                     f"{str(build_rcpt.get('product_sha256'))[:12]}… vs 现工作区 "
                     f"{str(product_sha)[:12]}…）——重建后重试")
+            # R13 P1-5：有名工作区必须有 manifest（source 校验的载体）——
+            # manifest 缺失 = 校验链塌缩为"未签名 JSON"，拒绝重建
+            manifest = (game_file.parent / ".deterline" / game_file.name /
+                        workspace / (game_file.name + ".json"))
+            if product_sha is not None and not manifest.is_file():
+                refusals.append(
+                    f"工作区 manifest 缺失: {manifest}——来源校验不可用，"
+                    "拒绝（重建须换新工作区名或删除残留后重 build）")
         if refusals:
             if json_out:
                 print(json.dumps({"schema": _pkg().APPLY_SCHEMA, "patch_id": defn["patch_id"],

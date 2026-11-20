@@ -322,7 +322,11 @@ def main():
         args.y = 240
 
     # Activate sandbox mode
-    if (args.sandbox or args.workspace) and args.commit:
+    # storyline-apply 豁免（R13 P0-1）：其 --workspace = 指向已构建工作区、
+    # --commit = 整包应用该工作区（事务层内含真实文件备份）——与 v2 直写
+    # 语义不同，互斥门不适用；--sandbox（无名字）对 storyline 无意义仍互斥
+    if (args.sandbox or (args.workspace and args.action != "storyline-apply")) \
+            and args.commit:
         print("错误: --sandbox / --workspace 与 --commit 互斥（沙箱=彩排，commit=直写，二选一）", file=sys.stderr)
         sys.exit(2)
     if args.action == "smoke-test" and (args.preview or args.sandbox or args.workspace):

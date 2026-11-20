@@ -148,6 +148,12 @@ def parse(text):
                 frame["container"][key] = {}   # 占位：子块填充或 null
             frame["key"] = key
         else:  # seq（v1：仅标量序列）
+            if frame["kind"] != "seq":
+                # R13 P2-1：`a:\n- x` 同缩进序列落到 map 帧——曾 AttributeError
+                # 裸栈逃逸；按合同 fail-closed 显式拒绝
+                raise YamlMinError(
+                    f"YAML 第 {line_no} 行: 映射键下不允许同缩进序列项"
+                    "（序列须更深一级缩进）")
             if not payload:
                 raise YamlMinError(
                     f"YAML 第 {line_no} 行: 序列项空载荷/嵌套块不支持")

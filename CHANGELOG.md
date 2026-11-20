@@ -1,5 +1,43 @@
 # Changelog
 
+## v2.6.0-rc2 — 2026-11-21（R13/R14 复审清偿：C 线候选修订）
+
+**性质：R13/R14 双席对 v2.6.0-rc1 的复审清偿（R13 FAIL：P0×1 + P1×5；R14 FAIL：P1×1 + P2×2）。481→482 测试（+2）。候选 tag 递补 v2.6.0-rc2。**
+
+### P0-1（R13）：storyline-apply --commit 经 CLI 不可达——修通
+
+- 根因：cli 全局门 `--workspace × --commit` 互斥 × handler 强制 `--workspace`，合取为空——**rc1 的"CLI 实跑全链"commit 腿实际经进程内调用完成，验收声明失实**（13 实录已订正）。修法：互斥门对 `storyline-apply` 豁免（其语义 = 应用已构建工作区，非 v2 直写；`--sandbox` 无名旗标仍互斥）。
+- **诚实重验（全部真 CLI + 真 rc）**：build（候选 35d189a5，10 类声明差异全捕获）→ preview → **commit（CLI 腿，fc049850→5a6f9b66）** → 幂等 no-op → undo → fc049850 → scan findings:0。
+
+### P1 清偿（R13 P1-1/P1-2/P1-3/P1-5 + R14 P1-1）
+
+- **CLI 退出码保真**：三 handler `sys.exit(rc)`——此前拒绝恒 exit 0（脚本层会把拒绝当成功）。
+- **首次 apply 的 defn 校验**：build.json.defn_sha ≠ 当前定义 → 拒绝（陈旧构建 + 新定义曾可上盘且回执 defn_sha 失真——同 ID 异内容出口在首次 apply 失效）。
+- **alarm_guard 双计修正**：contract 的 code_changed 已含 Alarm 守卫，_expected_categories 不再叠加（曾放行一条未声明 CODEF changed）。
+- **manifest 在场强制**：有名工作区 manifest 缺失 → 拒绝（来源校验载体缺失 = 校验链塌缩为未签名 JSON）。
+- **声明差异解析器对齐真实 O7 形态**（R14 P1-1 = R13 P1-4 同源）：改吃**汇总行**（verify.py 资源级段全量计数，非 [:10] 截断明细）——10 类别全覆盖（STR total/INST add·remove·move/CODEF changed·added·removed/FONT×3）+ STR 明细 op 校验；全类别**严格相等**比对（期望 0 实测非 0 同拒）。实测：干净构建 10 类与模板常数完全一致；脏构建/未声明字体变更正确拒绝。
+
+### P2 清偿（R13 P2-1/P2-2/P2-3/P2-4 + R14 P2-1/P2-2 同源）
+
+- yaml_min：`a:\n- x` 同缩进序列曾 AttributeError 裸栈逃逸 → 显式拒绝。
+- goto 数字越界拒绝（不在 rooms.json 序号内）；**房间歧义写前拒绝**（plan 期只读探针 `_room_match_count`——exact>1 或 exact=0 且子串>1 拒绝；**exact=1 恒唯一**——前缀子集名 room_ruins1 vs room_ruins10 合法，两段式语义确定性胜出）；对象子串首中记诊断（唯一性计数无证据，如实声明）。
+- 工作区名白名单（`[a-z0-9][a-z0-9_-]{0,63}`，`../evil` 注入拒绝）；PATCH_ID_RE 改 fullmatch（`$` 换行绕过）。
+- 覆盖棘轮：**mock.patch 字符串剥离**（提及不是覆盖——R14 P2-1）；npc-choice 恢复豁免如实记账（口径 95 = 75 已覆盖 + 20 豁免）。
+- build.json 形状设防（非对象拒绝）；E2E 产物标记确定性派生（去 hash()）。
+
+### 架构修正（R13 CLI 复跑发现）
+
+- **回执按游戏文件隔离**：`.deterline/storyline/<file>/<patch_id>/`（原目录级共享曾让 /tmp 多个 *.ios 复用同一 build/receipt → 陈旧构建跨文件上盘）；build.json 增 `target` 字段 + apply 校验。
+- build 入口 resolve 游戏文件（/tmp vs /private/tmp 两棵元数据树分叉）。
+
+### 文档订正（诚实口径）
+
+- CHANGELOG/13 实录："CLI 实跑全链" commit 腿声明订正（rc1 实为进程内；rc2 修复后真 CLI 重验）；"11/11 拒绝面"实为 10 例；CODEF changed 计数 1-2 → 1-3；storyline-plan 示例补 `--file data_win`；退出码 2 声明删除（无实现路径）。
+
+### 前瞻登记
+
+- O7 结构层差异（COUNT/VARDETERLINE/ROOM 结构行）未入闸门比对（v1 以资源级汇总行为准，结构漂移经 CODEF/INST 间接可见）；storyline 三命令 CLI 层测试（handler 已有 sys.exit，Mimosa 限制下 subprocess 断言另批）；"自有 Create_0 未引用变量 → prepend"形态的期望分支（当前仅 append/create 两式标定）。
+
 ## v2.6.0-rc1 — 2026-11-19（12 计划 C 批次 + A4：支线编排层 storyline-plan/build/apply + 新候选版）
 
 **性质：12 号四个月计划 C 线交付 + 新候选版（A4）。95 命令（+3）、462→481 测试（+19）。C1 实录（两分支 sandbox 全绿）+ C4 CLI 实跑（build/preview/commit/幂等/undo 全链）为验收证据。**

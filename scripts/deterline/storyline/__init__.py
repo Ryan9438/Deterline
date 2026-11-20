@@ -27,7 +27,7 @@ APPLY_SCHEMA = "deterline.storyline-apply/v1"
 TOP_FIELDS = {"schema", "patch_id", "room", "npc", "flag_id"}
 NPC_FIELDS = {"object", "x", "y", "range", "prompt", "yes_text", "no_text",
               "yes_goto", "yes_item", "once"}
-PATCH_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]{2,63}$")
+PATCH_ID_RE = re.compile(r"[a-z0-9][a-z0-9_]{2,63}")   # fullmatch 使用（R13 P3：$ 可被换行绕过）
 FLAG_RANGE = (500, 999)      # 自定义独占区（quest 工具区 510+ 与本区重叠由冲突检查裁决）
 
 NPC_PROMPT_MAX_LINES = 3     # npc-choice 3 行限制（含选项行）
@@ -53,7 +53,7 @@ def _read_definition(text: str) -> dict:
         raise StorylineError(
             f"schema 必须是 {DEFN_SCHEMA}（收到 {doc['schema']!r}）——版本漂移拒绝")
     pid = doc["patch_id"]
-    if not isinstance(pid, str) or not PATCH_ID_RE.match(pid):
+    if not isinstance(pid, str) or not PATCH_ID_RE.fullmatch(pid):
         raise StorylineError(
             f"patch_id 须匹配 {PATCH_ID_RE.pattern}（收到 {pid!r}）")
     if not isinstance(doc["room"], str) or not doc["room"]:
@@ -123,7 +123,10 @@ def load_definition(path: Path) -> dict:
 
 
 def _receipt_dir(game_file: Path) -> Path:
-    return game_file.parent / ".deterline" / "storyline"
+    """回执根：`<game 目录>/.deterline/storyline/<游戏文件名>/`——**按游戏
+    文件隔离**（R13 CLI 复跑发现：目录级共享曾让 /tmp 下多个 *.ios 复用
+    同一份 build/receipt，跨文件污染 → 陈旧构建上盘）。"""
+    return game_file.parent / ".deterline" / "storyline" / game_file.name
 
 
 def _load_receipts(game_file: Path) -> list[dict]:
@@ -151,6 +154,29 @@ def _flag_conflicts(defn: dict, game_file: Path) -> list[str]:
     return conflicts
 
 
+def _room_match_count(game_file: Path, name: str) -> tuple[int, int]:
+    """只读 CSX 探针：房间名 exact / 其余子串命中数（R13 P2-3 歧义拒绝
+    的计数证据）。独立于 template_common.idx_room_lookup（其 CSX 被
+    door/pit golden 钉死，不可改动）。"""
+    from .. import utmt
+    esc = utmt._csx_escape(name)
+    csx = f'''
+int exact = 0; int partial = 0;
+for (int i = 0; i < Data.Rooms.Count; i++) {{
+    string rn = Data.Rooms[i].Name.Content;
+    if (rn == "{esc}") {{ exact++; }}
+    else if (rn.IndexOf("{esc}", StringComparison.OrdinalIgnoreCase) >= 0) {{ partial++; }}
+}}
+ScriptMessage("ROOM_MATCH:" + exact + ":" + partial);
+'''
+    out = utmt._run_utmt(csx, game_file, save=False)
+    for line in utmt._parse_msg(out):
+        if line.startswith("ROOM_MATCH:"):
+            parts = line.split(":")
+            return int(parts[1]), int(parts[2])
+    return 0, 0
+
+
 def build_plan(defn: dict, game_file: Path) -> dict:
     """只读计划（零写盘）：房间/对象解析 + goto 预解析 + 期望资源集 +
     诊断。解析失败（错房/歧义/缺对象）在写目标前拒绝（12 §C2 验收）。"""
@@ -160,11 +186,22 @@ def build_plan(defn: dict, game_file: Path) -> dict:
                   "patch_id": defn["patch_id"],
                   "defn_sha256": defn["_sha256"],
                   "tool_version": _tool_version()}
-    # 房间解析（两段式预查，只读 CSX）
+    # 房间解析（两段式预查，只读 CSX）+ 歧义拒绝（R13 P2-3：子串首中
+    # 曾静默绑定——定义侧要求唯一解析：exact==1 且无其余子串命中；
+    # exact==0 且恰一子串命中 = 两段式回退合法形态）
     target_idx = template_common.idx_room_lookup(game_file, defn["room"])
     if target_idx < 0:
         raise errors.NotFoundError(f"定义房间不存在: {defn['room']}")
-    plan["room"] = {"name": defn["room"], "idx": target_idx}
+    exact_hits, partial_hits = _room_match_count(game_file, defn["room"])
+    plan["room"] = {"name": defn["room"], "idx": target_idx,
+                    "exact_hits": exact_hits, "partial_hits": partial_hits}
+    # 歧义判据（R13 P2-3 修订）：两段式语义下 exact 命中**确定性胜出**——
+    # exact==1 恒唯一（前缀子集名如 room_ruins1 vs room_ruins10 合法）；
+    # 仅 exact>1（重名不可能但防御）或 exact==0 且子串>1（回退首中不定）拒绝
+    if exact_hits > 1 or (exact_hits == 0 and partial_hits > 1):
+        raise errors.ValidationError(
+            f"定义房间歧义: '{defn['room']}'（exact {exact_hits} / "
+            f"其余子串 {partial_hits}）——请用完整唯一房间名（12 §C2 歧义写前拒绝）")
     # 对象解析（存在性/继承链，只读 CSX）
     info = npc_mod._query_npc_target(game_file, defn["npc"]["object"])
     if info is None:
@@ -173,27 +210,38 @@ def build_plan(defn: dict, game_file: Path) -> dict:
                    "step_code": info["step_code"],
                    "x": defn["npc"]["x"], "y": defn["npc"]["y"],
                    "range": defn["npc"].get("range", 60)}
-    # goto 预解析（写前拒绝错目标）
+    if info["obj"].lower() != defn["npc"]["object"].lower():
+        plan["diagnostics_extra"] = [
+            f"对象经子串匹配首中: {defn['npc']['object']} → {info['obj']}"
+            "（唯一性无计数证据——如需强唯一请用完整对象名）"]
+    # goto 预解析（写前拒绝错目标）+ 数字形态越界拒绝（R13 P2-2）
     goto = defn["npc"].get("yes_goto")
     if goto:
         resolved = rooms_data.resolve_room(goto)
+        if str(goto).lstrip("-").isdigit() and str(resolved) not in rooms_data.ROOMS:
+            raise errors.ValidationError(
+                f"yes_goto 数字目标越界: {goto}（不在已知房间序号内）")
         plan["goto"] = {"requested": goto, "resolved": resolved}
     # flag：声明保留 + 冲突诊断（模板 v1 不写入——无实机证据）
     conflicts = _flag_conflicts(defn, game_file)
     plan["flag"] = {"id": defn["flag_id"], "status": "declared-only",
                     "conflicts": conflicts,
                     "note": "模板 v1 不写入 flag——无实机证据的写入路径按 12 §C2 禁用"}
-    # 期望资源集（O7 类别计数口径——模板常数，干净基线实证标定）：
-    # str 9 = 3 对话键 + 6 模板内部串；CODEF add = Create_0 +（create 路径）
-    # Step_0；CODEF changed = textdata_en 恒 1 +（append 路径 Step_0）+
-    # （native Alarm_0 守卫）；goto/item 变体不改变计数（C1 两分支实证）
+    # 期望资源集（O7 **汇总行**全量计数口径——R14 P1-1 对齐真实形态；
+    # 模板常数，干净基线实证标定）：STR total 9 = 3 对话键 + 6 模板内部串
+    # 且明细 op 全为 add；CODEF added = Create_0 +（create 路径）Step_0；
+    # CODEF changed = textdata_en 恒 1 +（append 路径 Step_0）+（Alarm 守卫）；
+    # INST add 1 / 其余类别 0（变更/删除/移动/字体一票拒绝）；goto/item
+    # 变体不改变计数（C1 两分支实证）
     alarm_guard = bool(info["native"] and info["alarm_code"])
     plan["expected_resources"] = {
-        "str_adds": 9,
-        "code_adds": 1 if info["step_code"] else 2,
+        "str_total": 9,
+        "str_ops": ["add"],
+        "inst_adds": 1, "inst_removes": 0, "inst_moves": 0,
+        "code_added": 1 if info["step_code"] else 2,
         "code_changed": (1 + (1 if info["step_code"] else 0)
                          + (1 if alarm_guard else 0)),
-        "inst_adds": 1,
+        "code_removed": 0,
         "code_entry": (info["step_code"] or f"gml_Object_{info['obj']}_Step_0"),
         "code_mode": "append" if info["step_code"] else "create",
         "instance_spawn": {"room": defn["room"], "count": 1},
@@ -209,6 +257,7 @@ def build_plan(defn: dict, game_file: Path) -> dict:
         diag.append(f"YES 分支给物品 {defn['npc']['yes_item']}")
     if conflicts:
         diag.append("flag 冲突: " + "; ".join(conflicts))
+    diag.extend(plan.pop("diagnostics_extra", []))
     plan["diagnostics"] = diag
     plan["build_command"] = {
         "action": "npc-choice",
