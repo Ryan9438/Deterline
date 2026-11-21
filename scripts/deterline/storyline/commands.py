@@ -273,12 +273,22 @@ def _run_cjk_font_pipeline(game_file: Path, defn: dict) -> None:
         work_dir = _Path(td) / "cjk_work"
         tool_ns = _runpy.run_path(str(tool), run_name="deterline_font_build")
         out, err = _io.StringIO(), _io.StringIO()
-        with _mock.patch.object(_sys, "argv",
-                                ["font_cjk_build.py", "--font", str(font_src),
-                                 "--only", str(chars_file),
-                                 "--out-dir", str(build_dir)]), \
-                _ctx.redirect_stdout(out), _ctx.redirect_stderr(err):
-            rc = tool_ns["main"]()
+        try:
+            with _mock.patch.object(_sys, "argv",
+                                    ["font_cjk_build.py", "--font", str(font_src),
+                                     "--only", str(chars_file),
+                                     "--out-dir", str(build_dir)]), \
+                    _ctx.redirect_stdout(out), _ctx.redirect_stderr(err):
+                rc = tool_ns["main"]()
+        except SystemExit as exc:
+            # R15 P2：argparse 参数拒绝以 SystemExit(2) 呈现——错误文本已进
+            # redirect 缓冲，必须带出（否则用户只见静默失败无诊断）
+            rc = exc.code if isinstance(exc.code, int) else 1
+            err.write(f"\n[SystemExit {exc.code}]")
+        except ImportError as exc:
+            rc = 1
+            err.write(f"\n[ImportError] {exc}（Pillow 缺失？"
+                      "python3 -m pip install pillow）")
         if rc != 0:
             raise _pkg().StorylineError(
                 "字形页构建失败（font_cjk_build）:\n"
