@@ -5,8 +5,9 @@ room-list P0 的土壤：接线层 bug 不被 CSX golden 钉住，而冷路径�
 
 1. 覆盖地图（动态计算）：commands.json 的每个 action，其 action 名或实现
    cmd_* 函数名必须在 tests/ 出现过——零覆盖集合必须 ⊆ ALLOWLIST
-   （2026-11-20 口径：95 actions = 75 已覆盖 + 20 条显式豁免；
-   mock.patch 字符串剥离后不计覆盖——R14 P2-1"提及不是覆盖"）。
+   （R19 P3-1 口径订正：清洗器剥离 docstring/注释后 95 actions =
+   **72 已覆盖 + 23 条显式豁免**；mock.patch 字符串/docstring/注释
+   剥离后不计覆盖——R14 P2-1 + R16 P2"提及不是覆盖"）。
    新增命令不带测试即爆红。
 2. 三方 SSOT 扩展：commands.json actions == cli.ACTION_CHOICES == dispatch
    分支集合（docs lint 已有两腿，此处补齐 dispatch 腿的 In-tuple 形态）。
@@ -41,7 +42,8 @@ import deterline.paths  # noqa: E402
 # 两类豁免：
 #   - md5/sandbox-restore：已收编（2026-11-13 抽 cmd_md5/cmd_sandbox_restore
 #     入 cmds/save_cmds.py，测试见 test_transactions_unittest.TestDispatchRemnantCmds）
-#   - 其余 20 条（R14 P2-1 口径同步）：读式/诊断命令（UTMT 查询+打印）或重游戏依赖命令
+#   - 其余 23 条（R19 P3-1 口径订正；R14 P2-1 时为 20 条，f1e3a58 清洗器
+#     扩展后如实增记 3 条）：读式/诊断命令（UTMT 查询+打印）或重游戏依赖命令
 #     （npc-dialogue/smoke-test/replace-texture），行为面已由 golden CSX
 #     （28 生成器钉死）+ A3 双轮游戏级快照 parity 覆盖；补单测 = 独立后续项
 #     （需 dual_patch_utmt mock 逐条搭夹具，与本 commit 的接线防线目标正交）。

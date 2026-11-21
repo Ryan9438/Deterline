@@ -35,8 +35,10 @@ opt-in 显式确认；不做真实数据执行（12 §A3：真实历史清理由
   s10       1 目标  杀在 journal 原子写内（mkstemp 已落、replace 未行）→ 无记录 + .journal.*.new 残留 → 人工查看后删除（clean 不代删）
   p1_prune  prune/purge 可逆性与 manifest 一致性（journal 保护 + 真删出口；无强杀）
 
-CI：tests/test_recovery_stress.py 跑 s1+s2+s5a+p1（Windows 仅 s1/p1——多窗口
-TerminateProcess 语义按 07 §3 条3 保守逐级验证）；全量/随机批次 = 本地 opt-in。
+CI：tests/test_recovery_stress.py 跑 s1+s2+s5a+p1（Windows 为
+s1+s2+p1_prune——R18 P1：s1/p1 不产副本证据记录，证据下限断言需 s2；
+多窗口 TerminateProcess 语义按 07 §3 条3 保守逐级验证）；全量/随机批次 =
+本地 opt-in。
 
 退出码：0=全部场景 verdict pass；1=存在 fail；2=参数/门禁拒绝。
 """

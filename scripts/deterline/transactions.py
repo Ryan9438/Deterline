@@ -140,7 +140,9 @@ def ensure_not_symlink(path: Path) -> None:
     if Path(path).is_symlink():
         raise RuntimeError(
             f"目标是符号链接，拒绝写入（os.replace 会替换链接本身而"
-            f"非目标文件）: {path} —— 请对 resolve 后的真实路径操作")
+            f"非目标文件）: {path} —— 行动：删除该符号链接后重试；"
+            "工作区/沙箱场景请删除链接并重建工作区（**不要**对 resolve "
+            "后的目标路径操作——那会把写入落到链接目标上，R19 P3-4）")
 
 
 @dataclass(frozen=True)

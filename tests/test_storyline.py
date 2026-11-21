@@ -130,6 +130,44 @@ def _fake_npc_target(game_file, obj_name):
             "alarm_code": f"gml_Object_{obj_name}_Alarm_0"}
 
 
+class TestCjkFontPipelineFailures(unittest.TestCase):
+    """H1（R19/R20 P2 收敛命中）：字形页生成器异常路径回归钉——
+    SystemExit / ImportError / rc≠0 三分支都必须带出缓冲诊断
+    （StorylineError），不再裸栈/静默；ImportError 分支在此前是死代码
+    （run_path 在 try 外，PIL 缺失直接裸抛）。"""
+
+    def _run(self, run_path_side_effect):
+        from deterline.storyline import commands as sc
+        defn = _read_definition(CJK_DEFN)
+        with mock.patch("runpy.run_path",
+                        side_effect=run_path_side_effect):
+            with self.assertRaises(StorylineError) as ctx:
+                sc._run_cjk_font_pipeline(Path("/tmp/fake.ios"), defn)
+        return str(ctx.exception)
+
+    def test_argparse_systemexit_becomes_storyline_error(self):
+        def fake_run_path(path, run_name=None):
+            def main():
+                raise SystemExit(2)
+            return {"main": main}
+        msg = self._run(fake_run_path)
+        self.assertIn("字形页构建失败", msg)
+        self.assertIn("SystemExit 2", msg)
+
+    def test_importerror_yields_pillow_guide(self):
+        """死分支复活钉：run_path（模块顶层 from PIL import）抛 ImportError
+        → 行动指南带出（H1 修复前该分支不可达）。"""
+        msg = self._run(ImportError("No module named 'PIL'"))
+        self.assertIn("字形页构建失败", msg)
+        self.assertIn("Pillow 缺失", msg)
+
+    def test_nonzero_rc_becomes_storyline_error(self):
+        def fake_run_path(path, run_name=None):
+            return {"main": lambda: 2}
+        msg = self._run(fake_run_path)
+        self.assertIn("字形页构建失败", msg)
+
+
 def _fake_idx(game_file, room_name):
     return 42
 
@@ -361,11 +399,11 @@ class StorylineEndToEnd(unittest.TestCase):
     golden/C1 实录钉死），**文件面全部真实**（工作区产物/EditPlan/回执）。"""
 
     # 真实 O7 --detail 形态（R14 P1-1：汇总行全量计数 + STR 明细 op；
-    # F1：结构段 COUNT/VARDETERLINE/ROOM/CODE 行同入闸门；R16 P3：明细行
-    # 逐行同构——STR 9 条全打、CODEF changed 3 条全打、无矛盾 move 行、
-    # ⚠️/尾行计数与内容一致）——形状对应 fake 目标（append+alarm+create
-    # 式）：结构差异 9（COUNT 3+VARDETERLINE 1+ROOM 1+CODE 新增 1+变化 3）
-    # + 资源级 14（STR 9+INST 1+CODEF 3+…）= 共 23
+    # F1：结构段 COUNT/VARDETERLINE/ROOM/CODE 行同入闸门；R16 P3 + R19
+    # P3-6 订正：明细行逐行同构 + 尾行计数按 verify.py 实算——COUNT 4 条
+    # 各计 1 差异）——形状对应 fake 目标（append+alarm+create 式）：
+    # 结构差异 10（COUNT 4+VARDETERLINE 1+ROOM 1+CODE 新增 1+变化 3）
+    # + 资源级 14（STR 9+INST 1+CODEF 3+…）= 共 24
     DECLARED_DIFF = ("--- diff-snapshots ---\n"
                      "  A=base\n  B=product\n"
                      "  COUNT CODECOUNT: 1612 → 1613\n"
@@ -396,11 +434,12 @@ class StorylineEndToEnd(unittest.TestCase):
                      "    CODEF changed gml_Object_obj_golden_npc_Alarm_0\n"
                      "    CODEF changed gml_Object_obj_golden_npc_Step_0\n"
                      "  ⚠️ 资源级差异 14 处（未提供 --expected，按差异计入退出码）\n"
-                     "\n⚠️ 共 23 处差异（含资源级）\n")
+                     "\n⚠️ 共 24 处差异（含资源级）\n")
 
     # F4 CJK 组合形态：字体管线两条 CODEF changed + FONT changed 1
     # （scr_setfont / scr_preload_textures / fnt_ja_maintext——pass2 实际
-    # 改动面）；资源级 changed 3→5（明细 5 条）= 资源级 16、共 27
+    # 改动面；R19 P3-6 计数订正）；资源级 changed 3→5（明细 5 条）+
+    # FONT changed 1 = 资源级 17，共 29
     CJK_DECLARED_DIFF = DECLARED_DIFF \
         .replace("CODE 变化: gml_Script_textdata_en: instr 320 → 329",
                  "CODE 变化: gml_Script_scr_preload_textures: instr 88 → 89\n"
@@ -414,8 +453,8 @@ class StorylineEndToEnd(unittest.TestCase):
                  "字体: changed=1 added=0 removed=0") \
         .replace("代码指纹: changed=3 added=1 removed=0",
                  "代码指纹: changed=5 added=1 removed=0") \
-        .replace("⚠️ 资源级差异 14 处", "⚠️ 资源级差异 16 处") \
-        .replace("⚠️ 共 23 处差异", "⚠️ 共 27 处差异")
+        .replace("⚠️ 资源级差异 14 处", "⚠️ 资源级差异 17 处") \
+        .replace("⚠️ 共 24 处差异", "⚠️ 共 29 处差异")
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="deterline_story_"))
@@ -632,6 +671,8 @@ class StorylineEndToEnd(unittest.TestCase):
             cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
         self.assertEqual(rc, 1)
         self.assertIn("ROOM 移除: room_gone", err)
+        # R20 P3-②：钉住专属分支而非金丝雀回退路径（金丝雀消息也含同子串）
+        self.assertNotIn("未识别结构行", err)
 
     def test_build_refuses_room_added(self):
         """R16 P2-A：结构段 ROOM 新增分支（此前零钉）。"""
@@ -641,6 +682,7 @@ class StorylineEndToEnd(unittest.TestCase):
             cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
         self.assertEqual(rc, 1)
         self.assertIn("ROOM 新增: room_fabricated", err)
+        self.assertNotIn("未识别结构行", err)
 
     def test_build_refuses_code_removed(self):
         """R16 P2-A：结构段 CODE 移除分支（此前零钉）。"""
@@ -651,6 +693,7 @@ class StorylineEndToEnd(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("CODE 移除", err)
         self.assertIn("obj_vanished", err)
+        self.assertNotIn("未识别结构行", err)
 
     def test_build_refuses_var_occurrences_zero(self):
         """R16 P2-A：VARDETERLINE Occurrences=0 → 拒绝（occ≥1 合同）。"""
@@ -696,6 +739,19 @@ class StorylineEndToEnd(unittest.TestCase):
             cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
         self.assertEqual(rc, 1)
         self.assertIn("新增 2 条", err)
+
+    def test_build_refuses_unparseable_vardeterline(self):
+        """R19 P3-2：VARDETERLINE repr 畸形（regex 过但 literal_eval 炸）
+        → 专用消息——不被'基线已含'分支误诊为基线不干净。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF.replace(
+                "VARDETERLINE: [] → ['deterline_state:4321:1']",
+                "VARDETERLINE: [x y] → [x y, z]")) or 6)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("不可解析", err)
+        self.assertNotIn("基线已含", err)
 
     def test_plan_room_substring_fallback_diagnostic(self):
         """R16 P2-A：两段式回退（实际名≠定义名）→ 诊断如实注记。"""

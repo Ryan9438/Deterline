@@ -121,9 +121,10 @@ def _parse_diff_categories(diff_output: str) -> dict:
             try:
                 struct["vardeterline"] = (_ast.literal_eval(m.group(1)),
                                           _ast.literal_eval(m.group(2)))
-            except (ValueError, SyntaxError, MemoryError):
-                # R15 P3-1：畸形 repr（理论形态——var 名含 "] → " 等）→
-                # 显式畸形标记，闸门按不可解析拒绝（fail-closed 非裸栈）
+            except (ValueError, SyntaxError, MemoryError, RecursionError):
+                # R15 P3-1（R19 P3-3 补 RecursionError）：畸形 repr（理论
+                # 形态——var 名含 "] → " 等）→ 显式畸形标记，闸门按不可解析
+                # 拒绝（fail-closed 非裸栈）
                 struct["vardeterline"] = (["<unparseable>"], ["<unparseable>"])
             continue
         m = _re.match(r"^ROOM 移除: (.+)$", s)
@@ -177,6 +178,12 @@ def _check_structure(parsed: dict, plan: dict) -> list[str]:
         if got != want:
             out.append(f"COUNT {k} 变化 {got}（声明 {want}）")
     va, vb = st["vardeterline"] if st["vardeterline"] is not None else ([], [])
+    if "<unparseable>" in va or "<unparseable>" in vb:
+        # R19 P3-2：解析器畸形标记专用消息——否则会被"基线已含"分支吃掉，
+        # 把解析失败误诊为"基线不干净"并给出无效补救
+        out.append("VARDETERLINE 行不可解析（repr 畸形——verify.py 输出形态"
+                   "漂移或字段含分隔符）——闸门不猜，请核对该文件 diff 输出")
+        return out
     if va:
         out.append(f"基线已含 deterline* 变量 {va}——v1 合同以干净基线为目标"
                    "（先 undo/换干净副本再构建）")
@@ -285,9 +292,12 @@ def _run_cjk_font_pipeline(game_file: Path, defn: dict) -> None:
         chars_file.write_text("".join(chars), encoding="utf-8")
         build_dir = _Path(td) / "font_build"
         work_dir = _Path(td) / "cjk_work"
-        tool_ns = _runpy.run_path(str(tool), run_name="deterline_font_build")
         out, err = _io.StringIO(), _io.StringIO()
         try:
+            # R19/R20 P2：run_path 必须在 try 内——工具的 `from PIL import …`
+            # 在模块顶层，run_path 执行它；缺 Pillow 时 ImportError 从这里
+            # 抛出（此前该 except 是死代码，承诺的行动指南不可达）
+            tool_ns = _runpy.run_path(str(tool), run_name="deterline_font_build")
             with _mock.patch.object(_sys, "argv",
                                     ["font_cjk_build.py", "--font", str(font_src),
                                      "--only", str(chars_file),
