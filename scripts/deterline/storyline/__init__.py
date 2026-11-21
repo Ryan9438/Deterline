@@ -177,10 +177,29 @@ ScriptMessage("ROOM_MATCH:" + exact + ":" + partial);
     return 0, 0
 
 
+def _room_name_by_idx(game_file: Path, idx: int) -> str | None:
+    """只读 CSX 探针：按序号取房间**实际名**（两段式子串回退时可能不同于
+    定义名——结构闸门按实际名比对 ROOM 行，构建也以实际名为准）。"""
+    from .. import utmt
+    csx = f'''
+if ({int(idx)} < 0 || {int(idx)} >= Data.Rooms.Count) {{
+    ScriptMessage("ROOM_NAME:NOT_FOUND");
+}} else {{
+    ScriptMessage("ROOM_NAME:" + Data.Rooms[{int(idx)}].Name.Content);
+}}
+'''
+    out = utmt._run_utmt(csx, game_file, save=False)
+    for line in utmt._parse_msg(out):
+        if line.startswith("ROOM_NAME:"):
+            val = line[len("ROOM_NAME:"):]
+            return None if val == "NOT_FOUND" else val
+    return None
+
+
 def build_plan(defn: dict, game_file: Path) -> dict:
     """只读计划（零写盘）：房间/对象解析 + goto 预解析 + 期望资源集 +
     诊断。解析失败（错房/歧义/缺对象）在写目标前拒绝（12 §C2 验收）。"""
-    from ..cmds import template_common, npc as npc_mod
+    from ..cmds import template_common, npc as npc_mod, code as code_mod
 
     plan: dict = {"schema": PLAN_SCHEMA,
                   "patch_id": defn["patch_id"],
@@ -192,8 +211,13 @@ def build_plan(defn: dict, game_file: Path) -> dict:
     target_idx = template_common.idx_room_lookup(game_file, defn["room"])
     if target_idx < 0:
         raise errors.NotFoundError(f"定义房间不存在: {defn['room']}")
+    actual_room = _room_name_by_idx(game_file, target_idx)
+    if actual_room is None:
+        raise errors.ValidationError(
+            f"房间序号 {target_idx} 越界（idx_room_lookup 与实际表不一致）")
     exact_hits, partial_hits = _room_match_count(game_file, defn["room"])
-    plan["room"] = {"name": defn["room"], "idx": target_idx,
+    plan["room"] = {"requested": defn["room"], "name": actual_room,
+                    "idx": target_idx,
                     "exact_hits": exact_hits, "partial_hits": partial_hits}
     # 歧义判据（R13 P2-3 修订）：两段式语义下 exact 命中**确定性胜出**——
     # exact==1 恒唯一（前缀子集名如 room_ruins1 vs room_ruins10 合法）；
@@ -227,25 +251,80 @@ def build_plan(defn: dict, game_file: Path) -> dict:
     plan["flag"] = {"id": defn["flag_id"], "status": "declared-only",
                     "conflicts": conflicts,
                     "note": "模板 v1 不写入 flag——无实机证据的写入路径按 12 §C2 禁用"}
+    # Create 事件探针（F2：期望分支按实际形态标定——此前仅 append/create
+    # 两式，"自有/继承 Create_0 未引用 deterline_state → prepend"形态下
+    # 期望集失真，闸门会误拒合法构建）：三式 =
+    #   create  无任何 Create 事件 → 构建时新建（CODEF added +1）
+    #   prepend 有效 Create_0 存在但未引用变量 → 前插初始化行（CODEF changed +1）
+    #   skip    有效 Create_0 已引用 deterline_state → 零改动（干净基线下不可达，
+    #           只在已打过 deterline 补丁的文件出现——闸门按干净基线拒绝该形态）
+    create_code = npc_mod._find_create_code(game_file, info["obj"])
+    create_mode = "create"
+    if create_code is not None:
+        status, create_lines, _detail = code_mod.decompile_classified(
+            game_file, create_code)
+        if status != "ok":
+            raise StorylineError(
+                f"Create 事件探针读失败（{create_code} status={status}）——"
+                "无法标定期望资源集，拒绝（读失败不作空/已初始化假设，"
+                "B3 三分类口径；工具超时/协议异常请复跑 storyline-plan）")
+        create_mode = ("skip" if any("deterline_state" in ln for ln in create_lines)
+                       else "prepend")
     # 期望资源集（O7 **汇总行**全量计数口径——R14 P1-1 对齐真实形态；
     # 模板常数，干净基线实证标定）：STR total 9 = 3 对话键 + 6 模板内部串
-    # 且明细 op 全为 add；CODEF added = Create_0 +（create 路径）Step_0；
-    # CODEF changed = textdata_en 恒 1 +（append 路径 Step_0）+（Alarm 守卫）；
-    # INST add 1 / 其余类别 0（变更/删除/移动/字体一票拒绝）；goto/item
-    # 变体不改变计数（C1 两分支实证）
+    # 且明细 op 全为 add；CODEF added =（create 路径 Step_0）+（create 路径
+    # Create_0）；CODEF changed = textdata_en 恒 1 +（append 路径 Step_0）
+    # +（Alarm 守卫）+（Create_0 前插）；INST add 1 / 其余类别 0（变更/
+    # 删除/移动/字体一票拒绝）；goto/item 变体不改变计数（C1 两分支实证）
     alarm_guard = bool(info["native"] and info["alarm_code"])
+    expected_code_added = []
+    if not info["step_code"]:
+        expected_code_added.append(f"gml_Object_{info['obj']}_Step_0")
+    if create_code is None:
+        expected_code_added.append(f"gml_Object_{info['obj']}_Create_0")
+    expected_code_changed = ["gml_Script_textdata_en"]
+    if info["step_code"]:
+        expected_code_changed.append(info["step_code"])
+    if alarm_guard:
+        expected_code_changed.append(info["alarm_code"])
+    if create_mode == "prepend":
+        expected_code_changed.append(create_code)
     plan["expected_resources"] = {
         "str_total": 9,
         "str_ops": ["add"],
         "inst_adds": 1, "inst_removes": 0, "inst_moves": 0,
-        "code_added": 1 if info["step_code"] else 2,
+        "code_added": (0 if info["step_code"] else 1)
+                      + (0 if create_code is not None else 1),
         "code_changed": (1 + (1 if info["step_code"] else 0)
-                         + (1 if alarm_guard else 0)),
+                         + (1 if alarm_guard else 0)
+                         + (1 if create_mode == "prepend" else 0)),
         "code_removed": 0,
         "code_entry": (info["step_code"] or f"gml_Object_{info['obj']}_Step_0"),
         "code_mode": "append" if info["step_code"] else "create",
-        "instance_spawn": {"room": defn["room"], "count": 1},
+        "code_entry_create": create_code,
+        "code_mode_create": create_mode,
+        "instance_spawn": {"room": actual_room, "count": 1},
         "alarm_guard": alarm_guard,
+    }
+    # 结构层期望（F1：O7 结构段——COUNT/VARDETERLINE/ROOM/CODE 行——进闸门
+    # 比对；v1 此前只吃资源级汇总行，结构漂移仅经 CODEF/INST 间接可见）
+    plan["expected_structure"] = {
+        "count_deltas": {
+            "STRGCOUNT": 9,
+            "CODECOUNT": len(expected_code_added),
+            "SPRCOUNT": 0, "TEXCOUNT": 0, "LASTOBJ": 0,
+            # deterline_state 变量注册（Data.Variables +1）——skip 式不新增
+            "VARS": 1,
+        },
+        # 干净基线合同：A 侧必须无 deterline* 变量；B 侧恰新增一条
+        # deterline_state（NameStringID≠0——NSID=0 崩溃根因，见 npc.py
+        # _ensure_var_initialized；Occurrences≥1——本模板仅 Create_0 一处引用）
+        "var_added": "deterline_state",
+        "room_inst": {actual_room: 1},
+        "room_removed": [], "room_added": [], "room_changed": [],
+        "code_added": sorted(expected_code_added),
+        "code_removed": [],
+        "code_changed": sorted(expected_code_changed),
     }
     # 诊断
     diag = []
@@ -257,12 +336,22 @@ def build_plan(defn: dict, game_file: Path) -> dict:
         diag.append(f"YES 分支给物品 {defn['npc']['yes_item']}")
     if conflicts:
         diag.append("flag 冲突: " + "; ".join(conflicts))
+    if create_mode == "prepend":
+        own = create_code == f"gml_Object_{info['obj']}_Create_0"
+        diag.append(
+            f"Create 事件前插初始化行 → {create_code}"
+            + ("" if own else "（**继承**自父对象——改动落在父对象条目）"))
+    elif create_mode == "skip":
+        diag.append(f"Create 事件已引用 deterline_state（{create_code}）——"
+                    "基线非干净（已含 deterline 补丁），结构闸门将按干净基线拒绝")
+    if actual_room != defn["room"]:
+        diag.append(f"房间经两段式子串解析: {defn['room']} → {actual_room}")
     diag.extend(plan.pop("diagnostics_extra", []))
     plan["diagnostics"] = diag
     plan["build_command"] = {
         "action": "npc-choice",
         "args": {
-            "room": defn["room"], "object": defn["npc"]["object"],
+            "room": actual_room, "object": defn["npc"]["object"],
             "x": defn["npc"]["x"], "y": defn["npc"]["y"],
             "text_key": f"det_{defn['patch_id']}_choice",
             "yes_text_key": f"det_{defn['patch_id']}_yes",

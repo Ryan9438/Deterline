@@ -60,15 +60,31 @@ def cmd_storyline_plan(game_file: Path, defn_path: str, json_out: bool = False) 
 def _parse_diff_categories(diff_output: str) -> dict:
     """解析 O7 --detail 输出（R14 P1-1 对齐真实形态）。
 
-    **吃汇总行**（verify.py 资源级段 726-734：全量计数，非 [:10] 截断明细）：
+    **资源级汇总行**（verify.py 资源级段：全量计数，非 [:10] 截断明细）：
       字符串: N 处变化… / 实例: add=N remove=N move=N /
       代码指纹: changed=N added=N removed=N / 字体: changed=N added=N removed=N
     另收 STR 明细行的 op 序列（add/change/remove——干净构建应全为 add）。
-    返回 {"counts": {类别: 计数}, "str_ops": [op, ...]}——九个类别全覆盖，
-    不设白名单：解析层漏看 = 假绿（C3 验收口径）。"""
+
+    **结构段**（F1：此前未入闸门，结构漂移仅经 CODEF/INST 间接可见）：
+      COUNT <K>: va → vb［（--expected 类别推导，允许）后缀可有可无］
+      VARDETERLINE: [A 侧列表] → [B 侧列表]（缺行 = 两侧一致）
+      ROOM inst <名>: inst=a → inst=b / ROOM 移除: 名 / ROOM 新增: 名 /
+      ROOM 变化: 名: (…) → (…)（inst 计数外的分量变化）
+      CODE 移除: 名 / CODE 新增: 名 (instr=N)［后缀可有可无］ /
+      CODE 变化: 名: instr a → b［后缀可有可无］
+    返回 {"counts", "str_ops", "struct"}——不设白名单：解析层漏看 = 假绿
+    （C3 验收口径）。"""
     counts: dict[str, int] = {}
     str_ops: list[str] = []
+    struct: dict = {
+        "count_deltas": {},          # K: vb - va
+        "vardeterline": None,        # (A 侧列表, B 侧列表)；None = 缺行（两侧一致）
+        "room_inst": {},             # 名: Δinst
+        "room_removed": [], "room_added": [], "room_changed": [],
+        "code_removed": [], "code_added": [], "code_changed": [],
+    }
     import re as _re
+    import ast as _ast
     for line in diff_output.splitlines():
         s = line.strip()
         m = _re.match(r"^字符串:\s*(\d+)\s*处变化", s)
@@ -93,7 +109,103 @@ def _parse_diff_categories(diff_output: str) -> dict:
         m = _re.match(r"^STR (add|change|remove)\b", s)
         if m:
             str_ops.append(m.group(1))
-    return {"counts": counts, "str_ops": str_ops}
+            continue
+        # ---- 结构段（F1）----
+        m = _re.match(r"^COUNT (\w+): (-?\d+) → (-?\d+)", s)
+        if m:
+            struct["count_deltas"][m.group(1)] = int(m.group(3)) - int(m.group(2))
+            continue
+        m = _re.match(r"^VARDETERLINE: (\[.*\]) → (\[.*\])$", s)
+        if m:
+            struct["vardeterline"] = (_ast.literal_eval(m.group(1)),
+                                      _ast.literal_eval(m.group(2)))
+            continue
+        m = _re.match(r"^ROOM 移除: (.+)$", s)
+        if m:
+            struct["room_removed"].append(m.group(1))
+            continue
+        m = _re.match(r"^ROOM 新增: (.+)$", s)
+        if m:
+            struct["room_added"].append(m.group(1))
+            continue
+        m = _re.match(r"^ROOM 变化: (.+?): ", s)
+        if m:
+            struct["room_changed"].append(m.group(1))
+            continue
+        m = _re.match(r"^ROOM inst (.+): inst=(\d+) → inst=(\d+)", s)
+        if m:
+            struct["room_inst"][m.group(1)] = int(m.group(3)) - int(m.group(2))
+            continue
+        m = _re.match(r"^CODE 移除: (.+)$", s)
+        if m:
+            struct["code_removed"].append(m.group(1))
+            continue
+        m = _re.match(r"^CODE 新增: (\S+) \(instr=(\d+)\)", s)
+        if m:
+            struct["code_added"].append(m.group(1))
+            continue
+        m = _re.match(r"^CODE 变化: (\S+): instr (-?\d+) → (-?\d+)", s)
+        if m:
+            struct["code_changed"].append(m.group(1))
+            continue
+    return {"counts": counts, "str_ops": str_ops, "struct": struct}
+
+
+def _check_structure(parsed: dict, plan: dict) -> list[str]:
+    """结构段比对（F1）：解析出的结构差异 vs plan.expected_structure——
+    全类别严格相等（含期望为空而实测非空的形态）。返回未声明清单（空=过）。"""
+    st = parsed["struct"]
+    exp = plan["expected_structure"]
+    out: list[str] = []
+    for k in sorted(set(st["count_deltas"]) | set(exp["count_deltas"])):
+        got = st["count_deltas"].get(k, 0)
+        want = exp["count_deltas"].get(k, 0)
+        if got != want:
+            out.append(f"COUNT {k} 变化 {got}（声明 {want}）")
+    va, vb = st["vardeterline"] if st["vardeterline"] is not None else ([], [])
+    if va:
+        out.append(f"基线已含 deterline* 变量 {va}——v1 合同以干净基线为目标"
+                   "（先 undo/换干净副本再构建）")
+    else:
+        if len(vb) != 1:
+            out.append(f"VARDETERLINE 新增 {len(vb)} 条（声明恰 1 条 "
+                       f"{exp['var_added']}）: {vb}")
+        else:
+            try:
+                name, nsid, occ = vb[0].rsplit(":", 2)
+            except ValueError:
+                out.append(f"VARDETERLINE 条目形状不符（name:nsid:occ）: {vb[0]!r}")
+                name = nsid = occ = None
+            if name is not None:
+                if name != exp["var_added"]:
+                    out.append(f"VARDETERLINE 新增变量 {name!r}（声明 "
+                               f"{exp['var_added']!r}）")
+                if str(nsid) == "0":
+                    out.append(f"VARDETERLINE {name} NameStringID=0"
+                               "（NSID=0 崩溃根因——Create_0 初始化未生效？）")
+                if occ is None or not occ.isdigit() or int(occ) < 1:
+                    out.append(f"VARDETERLINE {name} Occurrences={occ!r}"
+                               "（须 ≥1——变量未被任何代码引用）")
+    for name in st["room_removed"]:
+        out.append(f"ROOM 移除: {name}")
+    for name in st["room_added"]:
+        out.append(f"ROOM 新增: {name}")
+    for name in st["room_changed"]:
+        out.append(f"ROOM 尺寸/tile/背景层变化: {name}")
+    for name in sorted(set(st["room_inst"]) | set(exp["room_inst"])):
+        got = st["room_inst"].get(name, 0)
+        want = exp["room_inst"].get(name, 0)
+        if got != want:
+            out.append(f"ROOM inst {name} 变化 {got}（声明 {want}）")
+    if sorted(st["code_added"]) != exp["code_added"]:
+        out.append(f"CODE 新增 {sorted(st['code_added'])}"
+                   f"（声明 {exp['code_added']}）")
+    if st["code_removed"]:
+        out.append(f"CODE 移除 {st['code_removed']}（声明无）")
+    if sorted(st["code_changed"]) != exp["code_changed"]:
+        out.append(f"CODE 指令数变化 {sorted(st['code_changed'])}"
+                   f"（声明 {exp['code_changed']}）")
+    return out
 
 
 def _expected_categories(plan: dict) -> dict:
@@ -190,9 +302,12 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
                           if op not in plan["expected_resources"]["str_ops"]})
         if bad_ops:
             undeclared.append("STR op 含非声明形态: " + ",".join(bad_ops))
+        # 结构段比对（F1：COUNT/VARDETERLINE/ROOM/CODE 行——资源级之外的
+        # 直接结构证据，如房间尺寸被改、基线非干净、意外新代码条目）
+        undeclared.extend(_check_structure(parsed, plan))
         if undeclared:
             raise _pkg().StorylineError(
-                "发现未声明资源变更，拒绝出候选（12 §C3）: "
+                "发现未声明资源/结构变更，拒绝出候选（12 §C3）: "
                 + "; ".join(undeclared) + f"（允许: {allowed}）")
     except (_pkg().StorylineError, errors.DeterlineError, FileNotFoundError,
             OSError, RuntimeError) as exc:
@@ -214,6 +329,8 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
         "product_sha256": product_sha,
         "declared_diff": cats,
         "declared_str_ops": parsed["str_ops"],
+        "declared_structure": parsed["struct"],
+        "expected_structure": plan["expected_structure"],
         "expected_resources": plan["expected_resources"],
         "goto": plan.get("goto"),
         "flag": plan["flag"],
@@ -246,6 +363,11 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
     无回执）——不靠猜测宣布已应用。"""
     defn_err = None
     try:
+        from .. import state
+        if commit and state.PREVIEW:
+            raise _pkg().StorylineError(
+                "--commit 与 --preview 互斥（预览=零动作；正式提交去掉 "
+                "--preview）——previews 语义不得被 commit 覆盖")
         _validate_workspace_name(workspace)
         game_file = Path(game_file).resolve()
         defn = _pkg().load_definition(Path(defn_path))

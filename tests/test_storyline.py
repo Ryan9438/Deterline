@@ -128,18 +128,142 @@ class PlanTest(unittest.TestCase):
                 mock.patch("deterline.cmds.npc._query_npc_target",
                            side_effect=_fake_npc_target), \
                 mock.patch("deterline.storyline._room_match_count",
-                           return_value=(1, 0)):
+                           return_value=(1, 0)), \
+                mock.patch("deterline.storyline._room_name_by_idx",
+                           return_value="room_golden"), \
+                mock.patch("deterline.cmds.npc._find_create_code",
+                           return_value=None):
             plan = sl.build_plan(defn, game)
         self.assertEqual(plan["room"]["idx"], 42)
         self.assertEqual(plan["room"]["exact_hits"], 1)
+        self.assertEqual(plan["room"]["name"], "room_golden")
+        self.assertEqual(plan["room"]["requested"], "room_golden")
         self.assertEqual(plan["npc"]["object"], "obj_golden_npc")
         er = plan["expected_resources"]
         self.assertEqual(er["str_total"], 9)
         self.assertEqual(er["code_added"], 1)   # append 路径：仅 Create_0
         self.assertEqual(er["code_changed"], 3)  # textdata + Step_0 追加 + Alarm 守卫
         self.assertEqual(er["code_mode"], "append")
+        self.assertEqual(er["code_mode_create"], "create")
+        self.assertIsNone(er["code_entry_create"])
         self.assertTrue(er["alarm_guard"])
         self.assertEqual(plan["flag"]["status"], "declared-only")
+        # 结构层期望（F1）
+        es = plan["expected_structure"]
+        self.assertEqual(es["count_deltas"], {
+            "STRGCOUNT": 9, "CODECOUNT": 1, "SPRCOUNT": 0, "TEXCOUNT": 0,
+            "LASTOBJ": 0, "VARS": 1})
+        self.assertEqual(es["var_added"], "deterline_state")
+        self.assertEqual(es["room_inst"], {"room_golden": 1})
+        self.assertEqual(es["code_added"],
+                         ["gml_Object_obj_golden_npc_Create_0"])
+        self.assertEqual(es["code_changed"],
+                         ["gml_Object_obj_golden_npc_Alarm_0",
+                          "gml_Object_obj_golden_npc_Step_0",
+                          "gml_Script_textdata_en"])
+
+    def test_plan_create_prepend_branch(self):
+        """F2：自有 Create_0 存在但未引用变量 → prepend 式（changed +1）。"""
+        import deterline.storyline as sl
+        defn = dict(_read_definition(GOOD_DEFN))
+        defn["_sha256"] = "0" * 64
+        with mock.patch("deterline.cmds.template_common.idx_room_lookup",
+                        side_effect=_fake_idx), \
+                mock.patch("deterline.cmds.npc._query_npc_target",
+                           side_effect=_fake_npc_target), \
+                mock.patch("deterline.storyline._room_match_count",
+                           return_value=(1, 0)), \
+                mock.patch("deterline.storyline._room_name_by_idx",
+                           return_value="room_golden"), \
+                mock.patch("deterline.cmds.npc._find_create_code",
+                           return_value="gml_Object_obj_golden_npc_Create_0"), \
+                mock.patch("deterline.cmds.code.decompile_classified",
+                           return_value=("ok", ["pushother = 2;"], "")):
+            plan = sl.build_plan(defn, Path("/tmp/fake.ios"))
+        er = plan["expected_resources"]
+        self.assertEqual(er["code_mode_create"], "prepend")
+        self.assertEqual(er["code_entry_create"],
+                         "gml_Object_obj_golden_npc_Create_0")
+        # step 存在(+0 added) + create 已有(+0 added) → added = 0
+        self.assertEqual(er["code_added"], 0)
+        self.assertEqual(er["code_changed"], 4)  # textdata + append + alarm + prepend
+        es = plan["expected_structure"]
+        self.assertEqual(es["count_deltas"]["CODECOUNT"], 0)
+        self.assertEqual(es["code_added"], [])
+        self.assertIn("gml_Object_obj_golden_npc_Create_0", es["code_changed"])
+        self.assertTrue(any("前插" in d for d in plan["diagnostics"]))
+
+    def test_plan_create_skip_branch_is_refused_clean_baseline(self):
+        """F2：有效 Create_0 已引用 deterline_state → skip 式标定 + 干净基线
+        诊断（结构闸门按 va 非空拒绝该形态——v1 单发合同）。"""
+        import deterline.storyline as sl
+        defn = dict(_read_definition(GOOD_DEFN))
+        defn["_sha256"] = "0" * 64
+        with mock.patch("deterline.cmds.template_common.idx_room_lookup",
+                        side_effect=_fake_idx), \
+                mock.patch("deterline.cmds.npc._query_npc_target",
+                           side_effect=_fake_npc_target), \
+                mock.patch("deterline.storyline._room_match_count",
+                           return_value=(1, 0)), \
+                mock.patch("deterline.storyline._room_name_by_idx",
+                           return_value="room_golden"), \
+                mock.patch("deterline.cmds.npc._find_create_code",
+                           return_value="gml_Object_obj_golden_npc_Create_0"), \
+                mock.patch("deterline.cmds.code.decompile_classified",
+                           return_value=("ok", ["deterline_state = 0;"], "")):
+            plan = sl.build_plan(defn, Path("/tmp/fake.ios"))
+        er = plan["expected_resources"]
+        self.assertEqual(er["code_mode_create"], "skip")
+        self.assertEqual(er["code_added"], 0)
+        self.assertEqual(er["code_changed"], 3)  # textdata + append + alarm
+        self.assertTrue(any("非干净" in d or "deterline_state" in d
+                            for d in plan["diagnostics"]))
+
+    def test_plan_create_prepend_inherited_diagnostic(self):
+        """F2：Create 事件继承自父对象 → 诊断点名改动落在父条目。"""
+        import deterline.storyline as sl
+        defn = dict(_read_definition(GOOD_DEFN))
+        defn["_sha256"] = "0" * 64
+        with mock.patch("deterline.cmds.template_common.idx_room_lookup",
+                        side_effect=_fake_idx), \
+                mock.patch("deterline.cmds.npc._query_npc_target",
+                           side_effect=_fake_npc_target), \
+                mock.patch("deterline.storyline._room_match_count",
+                           return_value=(1, 0)), \
+                mock.patch("deterline.storyline._room_name_by_idx",
+                           return_value="room_golden"), \
+                mock.patch("deterline.cmds.npc._find_create_code",
+                           return_value="gml_Object_obj_parent_Create_0"), \
+                mock.patch("deterline.cmds.code.decompile_classified",
+                           return_value=("ok", ["hp = 3;"], "")):
+            plan = sl.build_plan(defn, Path("/tmp/fake.ios"))
+        self.assertEqual(plan["expected_resources"]["code_mode_create"],
+                         "prepend")
+        self.assertEqual(
+            plan["expected_resources"]["code_entry_create"],
+            "gml_Object_obj_parent_Create_0")
+        self.assertTrue(any("继承" in d for d in plan["diagnostics"]))
+
+    def test_plan_create_probe_read_failure_refuses(self):
+        """F2：Create 探针读失败 → 拒绝标定（读失败不作空/已初始化假设，B3 口径）。"""
+        import deterline.storyline as sl
+        defn = dict(_read_definition(GOOD_DEFN))
+        defn["_sha256"] = "0" * 64
+        with mock.patch("deterline.cmds.template_common.idx_room_lookup",
+                        side_effect=_fake_idx), \
+                mock.patch("deterline.cmds.npc._query_npc_target",
+                           side_effect=_fake_npc_target), \
+                mock.patch("deterline.storyline._room_match_count",
+                           return_value=(1, 0)), \
+                mock.patch("deterline.storyline._room_name_by_idx",
+                           return_value="room_golden"), \
+                mock.patch("deterline.cmds.npc._find_create_code",
+                           return_value="gml_Object_obj_golden_npc_Create_0"), \
+                mock.patch("deterline.cmds.code.decompile_classified",
+                           return_value=("error", None, "UTMT timeout")):
+            with self.assertRaises(Exception) as ctx:
+                sl.build_plan(defn, Path("/tmp/fake.ios"))
+        self.assertIn("读失败", str(ctx.exception))
 
     def test_plan_rejects_missing_room(self):
         import deterline.storyline as sl
@@ -158,6 +282,8 @@ class PlanTest(unittest.TestCase):
         defn["_sha256"] = "0" * 64
         with mock.patch("deterline.cmds.template_common.idx_room_lookup",
                         return_value=42), \
+                mock.patch("deterline.storyline._room_name_by_idx",
+                           return_value="room_golden"), \
                 mock.patch("deterline.storyline._room_match_count",
                            return_value=(2, 0)):
             with self.assertRaises(Exception) as ctx:
@@ -170,6 +296,8 @@ class PlanTest(unittest.TestCase):
         defn["_sha256"] = "0" * 64
         with mock.patch("deterline.cmds.template_common.idx_room_lookup",
                         return_value=42), \
+                mock.patch("deterline.storyline._room_name_by_idx",
+                           return_value="room_golden"), \
                 mock.patch("deterline.storyline._room_match_count",
                            return_value=(1, 0)), \
                 mock.patch("deterline.cmds.npc._query_npc_target",
@@ -183,9 +311,23 @@ class StorylineEndToEnd(unittest.TestCase):
     """build/apply 编排层全流程：域生成器与 O7 打 mock（其行为已由
     golden/C1 实录钉死），**文件面全部真实**（工作区产物/EditPlan/回执）。"""
 
-    # 真实 O7 --detail 形态（R14 P1-1：汇总行全量计数 + STR 明细 op）——
-    # fake 输出必须与 verify.py 实际打印同构，捏造行会让闸门测试失真
-    DECLARED_DIFF = ("--- 资源级差异（--detail） ---\n"
+    # 真实 O7 --detail 形态（R14 P1-1：汇总行全量计数 + STR 明细 op；
+    # F1：结构段 COUNT/VARDETERLINE/ROOM/CODE 行同入闸门）——
+    # fake 输出必须与 verify.py 实际打印同构，捏造行会让闸门测试失真。
+    # 形状对应 fake 目标（append+alarm+create 式）：CODE 新增 1（Create_0）、
+    # CODE 变化 3（Alarm_0/Step_0/textdata_en）、VARS +1、目标房 inst +1
+    DECLARED_DIFF = ("--- diff-snapshots ---\n"
+                     "  A=base\n  B=product\n"
+                     "  COUNT CODECOUNT: 1612 → 1613\n"
+                     "  COUNT STRGCOUNT: 434 → 443\n"
+                     "  COUNT VARS: 4800 → 4801\n"
+                     "  VARDETERLINE: [] → ['deterline_state:4321:1']\n"
+                     "  ROOM inst room_golden: inst=56 → inst=57\n"
+                     "  CODE 新增: gml_Object_obj_golden_npc_Create_0 (instr=2)\n"
+                     "  CODE 变化: gml_Object_obj_golden_npc_Alarm_0: instr 12 → 15\n"
+                     "  CODE 变化: gml_Object_obj_golden_npc_Step_0: instr 40 → 71\n"
+                     "  CODE 变化: gml_Script_textdata_en: instr 320 → 329\n"
+                     "--- 资源级差异（--detail） ---\n"
                      "  字符串: 9 处变化（add/change/remove，内容哈希锚定）\n"
                      "  实例: add=1 remove=0 move=0\n"
                      "  代码指纹: changed=3 added=1 removed=0\n"
@@ -195,7 +337,8 @@ class StorylineEndToEnd(unittest.TestCase):
                      "    STR add len=11 sha=d7\n"
                      "    INST move id=1 x\n"   # 真实形态：实例明细仅 move 行
                      "    CODEF changed gml_Script_textdata_en\n"
-                     "  ⚠️ 资源级差异 5 处\n")
+                     "  ⚠️ 资源级差异 5 处\n"
+                     "\n⚠️ 共 6 处差异（含资源级）\n")
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="deterline_story_"))
@@ -206,6 +349,7 @@ class StorylineEndToEnd(unittest.TestCase):
         self.defn_path.write_text(GOOD_DEFN, encoding="utf-8")
         from deterline import state
         state.WORKSPACE = None
+        state.PREVIEW = False
         # 状态卫生：E2E 会改 WORKSPACE/PREVIEW——测试后恢复原值，
         # 防止顺序依赖污染后续测试（write_policy/utmt_spine 曾受害）
         for attr in ("WORKSPACE", "PREVIEW"):
@@ -223,6 +367,16 @@ class StorylineEndToEnd(unittest.TestCase):
                               return_value=(1, 0))
         self._p5.start()
         self.addCleanup(self._p5.stop)
+        # F1/F2 新探针：实际房间名 + Create 事件形态（fake 目标 = 无 Create
+        # → create 式，与 DECLARED_DIFF 的 CODE 新增 Create_0 一致）
+        self._p6 = mock.patch("deterline.storyline._room_name_by_idx",
+                              return_value="room_golden")
+        self._p7 = mock.patch("deterline.cmds.npc._find_create_code",
+                              return_value=None)
+        self._p6.start()
+        self._p7.start()
+        self.addCleanup(self._p6.stop)
+        self.addCleanup(self._p7.stop)
         # 域生成器 mock：写真实工作区产物 + **真实形状 manifest**（R13 P1-5：
         # apply 现在要求 manifest 在场——source/source_sha256/history 末条
         # = 产物 sha；确定性派生，不用 hash()，R14 P3-7）
@@ -311,8 +465,97 @@ class StorylineEndToEnd(unittest.TestCase):
         rc, _o, err = self._capture(
             cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
         self.assertEqual(rc, 1)
-        self.assertIn("未声明资源变更", err)
+        self.assertIn("未声明资源/结构变更", err)
         self.assertIn("FONT changed", err)
+
+    # ---- F1：结构段违规拒绝（真实 O7 形态：结构行 + 资源级汇总行同构）----
+
+    def _replace_diff(self, fake_diff):
+        self.diff_mock.stop()
+        self.diff_mock = mock.patch("deterline.cmds.verify.cmd_diff_snapshots",
+                                    side_effect=fake_diff)
+        self.diff_mock.start()
+        self.addCleanup(self.diff_mock.stop)
+
+    def test_build_refuses_room_structure_change(self):
+        """结构段：房间尺寸/tile/背景层变化 → 拒绝（资源级无法间接可见的形态）。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF
+            + "  ROOM 变化: room_golden: ('320x240', 'inst=57', 'tiles=5', "
+              "'bg_x,') → ('640x480', 'inst=57', 'tiles=5', 'bg_x,')"
+              "（inst 计数外的分量变化）") or 7)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("ROOM 尺寸/tile/背景层变化: room_golden", err)
+
+    def test_build_refuses_dirty_baseline_vardeterline(self):
+        """结构段：基线已含 deterline* 变量 → 干净基线合同拒绝。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF.replace(
+                "VARDETERLINE: [] → ['deterline_state:4321:1']",
+                "VARDETERLINE: ['deterline_state:99:1'] → "
+                "['deterline_state:99:2']")) or 6)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("基线已含 deterline* 变量", err)
+
+    def test_build_refuses_nsid_zero_var(self):
+        """结构段：新增 deterline_state NameStringID=0 → NSID=0 崩溃根因拒绝。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF.replace(
+                "VARDETERLINE: [] → ['deterline_state:4321:1']",
+                "VARDETERLINE: [] → ['deterline_state:0:1']")) or 6)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("NameStringID=0", err)
+
+    def test_build_refuses_count_delta_mismatch(self):
+        """结构段：COUNT 增量与声明不符（STRGCOUNT +10 vs 声明 9）→ 拒绝。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF.replace(
+                "COUNT STRGCOUNT: 434 → 443", "COUNT STRGCOUNT: 434 → 444")) or 6)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("COUNT STRGCOUNT 变化 10（声明 9）", err)
+
+    def test_build_refuses_undeclared_room_inst(self):
+        """结构段：未声明房间的实例数变化 → 拒绝。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF
+            + "  ROOM inst room_other: inst=3 → inst=4") or 7)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("ROOM inst room_other 变化 1（声明 0）", err)
+
+    def test_build_refuses_extra_code_entry(self):
+        """结构段：CODE 新增超出声明（额外代码条目）→ 拒绝。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF.replace(
+                "CODE 新增: gml_Object_obj_golden_npc_Create_0 (instr=2)",
+                "CODE 新增: gml_Object_obj_golden_npc_Create_0 (instr=2)\n"
+                "  CODE 新增: gml_Object_obj_evil_twin_Create_0 (instr=5)")) or 7)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("CODE 新增", err)
+        self.assertIn("obj_evil_twin", err)
+
+    def test_apply_refuses_preview_and_commit(self):
+        """preview×commit 互斥（R5 P2-3 同款）：--preview 语义不得被 commit 覆盖。"""
+        from deterline import state
+        state.PREVIEW = True
+        rc, _o, err = self._capture(
+            cmd_storyline_apply, None, self.game, str(self.defn_path),
+            "det_ws", commit=True)
+        self.assertEqual(rc, 1)
+        self.assertIn("互斥", err)
+        self.assertEqual(self.game.read_bytes(), b"BASE-GAME-CONTENT",
+                         "preview×commit 拒绝后目标不得变化")
 
     def test_apply_preview_then_commit_and_idempotent(self):
         rc, _o, err = self._capture(

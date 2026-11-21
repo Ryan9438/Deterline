@@ -39,6 +39,10 @@ def _storyline_apply_any(args, parser, target):
         parser.error("storyline-apply 需要 --value (定义 YAML 路径)")
     if not args.workspace:
         parser.error("storyline-apply 需要 --workspace (构建工作区名)")
+    if args.commit and args.preview:
+        # R5 P2-3 同款（prune-purge 先例）：--preview 语义 = 零动作，不得被
+        # --commit 覆盖——此前 storyline-apply --preview --commit 会真写目标
+        parser.error("storyline-apply 的 --commit 与 --preview 互斥（预览=零动作）")
     rc = storyline.cmd_storyline_apply(
         None, paths.resolve_game_data_file(args.dir), args.value,
         args.workspace, commit=bool(args.commit), json_out=args.json)
