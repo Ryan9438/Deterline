@@ -9,7 +9,7 @@
     },
     "invariants": "action 集合必须与 modify_save.py --action choices 完全一致（test_docs_lint 校验）。新增命令流程：注册 command_handlers.py 路由 → 加本文件条目（含 golden test / doctor 项）→ python3 tools/gen_docs.py。"
   },
-  "version": "2.6.0-rc2",
+  "version": "2.6.0-rc3",
   "groups": [
     {
       "id": "save",
@@ -835,8 +835,8 @@
       "summary": "支线编排·只读计划（12 §C2）：解析版本化 YAML 定义（deterline.storyline/v1，严格封闭字段集/重复键拒绝/ASCII 合同）→ 房间/对象/goto 预解析 + 期望资源集 + flag 独占区冲突诊断——错房/歧义/冲突/缺字在写目标前拒绝；--json 输出 deterline.storyline-plan/v1；零写盘",
       "example": "storyline-plan --value storyline.yaml --dir /path/game.ios --json",
       "notes": [
-        "定义字段集 v1：schema/patch_id/room/npc(object,x,y,prompt,yes_text,no_text,range,yes_goto,yes_item,once)/flag_id",
-        "npc.prompt 须含 \\C 且 ≤3 行；分支文本不得含 \\C；v1 全 ASCII（CJK 组合另列验收）",
+        "定义字段集 v1：schema/patch_id/room/npc(object,x,y,prompt,yes_text,no_text,range,yes_goto,yes_item,once)/flag_id/cjk",
+        "npc.prompt 须含 \\C 且 ≤3 行；分支文本不得含 \\C；默认全 ASCII——顶层 cjk: true 声明中文组合（构建链先注入 CJK 字体栈 typer=31，渲染语义待 R2-CJK 实机收口）",
         "flag_id 为声明保留（模板 v1 不写入——无实机证据的写入路径禁用，12 §C2）；冲突=其他回执占用同 flag"
       ]
     },

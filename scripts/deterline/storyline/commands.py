@@ -255,7 +255,7 @@ def _run_cjk_font_pipeline(game_file: Path, defn: dict) -> None:
     from unittest import mock as _mock
     from ..cmds import cjk as _cjk
 
-    repo_root = _Path(__file__).resolve().parents[3]
+    repo_root = _Path(__file__).resolve().parents[3]  # storyline CJK 字形页/字体源
     font_src = (repo_root / "assets" / "fonts" / "vendor" /
                 "fusion-pixel-12px" / "fusion-pixel-12px-monospaced-zh_hans.ttf")
     tool = repo_root / "tools" / "font_cjk_build.py"

@@ -92,6 +92,9 @@ class TestFileMigrationChecklist(unittest.TestCase):
          'parents[3] / "build" / "font_cjk" / "glyphs.json"'),
         ("doctor 包根单点（cmds/doctor.py，基线/字形表；rooms.json 复用 rooms_data 单点）",
          'resolve().parents[3]  # doctor'),
+        ("storyline CJK 包根单点（storyline/commands.py，F4 中文组合："
+         "包根解析 parents[3]=仓库根 → tools/font_cjk_build.py + vendor 字体）",
+         'resolve().parents[3]  # storyline'),
     ]
 
     def test_file_usage_set_matches_checklist(self):

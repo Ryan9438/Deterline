@@ -9,7 +9,7 @@ Usage:
         --width 640 --height 480 --output bg.png
 """
 
-__version__ = "2.6.0-rc2"
+__version__ = "2.6.0-rc3"
 
 import argparse
 import math

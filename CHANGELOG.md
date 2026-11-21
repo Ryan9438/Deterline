@@ -1,5 +1,55 @@
 # Changelog
 
+## v2.6.0-rc3 — 2026-11-21（rc2 前瞻清偿：结构闸门 + Create_0 三式 + CLI 层测试 + CJK 组合）
+
+**性质：rc2 前瞻登记四项全清偿（F1/F2/F3/F4）+ 新发现 preview×commit 漏洞修复。482→505 测试（+23）。候选 tag 递补 v2.6.0-rc3。真机 /tmp 全链标定两轮（ASCII 回归 + CJK 新增），确定性重建保持逐字节一致。**
+
+### F1（rc2 前瞻）：O7 结构层差异入 storyline 声明闸门
+
+- 闸门新增**结构段比对**：COUNT 增量（STRGCOUNT/CODECOUNT/SPRCOUNT/TEXCOUNT/LASTOBJ/VARS）、VARDETERLINE（A/B 双侧列表）、ROOM inst·移除·新增·变化、CODE 新增·移除·变化——资源级汇总行之外的结构漂移（房间尺寸被改、基线非干净、意外代码条目、NSID=0 变量）写前拒绝。
+- plan 落 `expected_structure`（全类别严格相等比对）；build 回执记 declared/expected 双侧。
+- VARDETERLINE 干净基线合同：A 侧必须无 deterline* 变量；B 侧恰新增一条 `deterline_state`，**NameStringID≠0**（NSID=0 崩溃根因）、Occurrences≥1。
+- **真机标定发现**：LASTOBJ 在新建代码条目时 +1（CodeImportGroup/AutoCreateAssets 整体副作用，非逐条目）——首跑该常数缺失被闸门正确拒绝（声明 0 实测 1），修正后全链绿（闸门对未知增量的拒绝行为按设计生效）。
+
+### F2（rc2 前瞻）：Create 事件三式期望分支
+
+- build_plan 新增 Create 探针（`_find_create_code` + `decompile_classified` 三分类）——期望集按实际形态标定，**不再对 obj_npc_marker 形态隐性硬编码**：
+  - `create`：无任何 Create 事件 → 新建（CODEF added +1）
+  - `prepend`：有效 Create_0 存在但未引用 deterline_state → 前插初始化行（CODEF changed +1；**继承**条目带诊断点名父对象改动）
+  - `skip`：已引用变量 → 零改动（干净基线不可达；结构闸门按 VARDETERLINE A 侧非空拒绝）
+- 探针读失败拒绝标定（不作空/已初始化假设，B3 三分类口径）。
+- plan 改用**实际房间名**（两段式子串回退时与定义名可异——新探针 `_room_name_by_idx`；构建亦以实际名为准，诊断如实注记）。
+- 真机验证：obj_cactus（自有 Create_0 无变量）→ added 0 / changed 4（textdata+append+alarm+prepend），build rc=0 过闸门——**该形态此前会被旧常数误拒**（added 1≠2、changed 4≠3）。
+
+### F3（rc2 前瞻）：storyline 三命令 CLI 层测试
+
+- 8 常开测试（无 UTMT 依赖）：plan/build/apply 门禁 rc2、拒绝 rc1（R13 P1-1 退出码保真）、`--sandbox×--commit` 互斥、`--preview×--commit` 互斥（本批新增修复）、P0-1 `--workspace×--commit` CLI 可达性回归钉、`--json` 错误形状。
+- 1 集成测试（`DETERLINE_RUN_UTMT_INTEGRATION=1` opt-in）：真 CLI 全链 build→预览→commit→幂等→undo——rc2 手工验证序列固化自动化。
+- **形态注记（诚实口径）**：subprocess+sys.executable 测试形态被本机安全扫描误报高危并拦截写入（recovery_stress 同款限制），改进程内 `cli.main()` + SystemExit 捕获——门禁/接线/退出码语义全部复验；OS 进程边界由 rc2 手工真 CLI 验收链、C1 脚本与本批两轮真机标定留痕覆盖。
+
+### 新发现修复：storyline-apply `--preview × --commit` 会真写目标
+
+- F3 测试设计时发现：CLI 只挡 `--sandbox×--commit`，`--preview` 语义可被 `--commit` 覆盖（storyline-apply 不检查 state.PREVIEW 即提交）——R5 P2-3（prune-purge）同款漏洞在 storyline 的复现。修法：handler `parser.error`（rc 2）+ 函数级守卫双层。
+- 回归钉：`test_apply_refuses_preview_and_commit` + CLI 层 `test_apply_preview_commit_exclusive_rc2`。
+
+### F4（rc1/C1 前瞻）：CJK×choice 中文组合——合同扩展 + 构建链字体管线
+
+- 合同：顶层 `cjk` 字段（布尔，默认 false）——true 时文本放行非 ASCII，构建链先注入 CJK 字体栈；默认仍全 ASCII。cjk 非布尔拒绝。
+- 构建链：`_run_cjk_font_pipeline` = `font_cjk_build --only` **最小字符集**（定义三文本字段唯一字符——确定性字形集）+ `cmd_cjk_font` 五步管线（pass1/pass2 同批写入工作区，不触原文件）。
+- **typer 参数**：`_build_npc_choice_block`/`cmd_npc_choice` 增加 `typer`（默认 5 = 原版，既有 golden 零重录）；CJK 组合传 **31**（CJK_TYPER_TABLE，B4 主臂实证）。⚠️ 选择框渲染语义待 **R2-CJK 实机收口**（sandbox 级证据，不升级声明）。
+- 闸门：`expected_resources.font_changed`（ASCII 0 一票拒绝 / CJK 1——fnt_ja_maintext 字形表重指+共享表扩容）；expected_structure.code_changed += `scr_setfont`/`scr_preload_textures`（pass2 实际改动面）。
+- **真机 /tmp 全链标定**：build 声明差异 STR 9 / INST add 1 / CODEF changed 3（textdata+两字体条目）added 2 / FONT changed 1——与预测常数**完全一致**；apply commit → undo 回基线 fc049850；同定义重建 sha 逐字节一致；recovery-scan findings 0。
+
+### 兼容面与文档
+
+- 505 测试（+23：F1 结构违规×6、F2 分支×4、互斥×1、CJK×2、CLI×9、标定夹具修正×1）；95 命令不变；FROZEN_EXPORTS 219 不变。
+- npc-choice 移出覆盖豁免（ALLOWLIST 陈余——E2E 集成测试真实走 handler，覆盖如实记账）；`__file__` 迁移检查表登记 storyline CJK 包根单点。
+- commands.json storyline-plan 注记更新（cjk 字段），gen_docs 重生成。
+
+### 前瞻登记
+
+- STORYLINE CJK 的**实机**验收（typer=31 选择框渲染、选项翻页）待 R0–R2 窗口——R2 矩阵增加 CJK×choice 行材料就绪；flag 写入仍禁用（R2 持久语义证据前不改）；`--only` 字形集按定义文本固定（跨定义字形合并/共享未做——多补丁共存属 D 批范围）。
+
 ## v2.6.0-rc2 — 2026-11-21（R13/R14 复审清偿：C 线候选修订）
 
 **性质：R13/R14 双席对 v2.6.0-rc1 的复审清偿（R13 FAIL：P0×1 + P1×5；R14 FAIL：P1×1 + P2×2）。481→482 测试（+2）。候选 tag 递补 v2.6.0-rc2。**

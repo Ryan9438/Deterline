@@ -52,7 +52,7 @@ ASCII, ascii, 英文, 中文限制, 字体
 
 ## 技能版本
 
-2.6.0-rc2
+2.6.0-rc3
 
 ## 适用平台
 
@@ -146,7 +146,7 @@ deterline/
 ## 命令总览
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 95 个命令 · 版本 2.6.0-rc2 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 95 个命令 · 版本 2.6.0-rc3 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -361,8 +361,8 @@ deterline/
 > ⚠️ `diff-snapshots`: 阶段 1.3：--detail 输出资源级差异（字符串内容哈希 LCS 锚定 / 实例 add-remove-move / 代码反汇编指纹 / 字体字形+纹理页）；单次遍历同载摘要+明细
 > ⚠️ `diff-snapshots`: 阶段 1.4：--expected JSON 声明允许改变的资源范围（strings/code/fonts: any 或名单；instances: {房间: [move,add,remove]} 操作词表）——范围外差异退出码 1
 > ⚠️ `diff-snapshots`: 显式 A/B 输入 read-through 直读（工作区选择不会替换任一输入）；--utmt-timeout 默认 300s（--detail 全量反汇编）
-> ⚠️ `storyline-plan`: 定义字段集 v1：schema/patch_id/room/npc(object,x,y,prompt,yes_text,no_text,range,yes_goto,yes_item,once)/flag_id
-> ⚠️ `storyline-plan`: npc.prompt 须含 \C 且 ≤3 行；分支文本不得含 \C；v1 全 ASCII（CJK 组合另列验收）
+> ⚠️ `storyline-plan`: 定义字段集 v1：schema/patch_id/room/npc(object,x,y,prompt,yes_text,no_text,range,yes_goto,yes_item,once)/flag_id/cjk
+> ⚠️ `storyline-plan`: npc.prompt 须含 \C 且 ≤3 行；分支文本不得含 \C；默认全 ASCII——顶层 cjk: true 声明中文组合（构建链先注入 CJK 字体栈 typer=31，渲染语义待 R2-CJK 实机收口）
 > ⚠️ `storyline-plan`: flag_id 为声明保留（模板 v1 不写入——无实机证据的写入路径禁用，12 §C2）；冲突=其他回执占用同 flag
 > ⚠️ `storyline-build`: 需要 --workspace（构建工作区名）；产物 = .deterline/<file>/<ws>/<file>
 > ⚠️ `storyline-build`: O7 差异类别超出计划声明（STR add/CODEF/INST add）→ 拒绝（deterline.storyline-build/v1）

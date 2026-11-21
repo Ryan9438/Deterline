@@ -61,9 +61,6 @@ ALLOWLIST: dict[str, str] = {
     "list-strings": "读式列表",
     "list-textures": "读式列表",
     "npc-dialogue": "重游戏依赖；_build_npc_step_block golden 钉死 + A3 parity",
-    "npc-choice": "重游戏依赖（触发块+choice 链）；_build_npc_choice_block golden "
-                  "钉死；storyline 编排经 mock 调用（R14 P2-1：提及不是覆盖，"
-                  "恢复豁免如实记账）——真实 UTMT 级证据 = C1 实录（域外）",
     "preview-sprite": "读式诊断",
     "replace-texture": "重游戏依赖（真实 UTMT 写纹理页）；A3 parity 实证",
     "room-bg-info": "读式诊断",
