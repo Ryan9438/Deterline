@@ -42,13 +42,22 @@
 
 ### 兼容面与文档
 
-- 505 测试（+23：F1 结构违规×6、F2 分支×4、互斥×1、CJK×2、CLI×9、标定夹具修正×1）；95 命令不变；FROZEN_EXPORTS 219 不变。
-- npc-choice 移出覆盖豁免（ALLOWLIST 陈余——E2E 集成测试真实走 handler，覆盖如实记账）；`__file__` 迁移检查表登记 storyline CJK 包根单点。
+- **505 测试**（口径：rc2 tag `068f7b5` 482 → HEAD；其中 +11 由 5222d06 自报"482→493"，+9 由 c827230，+3 由 3726121——**审阅区间内各提交自报数与总数一致，勿跨条目重复累加**；R16 P2 口径订正）。95 命令不变；FROZEN_EXPORTS 219 不变。
+- 覆盖棘轮：**npc-choice 恢复豁免如实记账**（R16 P2：docstring 提及不是覆盖——清洗器扩展剥离注释/docstring 后，npc-choice/colorize-sprite/room-info/create-room 四条按真实状态登记豁免；此前三条靠注释提及假绿计入覆盖）。
+- `__file__` 迁移检查表登记 storyline CJK 包根单点（doctor 同款行内标记约定）。
 - commands.json storyline-plan 注记更新（cjk 字段），gen_docs 重生成。
+
+### 复审清偿（R15 PASS / R16 PASS；双席全项落地）
+
+R15（引擎与安全席）：8 项审查重点全 PASS——解析正则与 verify.py 全部行形枚举比对无漏看路径、_check_structure 双向严格、F2 三式自洽（skip 式闸门两路必拒）、preview×commit 双层无缝隙、**字体管线批内嵌套链核验（pass1 读基线等价副本 / pass2 链式接力无写丢失 / verify-code 读批内状态恰规避 C4 教训）**、ALLOW_CJK finally 全覆盖、typer 3 处替换点全参数化、版本链 8 载体完整。P2×1 → 已修（runpy 异常面 SystemExit/ImportError → StorylineError 带出缓冲诊断，440c18c）；P3×4 → 登记（literal_eval 已随 P2 顺手加守卫；未知行形金丝雀、rc2 CLI 层非 JSON、陈旧工作区链式叠加靠闸门兜底 → 前瞻）。
+
+R16（测试与证据诚实性席）：核心验收全部实证复跑坐实（505 收集且全绿、干净检出 release_check 全绿、golden 零改动、fake↔verify 在闸门解析面逐行同构、CJK 常数与对象形态自洽、CLI 常开层零 UTMT、证据分级未夸大）。P2×3 → 本批全清偿：①F1 闸门 4 类未钉分支补测试（ROOM 移除/新增、CODE 移除、VARDETERLINE occ=0/畸形/名不匹配/多条新增 + 两段式回退诊断，+8 测试）；②CHANGELOG 计数口径订正（本条目）；③覆盖记账三选一取"清洗器剥离 + 恢复豁免"（见上）。P3×3 → 顺手清偿（fake 明细行逐行同构化——STR 9 条/CODEF changed 3 条/删矛盾 move 行/⚠️ 与尾行计数如实；集成幂等断言改"幂等 no-op"具区分力字样；CJK_DECLARED_DIFF no-op replace 残留清除）。
 
 ### 前瞻登记
 
 - STORYLINE CJK 的**实机**验收（typer=31 选择框渲染、选项翻页）待 R0–R2 窗口——R2 矩阵增加 CJK×choice 行材料就绪；flag 写入仍禁用（R2 持久语义证据前不改）；`--only` 字形集按定义文本固定（跨定义字形合并/共享未做——多补丁共存属 D 批范围）。
+- 解析器未知行形金丝雀（verify.py 未来新增差异行形时显式拒绝而非静默跳过——R15 P3-2）；陈旧同名工作区重建的 ensure_workspace 复用语义（当前靠闸门增量翻倍兜底——R15 P3-4）。
+- F1 闸门 ROOM/CODE 结构分支的**真机**（非 fake）对照样例随下次真 CLI 验收链补记。
 
 ## v2.6.0-rc2 — 2026-11-21（R13/R14 复审清偿：C 线候选修订）
 

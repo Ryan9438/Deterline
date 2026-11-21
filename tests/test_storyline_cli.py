@@ -212,12 +212,13 @@ class TestStorylineCliFullChain(unittest.TestCase):
             "--workspace", "cli_e2e", "--dir", str(self.game), "--commit")
         self.assertEqual(code, 0, msg=out[-3000:] + err[-2000:])
         self.assertEqual(self._sha(), built_sha)
-        # 幂等：再 commit → 已应用 no-op
+        # 幂等：再 commit → 已应用 no-op（R16 P3：用具区分力字样断言——
+        # "已应用" 全新 apply 亦含，"幂等 no-op" 为幂等分支独有）
         code, out, err = _run_cli(
             "storyline-apply", "--value", str(self.defn),
             "--workspace", "cli_e2e", "--dir", str(self.game), "--commit")
         self.assertEqual(code, 0, msg=err[-2000:])
-        self.assertIn("已应用", out + err)
+        self.assertIn("幂等 no-op", out + err)
         self.assertEqual(self._sha(), built_sha)
         # undo → 回基线
         code, _out, err = _run_cli(

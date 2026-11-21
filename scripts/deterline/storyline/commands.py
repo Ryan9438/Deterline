@@ -117,8 +117,13 @@ def _parse_diff_categories(diff_output: str) -> dict:
             continue
         m = _re.match(r"^VARDETERLINE: (\[.*\]) → (\[.*\])$", s)
         if m:
-            struct["vardeterline"] = (_ast.literal_eval(m.group(1)),
-                                      _ast.literal_eval(m.group(2)))
+            try:
+                struct["vardeterline"] = (_ast.literal_eval(m.group(1)),
+                                          _ast.literal_eval(m.group(2)))
+            except (ValueError, SyntaxError, MemoryError):
+                # R15 P3-1：畸形 repr（理论形态——var 名含 "] → " 等）→
+                # 显式畸形标记，闸门按不可解析拒绝（fail-closed 非裸栈）
+                struct["vardeterline"] = (["<unparseable>"], ["<unparseable>"])
             continue
         m = _re.match(r"^ROOM 移除: (.+)$", s)
         if m:

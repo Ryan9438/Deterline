@@ -361,10 +361,11 @@ class StorylineEndToEnd(unittest.TestCase):
     golden/C1 实录钉死），**文件面全部真实**（工作区产物/EditPlan/回执）。"""
 
     # 真实 O7 --detail 形态（R14 P1-1：汇总行全量计数 + STR 明细 op；
-    # F1：结构段 COUNT/VARDETERLINE/ROOM/CODE 行同入闸门）——
-    # fake 输出必须与 verify.py 实际打印同构，捏造行会让闸门测试失真。
-    # 形状对应 fake 目标（append+alarm+create 式）：CODE 新增 1（Create_0）、
-    # CODE 变化 3（Alarm_0/Step_0/textdata_en）、VARS +1、目标房 inst +1
+    # F1：结构段 COUNT/VARDETERLINE/ROOM/CODE 行同入闸门；R16 P3：明细行
+    # 逐行同构——STR 9 条全打、CODEF changed 3 条全打、无矛盾 move 行、
+    # ⚠️/尾行计数与内容一致）——形状对应 fake 目标（append+alarm+create
+    # 式）：结构差异 9（COUNT 3+VARDETERLINE 1+ROOM 1+CODE 新增 1+变化 3）
+    # + 资源级 14（STR 9+INST 1+CODEF 3+…）= 共 23
     DECLARED_DIFF = ("--- diff-snapshots ---\n"
                      "  A=base\n  B=product\n"
                      "  COUNT CODECOUNT: 1612 → 1613\n"
@@ -382,28 +383,39 @@ class StorylineEndToEnd(unittest.TestCase):
                      "  实例: add=1 remove=0 move=0\n"
                      "  代码指纹: changed=3 added=1 removed=0\n"
                      "  字体: changed=0 added=0 removed=0\n"
-                     "    STR add len=14 sha=a1\n"
-                     "    STR add len=19 sha=c7\n"
-                     "    STR add len=11 sha=d7\n"
-                     "    INST move id=1 x\n"   # 真实形态：实例明细仅 move 行
+                     "    STR add len=14 sha=a1a1a1a1a1a1a1a1\n"
+                     "    STR add len=19 sha=c7c7c7c7c7c7c7c7\n"
+                     "    STR add len=11 sha=d7d7d7d7d7d7d7d7\n"
+                     "    STR add len=21 sha=b2b2b2b2b2b2b2b2\n"
+                     "    STR add len=8 sha=e3e3e3e3e3e3e3e3\n"
+                     "    STR add len=16 sha=f5f5f5f5f5f5f5f5\n"
+                     "    STR add len=12 sha=a9a9a9a9a9a9a9a9\n"
+                     "    STR add len=25 sha=bb0bb0bb0bb0bb0b\n"
+                     "    STR add len=9 sha=cc7cc7cc7cc7cc7c\n"
                      "    CODEF changed gml_Script_textdata_en\n"
-                     "  ⚠️ 资源级差异 5 处\n"
-                     "\n⚠️ 共 6 处差异（含资源级）\n")
+                     "    CODEF changed gml_Object_obj_golden_npc_Alarm_0\n"
+                     "    CODEF changed gml_Object_obj_golden_npc_Step_0\n"
+                     "  ⚠️ 资源级差异 14 处（未提供 --expected，按差异计入退出码）\n"
+                     "\n⚠️ 共 23 处差异（含资源级）\n")
 
     # F4 CJK 组合形态：字体管线两条 CODEF changed + FONT changed 1
     # （scr_setfont / scr_preload_textures / fnt_ja_maintext——pass2 实际
-    # 改动面）；资源级 changed 3→5
-    CJK_DECLARED_DIFF = DECLARED_DIFF.replace(
-        "COUNT CODECOUNT: 1612 → 1613",
-        "COUNT CODECOUNT: 1612 → 1613") \
+    # 改动面）；资源级 changed 3→5（明细 5 条）= 资源级 16、共 27
+    CJK_DECLARED_DIFF = DECLARED_DIFF \
         .replace("CODE 变化: gml_Script_textdata_en: instr 320 → 329",
                  "CODE 变化: gml_Script_scr_preload_textures: instr 88 → 89\n"
                  "  CODE 变化: gml_Script_scr_setfont: instr 44 → 46\n"
                  "  CODE 变化: gml_Script_textdata_en: instr 320 → 329") \
+        .replace("    CODEF changed gml_Script_textdata_en",
+                 "    CODEF changed gml_Script_scr_preload_textures\n"
+                 "    CODEF changed gml_Script_scr_setfont\n"
+                 "    CODEF changed gml_Script_textdata_en") \
         .replace("字体: changed=0 added=0 removed=0",
                  "字体: changed=1 added=0 removed=0") \
         .replace("代码指纹: changed=3 added=1 removed=0",
-                 "代码指纹: changed=5 added=1 removed=0")
+                 "代码指纹: changed=5 added=1 removed=0") \
+        .replace("⚠️ 资源级差异 14 处", "⚠️ 资源级差异 16 处") \
+        .replace("⚠️ 共 23 处差异", "⚠️ 共 27 处差异")
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="deterline_story_"))
@@ -511,7 +523,7 @@ class StorylineEndToEnd(unittest.TestCase):
         self.assertEqual(json.loads(build_rcpt.read_text(encoding="utf-8"))
                          ["declared_diff"].get("STR total"), 9)
         self.assertEqual(json.loads(build_rcpt.read_text(encoding="utf-8"))
-                         ["declared_str_ops"], ["add", "add", "add"])
+                         ["declared_str_ops"], ["add"] * 9)
 
     def test_build_refuses_undeclared_resource_change(self):
         """C3 验收：未声明资源变更（真实 O7 形态：字体页变更）→ 拒绝出候选。"""
@@ -611,6 +623,102 @@ class StorylineEndToEnd(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("CODE 新增", err)
         self.assertIn("obj_evil_twin", err)
+
+    def test_build_refuses_room_removed(self):
+        """R16 P2-A：结构段 ROOM 移除分支（此前零钉）。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF + "  ROOM 移除: room_gone\n") or 8)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("ROOM 移除: room_gone", err)
+
+    def test_build_refuses_room_added(self):
+        """R16 P2-A：结构段 ROOM 新增分支（此前零钉）。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF + "  ROOM 新增: room_fabricated\n") or 8)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("ROOM 新增: room_fabricated", err)
+
+    def test_build_refuses_code_removed(self):
+        """R16 P2-A：结构段 CODE 移除分支（此前零钉）。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF + "  CODE 移除: gml_Object_obj_vanished_Draw_0\n") or 8)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("CODE 移除", err)
+        self.assertIn("obj_vanished", err)
+
+    def test_build_refuses_var_occurrences_zero(self):
+        """R16 P2-A：VARDETERLINE Occurrences=0 → 拒绝（occ≥1 合同）。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF.replace(
+                "VARDETERLINE: [] → ['deterline_state:4321:1']",
+                "VARDETERLINE: [] → ['deterline_state:4321:0']")) or 6)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("须 ≥1", err)
+
+    def test_build_refuses_var_entry_malformed(self):
+        """R16 P2-A：VARDETERLINE 条目无冒号分隔（畸形）→ 形状不符拒绝。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF.replace(
+                "VARDETERLINE: [] → ['deterline_state:4321:1']",
+                "VARDETERLINE: [] → ['garbled-entry']")) or 6)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("形状不符", err)
+
+    def test_build_refuses_var_name_mismatch(self):
+        """R16 P2-A：新增变量名不匹配 → 拒绝（恰 1 条但非 deterline_state）。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF.replace(
+                "VARDETERLINE: [] → ['deterline_state:4321:1']",
+                "VARDETERLINE: [] → ['deterline_evil:4321:1']")) or 6)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("新增变量 'deterline_evil'", err)
+
+    def test_build_refuses_var_multi_added(self):
+        """R16 P2-A：VARDETERLINE 新增多条 → 拒绝（恰 1 条合同）。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF.replace(
+                "VARDETERLINE: [] → ['deterline_state:4321:1']",
+                "VARDETERLINE: [] → ['deterline_state:4321:1', "
+                "'deterline_state2:4322:1']")) or 6)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("新增 2 条", err)
+
+    def test_plan_room_substring_fallback_diagnostic(self):
+        """R16 P2-A：两段式回退（实际名≠定义名）→ 诊断如实注记。"""
+        import deterline.storyline as sl
+        defn = dict(_read_definition(GOOD_DEFN))
+        defn["_sha256"] = "0" * 64
+        with mock.patch("deterline.cmds.template_common.idx_room_lookup",
+                        side_effect=_fake_idx), \
+                mock.patch("deterline.cmds.npc._query_npc_target",
+                           side_effect=_fake_npc_target), \
+                mock.patch("deterline.storyline._room_match_count",
+                           return_value=(0, 1)), \
+                mock.patch("deterline.storyline._room_name_by_idx",
+                           return_value="room_golden_hall"), \
+                mock.patch("deterline.cmds.npc._find_create_code",
+                           return_value=None):
+            plan = sl.build_plan(defn, Path("/tmp/fake.ios"))
+        self.assertEqual(plan["room"]["requested"], "room_golden")
+        self.assertEqual(plan["room"]["name"], "room_golden_hall")
+        self.assertTrue(any("两段式子串解析" in d for d in plan["diagnostics"]))
+        # 期望结构按实际名比对
+        self.assertEqual(plan["expected_structure"]["room_inst"],
+                         {"room_golden_hall": 1})
 
     def test_apply_refuses_preview_and_commit(self):
         """preview×commit 互斥（R5 P2-3 同款）：--preview 语义不得被 commit 覆盖。"""

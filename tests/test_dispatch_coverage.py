@@ -49,6 +49,12 @@ import deterline.paths  # noqa: E402
 ALLOWLIST: dict[str, str] = {
     "decompile-code": "读式诊断；golden 钉 _decompile_to_lines 链路",
 
+    # R16 P2：docstring 清洗器扩展后暴露的三条 docstring-only"覆盖"——
+    # 如实登记（此前靠注释/文档提及假绿计入）
+    "colorize-sprite": "重游戏依赖（真实 UTMT 写精灵像素）；行为面 golden 间接",
+    "room-info": "读式诊断",
+    "create-room": "重游戏依赖（房间构造链）；行为面 golden 间接",
+
     "dump-sprites": "读式导出（UTMT dump）",
     "export-sprite": "读式导出",
     "export-texture": "读式导出",
@@ -61,6 +67,10 @@ ALLOWLIST: dict[str, str] = {
     "list-strings": "读式列表",
     "list-textures": "读式列表",
     "npc-dialogue": "重游戏依赖；_build_npc_step_block golden 钉死 + A3 parity",
+    "npc-choice": "重游戏依赖（触发块+choice 链）；_build_npc_choice_block golden "
+                  "钉死 + storyline E2E mock 调用 + 集成全链 opt-in 真走 handler"
+                  "（R16 P2：静态覆盖计数靠 docstring 提及 = 提及不是覆盖——"
+                  "恢复豁免如实记账）；真实 UTMT 级证据 = C1 实录（域外）",
     "preview-sprite": "读式诊断",
     "replace-texture": "重游戏依赖（真实 UTMT 写纹理页）；A3 parity 实证",
     "room-bg-info": "读式诊断",
@@ -147,6 +157,12 @@ class TestDispatchCoverageRatchet(unittest.TestCase):
                 r"mock\.patch(?:\.object)?\(\s*\"[^\"]*\"", "mock.patch(", text)
             text = re.sub(
                 r"mock\.patch(?:\.object)?\(\s*'[^\']*'", "mock.patch(", text)
+            # R16 P2：docstring/注释里的 action 名同样是提及不是覆盖
+            # （npc-choice 经 storyline 测试 docstring 提及曾被误计为覆盖
+            # 并强制移除豁免——清洗器扩展到注释/docstring，同口径）
+            text = re.sub(r"\"\"\".*?\"\"\"", '""', text, flags=re.DOTALL)
+            text = re.sub(r"'''.*?'''", "''", text, flags=re.DOTALL)
+            text = re.sub(r"#[^\n]*", "", text)
             return text
         test_src = "\n".join(
             _coverage_text(f) for f in (REPO / "tests").glob("test_*.py")
