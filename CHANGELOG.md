@@ -2,7 +2,7 @@
 
 ## v2.6.0-rc4 — 2026-11-21（G 批次：前瞻清偿第二批 + 真机负路径标定）
 
-**性质：rc3 前瞻/v2.5.11 前瞻六项清偿（G1/G2/G4/G5/G6）+ 真 CLI 负路径标定（G3）+ R2-CJK 实机材料脚本（G7）。513→516 测试（+3：G1 金丝雀 / G2 复用拒绝改写 / G4 hardlink）。候选 tag 递补 v2.6.0-rc4。**
+**性质：rc3 前瞻/v2.5.11 前瞻六项清偿（G1/G2/G4/G5/G6）+ 真 CLI 负路径标定（G3）+ R2-CJK 实机材料脚本（G7）+ R17/R18 双席清偿（P1×1 + P2×1）。513→517 测试（+4：G1 金丝雀 / G2 复用拒绝改写 / G4 hardlink / R17 P2 符号链接守卫）。候选 tag 递补 v2.6.0-rc4。**
 
 ### G1（R15 P3-2）：解析器未知行形金丝雀
 
@@ -29,7 +29,13 @@
 ### G5（v2.5.11 前瞻）：recovery_stress 副本证据无静默空洞
 
 - kill 窗口命中 apply 消费段的副本（记录前已不在盘上）此前被静默略过——现显式标记 `<consumed-before-recording>`；记录新增 `journal_referenced_copies` 全集字段。
-- 测试：子集运行后逐记录断言"每个 journal 引用副本 ∈ copy_hashes（哈希或消费标记）"+ 至少一条记录携带副本证据。
+- 测试：子集运行后逐记录断言"每个 journal 引用副本 ∈ copy_hashes（哈希或消费标记）"+ 至少一条记录携带副本证据；**Windows 子集补 s2**（s1 pending 杀与 p1_prune 均不产副本证据记录——证据下限断言在 Windows CI 会确定性红灯，R18 P1 清偿）。
+
+### 复审清偿（R17 PASS / R18 PASS；双席全项落地）
+
+R17（引擎与安全席）：8 项全 PASS——结构行 16 种行形逐一喂入解析器实测零误触发（✗=U+2717/⚠️=U+26A0 不撞前缀）、G2 判据 None 短路/幂等/TOCTOU 封口全对、G4 警告位置贴 os.replace 且 stderr CLI 直通、G5 断言方向即安全性质、G6 skipTest 语义等价且 release_check 无 skip 计数断言、G7 脚本 rm .bak 防陈旧基线恢复必要、+3/516 算术闭合。**P2×1 已修（本节）**：产品路径符号链接旁路链（/tmp 合成数据实证——ensure_workspace 复用不校验 + _resolve_write_target().resolve() 写穿到链接目标原文件）→ 双守卫：G2 判据 `is_symlink()` 先拒 + `ensure_workspace` 复用分支补 `ensure_not_symlink`（A3 三道防线口径延伸到沙箱入口）+ 测试（尝试制 skip）。
+
+R18（测试与证据诚实性席）：批次声明经独立验证全部属实（516 全绿实跑复现、G3/G7 盘上法证残留逐项对上——含 md5/sha256 双口径对账 30d6673c≡9102378f02e8 同一产物）。P1×1 已修（Windows 子集 s2，见 G5）；P3×5 记录（G1 金丝雀家族成员资格测试注记、G2 放行分支产物断言注记、08 G7 措辞注明脚本在外层 AUDIT 目录、G3 引文含 `: []` 尾巴口径、无 stdout 转录存档——盘上残留+声明互证已充分）。附带发现如实登记：`_check_structure` "基线已含 deterline* 变量"分支真机可达面比 fake 测试显示的窄（未变 VARDETERLINE 行被 verify.py 省略时走"新增 0 条"分支）——fail-closed 不受影响。
 
 ### G6（07 §3 条1）：Windows symlink 测试机会主义
 

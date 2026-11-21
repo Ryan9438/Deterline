@@ -337,6 +337,12 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
         # C4 CLI 实测教训），指纹/O7 比对必须在其后
         prospective = (game_file.parent / ".deterline" / game_file.name /
                        workspace / game_file.name)
+        if prospective.is_symlink():
+            # R17 P2：产品路径链接 = 写穿链入口（ensure_workspace 复用 +
+            # _resolve_write_target().resolve() 落到链接目标）——先拒。
+            raise _pkg().StorylineError(
+                f"工作区产物路径是符号链接（{prospective}）——拒绝"
+                "（防'构建不触原文件'被写穿，A3 三道防线口径）")
         if prospective.is_file() \
                 and transactions.fingerprint(prospective) != base_sha:
             # G2（R15 P3-4）：ensure_workspace 复用同名工作区旧产物 → 链式

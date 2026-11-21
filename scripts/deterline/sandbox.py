@@ -32,6 +32,10 @@ def _manifest(copy: Path) -> Path:
 def ensure_workspace(game_file: Path) -> Path:
     copy = sandbox_path(game_file)
     if copy.is_file():
+        # R17 P2：复用分支补符号链接拒绝——沙箱路径被植链接时"沙箱写入"
+        # 会经 _resolve_write_target().resolve() 写穿到链接目标（原文件），
+        # "构建/实验不触原文件"承诺被击穿。A3 三道防线口径延伸到本入口。
+        transactions.ensure_not_symlink(copy)
         return copy
     root = copy.parent.parent
     root.mkdir(parents=True, exist_ok=True)

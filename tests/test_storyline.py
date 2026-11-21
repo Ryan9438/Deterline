@@ -845,6 +845,22 @@ class StorylineEndToEnd(unittest.TestCase):
             cmd_storyline_build, self.game, str(self.defn_path), "det_ws_fresh")
         self.assertEqual(rc, 0, msg=out + err)
 
+    def test_build_refuses_symlink_product_path(self):
+        """R17 P2：产品路径符号链接 → 先拒（防'构建不触原文件'被写穿——
+        ensure_workspace 复用 + _resolve_write_target().resolve() 落到
+        链接目标的旁路链）。"""
+        link_ws = self.root / ".deterline" / "game.ios" / "det_ws_link"
+        link_ws.mkdir(parents=True, exist_ok=True)
+        link = link_ws / "game.ios"
+        try:
+            link.symlink_to(self.game)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前环境建符号链接需特权/开发者模式")
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws_link")
+        self.assertEqual(rc, 1)
+        self.assertIn("符号链接", err)
+
     def test_build_refuses_unclassified_structure_line(self):
         """G1 金丝雀（R15 P3-2）：结构段家族前缀 + 2 空格缩进但无已知行形
         → 显式拒绝（verify.py 行形漂移不再静默跳过）。"""

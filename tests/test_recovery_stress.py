@@ -123,7 +123,11 @@ class TestDeterministicWindows(unittest.TestCase):
 
     @unittest.skipIf(sys.platform != "win32", "Windows CI 子集")
     def test_windows_subset(self):
-        records = self._run_subset("s1,p1_prune")
+        # R18 P1：Windows 子集补 s2——s1（pending 杀，journal 无 staged/
+        # rollback 记录）与 p1_prune（走 prune 分支）都不产副本证据记录，
+        # 证据下限断言会确定性红灯；s2（committing 杀）与 s1 同型且稳定
+        # 携带 staged+rollback 证据
+        records = self._run_subset("s1,s2,p1_prune")
         self._assert_copy_evidence_complete(records)
 
 
