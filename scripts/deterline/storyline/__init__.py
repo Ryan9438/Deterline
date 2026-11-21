@@ -312,7 +312,10 @@ def build_plan(defn: dict, game_file: Path) -> dict:
         "count_deltas": {
             "STRGCOUNT": 9,
             "CODECOUNT": len(expected_code_added),
-            "SPRCOUNT": 0, "TEXCOUNT": 0, "LASTOBJ": 0,
+            "SPRCOUNT": 0, "TEXCOUNT": 0,
+            # LastObj 实证标定（rc3 真 CLI 全链首跑）：CodeImportGroup/
+            # AutoCreateAssets 新建代码条目时 LastObj +1（整体 +1，非逐条目）
+            "LASTOBJ": 1 if expected_code_added else 0,
             # deterline_state 变量注册（Data.Variables +1）——skip 式不新增
             "VARS": 1,
         },

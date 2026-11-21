@@ -47,6 +47,10 @@ flag_id: 505
 """
 
 
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 def _run_cli(*argv: str):
     """进程内 CLI：patch sys.argv → cli.main() → SystemExit 捕获退出码。
 

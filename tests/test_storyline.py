@@ -152,7 +152,7 @@ class PlanTest(unittest.TestCase):
         es = plan["expected_structure"]
         self.assertEqual(es["count_deltas"], {
             "STRGCOUNT": 9, "CODECOUNT": 1, "SPRCOUNT": 0, "TEXCOUNT": 0,
-            "LASTOBJ": 0, "VARS": 1})
+            "LASTOBJ": 1, "VARS": 1})
         self.assertEqual(es["var_added"], "deterline_state")
         self.assertEqual(es["room_inst"], {"room_golden": 1})
         self.assertEqual(es["code_added"],
@@ -319,6 +319,7 @@ class StorylineEndToEnd(unittest.TestCase):
     DECLARED_DIFF = ("--- diff-snapshots ---\n"
                      "  A=base\n  B=product\n"
                      "  COUNT CODECOUNT: 1612 → 1613\n"
+                     "  COUNT LASTOBJ: 5000 → 5001\n"
                      "  COUNT STRGCOUNT: 434 → 443\n"
                      "  COUNT VARS: 4800 → 4801\n"
                      "  VARDETERLINE: [] → ['deterline_state:4321:1']\n"
