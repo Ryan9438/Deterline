@@ -17,7 +17,7 @@
   python install.py --help     查看完整帮助
 """
 
-__version__ = "2.6.0-rc4"
+__version__ = "2.6.0-rc5"
 
 import argparse
 import os
