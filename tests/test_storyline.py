@@ -37,6 +37,23 @@ flag_id: 505
 """
 
 
+CJK_DEFN = """schema: deterline.storyline/v1
+patch_id: det_demo_cjk
+room: room_golden
+cjk: true
+npc:
+  object: obj_golden_npc
+  x: 320
+  y: 240
+  range: 60
+  prompt: "* 往东走吗？& &      是      否    \\C "
+  yes_text: "* 走起。/%%"
+  no_text: "* 算了。/%%"
+  once: true
+flag_id: 505
+"""
+
+
 class YamlMinTest(unittest.TestCase):
     def test_happy_path(self):
         doc = yaml_min.parse(GOOD_DEFN.replace("\\C", "\\C"))
@@ -265,6 +282,38 @@ class PlanTest(unittest.TestCase):
                 sl.build_plan(defn, Path("/tmp/fake.ios"))
         self.assertIn("读失败", str(ctx.exception))
 
+    def test_plan_cjk_contract(self):
+        """F4：cjk=true 声明 → 期望集含 FONT changed 1 + 字体管线两条
+        CODEF changed + 诊断；计划带 cjk 标记。"""
+        import deterline.storyline as sl
+        defn = dict(_read_definition(CJK_DEFN))
+        defn["_sha256"] = "0" * 64
+        with mock.patch("deterline.cmds.template_common.idx_room_lookup",
+                        side_effect=_fake_idx), \
+                mock.patch("deterline.cmds.npc._query_npc_target",
+                           side_effect=_fake_npc_target), \
+                mock.patch("deterline.storyline._room_match_count",
+                           return_value=(1, 0)), \
+                mock.patch("deterline.storyline._room_name_by_idx",
+                           return_value="room_golden"), \
+                mock.patch("deterline.cmds.npc._find_create_code",
+                           return_value=None):
+            plan = sl.build_plan(defn, Path("/tmp/fake.ios"))
+        self.assertTrue(plan["cjk"])
+        er = plan["expected_resources"]
+        self.assertEqual(er["font_changed"], 1)
+        self.assertEqual(er["code_changed"], 5)  # textdata+append+alarm+2 字体条目
+        es = plan["expected_structure"]
+        self.assertIn("gml_Script_scr_setfont", es["code_changed"])
+        self.assertIn("gml_Script_scr_preload_textures", es["code_changed"])
+        self.assertTrue(any("R2-CJK" in d for d in plan["diagnostics"]))
+
+    def test_plan_cjk_flag_not_bool_rejected(self):
+        bad = GOOD_DEFN + "cjk: 1\n"
+        with self.assertRaises(StorylineError) as ctx:
+            _read_definition(bad)
+        self.assertIn("布尔", str(ctx.exception))
+
     def test_plan_rejects_missing_room(self):
         import deterline.storyline as sl
         defn = dict(_read_definition(GOOD_DEFN))
@@ -341,6 +390,21 @@ class StorylineEndToEnd(unittest.TestCase):
                      "  ⚠️ 资源级差异 5 处\n"
                      "\n⚠️ 共 6 处差异（含资源级）\n")
 
+    # F4 CJK 组合形态：字体管线两条 CODEF changed + FONT changed 1
+    # （scr_setfont / scr_preload_textures / fnt_ja_maintext——pass2 实际
+    # 改动面）；资源级 changed 3→5
+    CJK_DECLARED_DIFF = DECLARED_DIFF.replace(
+        "COUNT CODECOUNT: 1612 → 1613",
+        "COUNT CODECOUNT: 1612 → 1613") \
+        .replace("CODE 变化: gml_Script_textdata_en: instr 320 → 329",
+                 "CODE 变化: gml_Script_scr_preload_textures: instr 88 → 89\n"
+                 "  CODE 变化: gml_Script_scr_setfont: instr 44 → 46\n"
+                 "  CODE 变化: gml_Script_textdata_en: instr 320 → 329") \
+        .replace("字体: changed=0 added=0 removed=0",
+                 "字体: changed=1 added=0 removed=0") \
+        .replace("代码指纹: changed=3 added=1 removed=0",
+                 "代码指纹: changed=5 added=1 removed=0")
+
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="deterline_story_"))
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
@@ -381,9 +445,11 @@ class StorylineEndToEnd(unittest.TestCase):
         # 域生成器 mock：写真实工作区产物 + **真实形状 manifest**（R13 P1-5：
         # apply 现在要求 manifest 在场——source/source_sha256/history 末条
         # = 产物 sha；确定性派生，不用 hash()，R14 P3-7）
+        self._choice_kwargs = []
         def fake_choice(game_file, *a, **k):
             import hashlib as _h
             from deterline import sandbox, state as st
+            self._choice_kwargs.append(dict(k))
             product = sandbox.sandbox_path(game_file)
             product.parent.mkdir(parents=True, exist_ok=True)
             tag = _h.sha256((st.WORKSPACE or "").encode()).hexdigest()[:8]
@@ -557,6 +623,34 @@ class StorylineEndToEnd(unittest.TestCase):
         self.assertIn("互斥", err)
         self.assertEqual(self.game.read_bytes(), b"BASE-GAME-CONTENT",
                          "preview×commit 拒绝后目标不得变化")
+
+    def test_build_cjk_combo(self):
+        """F4：cjk=true 构建——字体管线先于 npc-choice（同批工作区）、
+        typer=31、闸门按 FONT changed 1 + 字体条目 CODEF changed 裁决。"""
+        font_calls = []
+        font_mock = mock.patch(
+            "deterline.storyline.commands._run_cjk_font_pipeline",
+            side_effect=lambda gf, d: font_calls.append(d["patch_id"]))
+        font_mock.start()
+        self.addCleanup(font_mock.stop)
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.CJK_DECLARED_DIFF) or 6)
+        cjk_path = self.root / "storyline_cjk.yaml"
+        cjk_path.write_text(CJK_DEFN, encoding="utf-8")
+        rc, out, err = self._capture(
+            cmd_storyline_build, self.game, str(cjk_path), "det_ws_cjk")
+        self.assertEqual(rc, 0, msg=out + err)
+        # 字体管线恰一次、先于域生成器（同批工作区）
+        self.assertEqual(font_calls, ["det_demo_cjk"])
+        # typer=31（B4 实证）传入 npc-choice
+        self.assertEqual(len(self._choice_kwargs), 1)
+        self.assertEqual(self._choice_kwargs[0].get("typer"), 31)
+        # 构建回执：font_changed 声明在案
+        build_rcpt = json.loads(
+            (self.root / ".deterline" / "storyline" / "game.ios" /
+             "det_demo_cjk" / "build.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            build_rcpt["expected_resources"].get("font_changed"), 1)
 
     def test_apply_preview_then_commit_and_idempotent(self):
         rc, _o, err = self._capture(

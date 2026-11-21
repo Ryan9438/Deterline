@@ -141,7 +141,7 @@ def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: i
 def _build_npc_choice_block(instance_id: int, choice_key: str, yes_key: str | None,
                             no_key: str, face: int, emotion: int, range_: int = 50,
                             goto_room: str | None = None, item_id: int | None = None,
-                            repeat: bool = False) -> str:
+                            repeat: bool = False, typer: int = 5) -> str:
     """Build a distance-trigger GML block for a YES/NO choice NPC.
 
     ⚠️⚠️ 形态约束同 _build_npc_step_block（2026-11-07 游戏内实测 15 次启动）：只生成
@@ -156,13 +156,16 @@ def _build_npc_choice_block(instance_id: int, choice_key: str, yes_key: str | No
       scr_msgup and the choice box pops up again in a loop.
     - 单次语义（默认）通过"答完后 instance_destroy() 自毁"实现（触发块不再被状态门控）；
       repeat=True 时 NPC 存活，走开再靠近可再次提问。
+    - typer：writer 渲染 typer（默认 5 = 原版标准对话）；CJK 组合传 31
+      （CJK_TYPER_TABLE B4 主臂实证，页内重排栈）——选择框选项行由 writer
+      按 typer 渲染，机制同 cjk-trigger 对话（渲染语义待 R2-CJK 实机收口）。
     - ⚠️ 已知限制（2026-11 复核）：选择处理分支按 global.choice 响应、无法区分同房间的
       多个选择 NPC——同一房间放多个 obj 选择 NPC 时，回答会串（窄场景；不同对象/不同
       房间不受影响）。
     """
     yes_lines = ""
     if yes_key:
-        yes_lines += f'''        global.typer = 5;
+        yes_lines += f'''        global.typer = {typer};
         global.facechoice = {face};
         global.faceemotion = {emotion};
         global.msg[0] = scr_gettext("{yes_key}");
@@ -181,7 +184,7 @@ def _build_npc_choice_block(instance_id: int, choice_key: str, yes_key: str | No
     if (distance_to_object(obj_mainchara) < {range_})
     {{
         global.msc = 0;
-        global.typer = 5;
+        global.typer = {typer};
         global.facechoice = {face};
         global.faceemotion = {emotion};
         global.msg[0] = scr_gettext("{choice_key}");
@@ -200,7 +203,7 @@ if (id == {instance_id} && global.choice != -1)
     {{
         global.choice = -1;
         global.msc = -1;
-        global.typer = 5;
+        global.typer = {typer};
         global.facechoice = {face};
         global.faceemotion = {emotion};
         global.msg[0] = scr_gettext("{no_key}");
@@ -624,7 +627,7 @@ def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: in
                    no_key: str | None = None, no_text: str | None = None,
                    face: int = 0, emotion: int = 0, range_: int = 50,
                    goto_room: str | None = None, item_id: int | None = None,
-                   repeat: bool = False) -> None:
+                   repeat: bool = False, typer: int = 5) -> None:
     """One-shot safe NPC dialogue with a YES/NO choice (`\\C` box).
 
     Uses the in-game-verified flat trigger shape (v2.3.0, 2026-11-07 audit):
@@ -708,6 +711,7 @@ def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: in
     block = _build_npc_choice_block(
         new_id, choice_key, yes_key, no_key, face, emotion,
         range_=range_, goto_room=goto_gml, item_id=item_id, repeat=repeat,
+        typer=typer,
     )
     step_code = info["step_code"]
     if step_code:

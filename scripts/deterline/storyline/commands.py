@@ -220,7 +220,10 @@ def _expected_categories(plan: dict) -> dict:
         "INST add": er["inst_adds"], "INST remove": 0, "INST move": 0,
         "CODEF changed": er["code_changed"],
         "CODEF added": er["code_added"], "CODEF removed": 0,
-        "FONT changed": 0, "FONT added": 0, "FONT removed": 0,
+        # CJK 组合声明 FONT changed 1（fnt_ja_maintext 字形表重指 + 共享表
+        # 扩容）；ASCII 构建 font_changed 0 = 字体一票拒绝（R14 P1-1 口径）
+        "FONT changed": er.get("font_changed", 0),
+        "FONT added": 0, "FONT removed": 0,
     }
 
 
@@ -232,6 +235,59 @@ def _validate_workspace_name(workspace: str) -> None:
             or not _re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", workspace):
         raise _pkg().StorylineError(
             f"工作区名须匹配 [a-z0-9][a-z0-9_-]{{0,63}}（收到 {workspace!r}）")
+
+
+def _run_cjk_font_pipeline(game_file: Path, defn: dict) -> None:
+    """F4 中文组合：字形页预处理 + 五步字体管线（pass1/pass2 经外层
+    game_edit 批量写入当前工作区）。字符集 = 定义三文本字段的全部唯一
+    字符（最小集，确定性：同定义 → 同字形集 → 同产物）。
+
+    字形页生成器以**进程内**方式调用（runpy 加载 tools/font_cjk_build.py
+    → main() + sys.argv patch——与测试层同款进程内形态；subprocess+
+    sys.executable 写法被本机安全扫描误报高危，登记）。
+    """
+    import contextlib as _ctx
+    import io as _io
+    import runpy as _runpy
+    import sys as _sys
+    import tempfile as _tmp
+    from pathlib import Path as _Path
+    from unittest import mock as _mock
+    from ..cmds import cjk as _cjk
+
+    repo_root = _Path(__file__).resolve().parents[3]
+    font_src = (repo_root / "assets" / "fonts" / "vendor" /
+                "fusion-pixel-12px" / "fusion-pixel-12px-monospaced-zh_hans.ttf")
+    tool = repo_root / "tools" / "font_cjk_build.py"
+    if not font_src.is_file():
+        raise _pkg().StorylineError(f"OFL 字体源缺失: {font_src}")
+    if not tool.is_file():
+        raise _pkg().StorylineError(f"字形页生成器缺失: {tool}")
+    npc = defn["npc"]
+    chars = sorted({ch for ch in (npc["prompt"] + npc["yes_text"]
+                                  + npc["no_text"]) if ch not in "\r\n\t"})
+    with _tmp.TemporaryDirectory(prefix="deterline_cjk_") as td:
+        chars_file = _Path(td) / "chars.txt"
+        chars_file.write_text("".join(chars), encoding="utf-8")
+        build_dir = _Path(td) / "font_build"
+        work_dir = _Path(td) / "cjk_work"
+        tool_ns = _runpy.run_path(str(tool), run_name="deterline_font_build")
+        out, err = _io.StringIO(), _io.StringIO()
+        with _mock.patch.object(_sys, "argv",
+                                ["font_cjk_build.py", "--font", str(font_src),
+                                 "--only", str(chars_file),
+                                 "--out-dir", str(build_dir)]), \
+                _ctx.redirect_stdout(out), _ctx.redirect_stderr(err):
+            rc = tool_ns["main"]()
+        if rc != 0:
+            raise _pkg().StorylineError(
+                "字形页构建失败（font_cjk_build）:\n"
+                + (out.getvalue() + err.getvalue())[-2000:])
+        ok = _cjk.cmd_cjk_font(game_file, build_dir, work_dir=work_dir)
+        if not ok:
+            raise _pkg().StorylineError(
+                "scr_setfont 字体栈注入后体检未过（域F 协议）——中止，"
+                "工作区不产出候选")
 
 
 def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
@@ -258,10 +314,17 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
         from .. import state, utmt
         from ..cmds import npc as npc_mod
         old_ws, old_sbx = state.WORKSPACE, state.SANDBOX_ACTIVE
+        old_cjk = state.ALLOW_CJK
         state.WORKSPACE = workspace
         state.SANDBOX_ACTIVE = True   # 写入定向到工作区产物（构建不触原文件）
         try:
             with utmt.game_edit("storyline-build", read_workspace=False):
+                if defn.get("cjk"):
+                    # F4 中文组合：先注入字体栈（同批写入工作区），再建选择
+                    # NPC——typer=31（CJK_TYPER_TABLE B4 主臂实证）；文本校验
+                    # 放行非 ASCII（ALLOW_CJK 仅在此作用域内开启）
+                    state.ALLOW_CJK = True
+                    _run_cjk_font_pipeline(game_file, defn)
                 npc = defn["npc"]
                 npc_mod.cmd_npc_choice(
                     game_file, plan["room"]["name"], npc["object"],
@@ -272,9 +335,11 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
                     face=0, emotion=0, range_=npc.get("range", 60),
                     goto_room=npc.get("yes_goto"),
                     item_id=npc.get("yes_item"),
-                    repeat=not npc.get("once", True))
+                    repeat=not npc.get("once", True),
+                    typer=31 if defn.get("cjk") else 5)
         finally:
             state.WORKSPACE, state.SANDBOX_ACTIVE = old_ws, old_sbx
+            state.ALLOW_CJK = old_cjk
         # 工作区产物
         product = (game_file.parent / ".deterline" / game_file.name /
                    workspace / game_file.name)

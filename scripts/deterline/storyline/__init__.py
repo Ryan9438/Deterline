@@ -24,7 +24,7 @@ BUILD_SCHEMA = "deterline.storyline-build/v1"
 APPLY_SCHEMA = "deterline.storyline-apply/v1"
 
 # v1 合同字段集（严格封闭：未知字段拒绝）
-TOP_FIELDS = {"schema", "patch_id", "room", "npc", "flag_id"}
+TOP_FIELDS = {"schema", "patch_id", "room", "npc", "flag_id", "cjk"}
 NPC_FIELDS = {"object", "x", "y", "range", "prompt", "yes_text", "no_text",
               "yes_goto", "yes_item", "once"}
 PATCH_ID_RE = re.compile(r"[a-z0-9][a-z0-9_]{2,63}")   # fullmatch 使用（R13 P3：$ 可被换行绕过）
@@ -103,15 +103,21 @@ def _read_definition(text: str) -> dict:
     once = npc.get("once", True)
     if not isinstance(once, bool):
         raise StorylineError("npc.once 必须是布尔")
-    # ASCII 合同（v1）：CJK 组合另列验收（C1 实录发现）
-    for k in ("prompt", "yes_text", "no_text"):
-        v = npc[k]
-        try:
-            v.encode("ascii")
-        except UnicodeEncodeError:
-            raise StorylineError(
-                f"npc.{k} 含非 ASCII 字符——v1 合同为 ASCII；CJK 组合按 05/C1 "
-                "另列验收")
+    # 字符集合同：默认 v1 全 ASCII；cjk: true 显式声明中文组合（构建链先
+    # 注入 CJK 字体栈——fusion-pixel 12px OFL，typer=31 B4 实证）
+    cjk = doc.get("cjk", False)
+    if not isinstance(cjk, bool):
+        raise StorylineError("cjk 必须是布尔（true = 中文组合构建）")
+    if not cjk:
+        for k in ("prompt", "yes_text", "no_text"):
+            v = npc[k]
+            try:
+                v.encode("ascii")
+            except UnicodeEncodeError:
+                raise StorylineError(
+                    f"npc.{k} 含非 ASCII 字符——v1 默认合同为 ASCII；中文组合"
+                    "请在定义顶层声明 cjk: true（构建链先注入 CJK 字体栈，"
+                    "typer=31；渲染语义待 R2-CJK 实机收口）")
     return doc
 
 
@@ -204,7 +210,8 @@ def build_plan(defn: dict, game_file: Path) -> dict:
     plan: dict = {"schema": PLAN_SCHEMA,
                   "patch_id": defn["patch_id"],
                   "defn_sha256": defn["_sha256"],
-                  "tool_version": _tool_version()}
+                  "tool_version": _tool_version(),
+                  "cjk": bool(defn.get("cjk", False))}
     # 房间解析（两段式预查，只读 CSX）+ 歧义拒绝（R13 P2-3：子串首中
     # 曾静默绑定——定义侧要求唯一解析：exact==1 且无其余子串命中；
     # exact==0 且恰一子串命中 = 两段式回退合法形态）
@@ -297,7 +304,8 @@ def build_plan(defn: dict, game_file: Path) -> dict:
                       + (0 if create_code is not None else 1),
         "code_changed": (1 + (1 if info["step_code"] else 0)
                          + (1 if alarm_guard else 0)
-                         + (1 if create_mode == "prepend" else 0)),
+                         + (1 if create_mode == "prepend" else 0)
+                         + (2 if defn.get("cjk") else 0)),
         "code_removed": 0,
         "code_entry": (info["step_code"] or f"gml_Object_{info['obj']}_Step_0"),
         "code_mode": "append" if info["step_code"] else "create",
@@ -305,7 +313,15 @@ def build_plan(defn: dict, game_file: Path) -> dict:
         "code_mode_create": create_mode,
         "instance_spawn": {"room": actual_room, "count": 1},
         "alarm_guard": alarm_guard,
+        # CJK 组合：字体管线改 fnt_ja_maintext 字形表（FONT changed 1）；
+        # 不新增字体资产/纹理页（约束④）
+        "font_changed": 1 if defn.get("cjk") else 0,
     }
+    # CJK 组合：字体管线改动两个代码条目（scr_setfont 单行映射 +
+    # scr_preload_textures 无条件 prefetch——cjk.py pass2）
+    if defn.get("cjk"):
+        expected_code_changed.extend(["gml_Script_scr_setfont",
+                                      "gml_Script_scr_preload_textures"])
     # 结构层期望（F1：O7 结构段——COUNT/VARDETERLINE/ROOM/CODE 行——进闸门
     # 比对；v1 此前只吃资源级汇总行，结构漂移仅经 CODEF/INST 间接可见）
     plan["expected_structure"] = {
@@ -349,6 +365,9 @@ def build_plan(defn: dict, game_file: Path) -> dict:
                     "基线非干净（已含 deterline 补丁），结构闸门将按干净基线拒绝")
     if actual_room != defn["room"]:
         diag.append(f"房间经两段式子串解析: {defn['room']} → {actual_room}")
+    if defn.get("cjk"):
+        diag.append("cjk=true：构建链先注入 CJK 字体栈（fusion-pixel 12px "
+                    "OFL，typer=31 B4 实证）——选择框渲染语义待 R2-CJK 实机收口")
     diag.extend(plan.pop("diagnostics_extra", []))
     plan["diagnostics"] = diag
     plan["build_command"] = {
