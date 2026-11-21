@@ -82,7 +82,7 @@ class TestGate(unittest.TestCase):
 class TestDeterministicWindows(unittest.TestCase):
     """CI 子集：pending / committing 副本入记录 / 中断双拒 / prune manifest。"""
 
-    def _run_subset(self, scenarios: str) -> dict:
+    def _run_subset(self, scenarios: str) -> list:
         rc, out, jsonl, stdout, stderr = _invoke(
             ["--confirm-synthetic", "--scenarios", scenarios])
         self.addCleanup(shutil.rmtree, out, ignore_errors=True)  # 断言前注册
@@ -95,17 +95,36 @@ class TestDeterministicWindows(unittest.TestCase):
         for sid, verdict in verdicts.items():
             detail = [r for r in records if r.get("scenario") == sid]
             self.assertEqual(verdict, "pass", msg=sid + ": " + repr(detail))
-        return verdicts
+        return records[1:]
+
+    def _assert_copy_evidence_complete(self, records: list) -> None:
+        """G5（v2.5.11 前瞻）：journal 引用的每个副本要么有哈希、要么显式
+        标记 <consumed-before-recording>——证据链无静默空洞；且子集至少
+        一条记录携带副本证据（kill 窗口命中 journal 的场景）。"""
+        with_evidence = 0
+        for rec in records:
+            refs = rec.get("journal_referenced_copies")
+            if not refs:
+                continue
+            with_evidence += 1
+            hashes = rec.get("copy_hashes", {})
+            for path in refs:
+                self.assertIn(path, hashes,
+                              msg=f"{rec.get('scenario')}: 静默空洞 {path}")
+        self.assertGreaterEqual(with_evidence, 1,
+                                "子集无任何副本证据记录——kill 窗口表漂移？")
 
     @unittest.skipIf(sys.platform == "win32",
                      "多窗口 TerminateProcess 语义保守逐级验证（07 §3 条3）"
                      "——Windows 仅跑 s1+p1_prune")
     def test_posix_subset(self):
-        self._run_subset("s1,s2,s5a,p1_prune")
+        records = self._run_subset("s1,s2,s5a,p1_prune")
+        self._assert_copy_evidence_complete(records)
 
     @unittest.skipIf(sys.platform != "win32", "Windows CI 子集")
     def test_windows_subset(self):
-        self._run_subset("s1,p1_prune")
+        records = self._run_subset("s1,p1_prune")
+        self._assert_copy_evidence_complete(records)
 
 
 if __name__ == "__main__":

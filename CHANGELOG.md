@@ -1,5 +1,48 @@
 # Changelog
 
+## v2.6.0-rc4 — 2026-11-21（G 批次：前瞻清偿第二批 + 真机负路径标定）
+
+**性质：rc3 前瞻/v2.5.11 前瞻六项清偿（G1/G2/G4/G5/G6）+ 真 CLI 负路径标定（G3）+ R2-CJK 实机材料脚本（G7）。513→516 测试（+3：G1 金丝雀 / G2 复用拒绝改写 / G4 hardlink）。候选 tag 递补 v2.6.0-rc4。**
+
+### G1（R15 P3-2）：解析器未知行形金丝雀
+
+- `_parse_diff_categories`：结构段家族前缀（COUNT/VARDETERLINE/ROOM/CODE）+ **2 空格缩进**（verify.py 结构行统一形态）但未被任何已知正则消费的行 → `unclassified` 显式拒绝（"未识别结构行……闸门不猜"）——verify.py 行形漂移/未知差异类别不再静默跳过。4 空格缩进的资源级明细行（STR/CODEF/INST move）不属结构段，不触发。
+- 测试：漂移行形（`ROOM 漂移新行形`）→ 拒绝。
+
+### G2（R15 P3-4）：storyline-build 陈旧工作区复用拒绝（含 CLI 路由修正）
+
+- 首版为"同名工作区任何产物即拒"——**真机脚本首跑即误拒**：CLI 全局 `--workspace` 置 `SANDBOX_ACTIVE`（沙箱对所有命令生效的既有设计），plan 探针的读取路由经 `_effective_game_file` **合法预置基线副本**（sha == 基线）。修正为精确判据：仅拒 **sha ≠ 当前基线** 的已补丁产物（链式叠加形态）；基线等价副本照常构建。
+- **教训入库**：进程内测试未覆盖 CLI 全局旗标 × 沙箱读取路由的组合——G7 脚本实跑抓出（真 CLI 验收的价值再次自证）。
+- 测试：已补丁复用拒绝 + 基线等价副本放行（双分支）。
+
+### G3：真 CLI 负路径标定（脏基线 VARDETERLINE 契约实弹验证）
+
+- /tmp 副本序列：CJK 补丁 commit（30d6673c… 脏基线）→ 第二支线 build → **REAL rc=1**，拒绝消息与设计完全一致：`VARDETERLINE 新增 0 条（声明恰 1 条 deterline_state）` + skip 式常数实弹匹配（CODEF added 0 / changed 2 无违规项——F2 skip 式真机标定顺带完成）。
+- **测量纪律教训**：管道后 `echo rc=$?` 读的是 tail 退出码——首次判读误为"闸门放行"，重定向后重测才见真 rc=1。真 CLI 验收一律重定向 + 显式 `$?`（G7 脚本沿用 `set -euo pipefail` 无此问题）。
+- 清理回基线 fc049850 + findings 0。
+
+### G4（v2.5.11 前瞻）：hardlink 语义检测
+
+- EditPlan commit 替换循环：目标 `st_nlink > 1` → stderr 警告（不拒绝——拒绝会误伤合法硬链接部署）："os.replace 断链语义：其他链接名将保留旧内容（备份为独立副本不受影响）"。
+- 测试：os.link 夹具 → 警告出现 + 断链语义实证（别名保留旧内容）+ 无硬链接零警告回归。
+
+### G5（v2.5.11 前瞻）：recovery_stress 副本证据无静默空洞
+
+- kill 窗口命中 apply 消费段的副本（记录前已不在盘上）此前被静默略过——现显式标记 `<consumed-before-recording>`；记录新增 `journal_referenced_copies` 全集字段。
+- 测试：子集运行后逐记录断言"每个 journal 引用副本 ∈ copy_hashes（哈希或消费标记）"+ 至少一条记录携带副本证据。
+
+### G6（07 §3 条1）：Windows symlink 测试机会主义
+
+- test_boundary_hardening 的 skip 判定从平台静态改为**尝试建链**——有特权/开发者模式的 Windows CI 实跑 symlink 拒绝防线，无权限环境 skipTest 留痕（诚实口径：能跑才跑）。
+
+### G7：R2-CJK 实机窗口材料（C1-支线脚本第三支）
+
+- `c1_branch_cjk.sh`：cjk: true 定义内嵌 → plan → build（字体栈+中文选择 NPC）→ apply 预览/commit → undo → scan——**端到端实跑验证**（9102378f02e8… → undo → fc049850 → findings 0）。实机窗口步骤注释内嵌（05 §5.2 口径：holdSeconds ≥ 0.15 逐格记录）。
+
+### 前瞻登记
+
+- F1 闸门 ROOM/CODE 结构分支的**真机正例**（非 fake）对照样例仍待下次真 CLI 验收链补记（G3 已补负例）；`--journal` 多记录选择器（条件未触发，12 §A3）；CJK 跨定义字形合并（D 批范围）。
+
 ## v2.6.0-rc3 — 2026-11-21（rc2 前瞻清偿：结构闸门 + Create_0 三式 + CLI 层测试 + CJK 组合）
 
 **性质：rc2 前瞻登记四项全清偿（F1/F2/F3/F4）+ 新发现 preview×commit 漏洞修复。482→505 测试（+23）。候选 tag 递补 v2.6.0-rc3。真机 /tmp 全链标定两轮（ASCII 回归 + CJK 新增），确定性重建保持逐字节一致。**

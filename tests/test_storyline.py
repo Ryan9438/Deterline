@@ -809,20 +809,55 @@ class StorylineEndToEnd(unittest.TestCase):
         self._capture(cmd_storyline_apply, None, self.game,
                       str(self.defn_path), "det_ws", commit=True)
         applied = self.game.read_bytes()
-        # 同 ID 异内容：不同定义 → 不同产物（mock 产物含 defn 差异标记）
+        # 同 ID 异内容：不同定义 → 不同产物（mock 产物含 defn 差异标记）；
+        # G2：重建换新工作区（构建单次语义，同名复用被拒）
         self.defn_path.write_text(
             GOOD_DEFN.replace('"* Done./%%"', '"* Sure thing./%%"'),
             encoding="utf-8")
         rc, _o, err = self._capture(
-            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws2")
         self.assertEqual(rc, 0)
         rc, _o, err = self._capture(
             cmd_storyline_apply, None, self.game, str(self.defn_path),
-            "det_ws", commit=True)
+            "det_ws2", commit=True)
         self.assertEqual(rc, 1)
         self.assertIn("不同内容", err)
         self.assertEqual(self.game.read_bytes(), applied,
                          "同 ID 异内容拒绝后目标不得变化")
+
+    def test_build_refuses_stale_workspace_reuse(self):
+        """G2（R15 P3-4）：同名工作区**已补丁**产物复用 = 链式叠加温床——
+        构建入口直接拒绝；基线等价副本（plan 探针预置）不受影响。"""
+        rc, _o, _e = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 0)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("已补丁", err)
+        self.assertIn("单次", err)
+        # 基线等价副本（CLI --workspace 下 plan 探针的读取路由预置形态）
+        # → 合法，构建照常
+        clean_copy = self.root / ".deterline" / "game.ios" / "det_ws_fresh" / "game.ios"
+        clean_copy.parent.mkdir(parents=True, exist_ok=True)
+        clean_copy.write_bytes(b"BASE-GAME-CONTENT")
+        rc, out, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws_fresh")
+        self.assertEqual(rc, 0, msg=out + err)
+
+    def test_build_refuses_unclassified_structure_line(self):
+        """G1 金丝雀（R15 P3-2）：结构段家族前缀 + 2 空格缩进但无已知行形
+        → 显式拒绝（verify.py 行形漂移不再静默跳过）。"""
+        self._replace_diff(lambda a, b, detail=False, **k: print(
+            self.DECLARED_DIFF.replace(
+                "  ROOM inst room_golden: inst=56 → inst=57",
+                "  ROOM inst room_golden: inst=56 → inst=57\n"
+                "  ROOM 漂移新行形: xyz")) or 7)
+        rc, _o, err = self._capture(
+            cmd_storyline_build, self.game, str(self.defn_path), "det_ws")
+        self.assertEqual(rc, 1)
+        self.assertIn("未识别结构行", err)
+        self.assertIn("ROOM 漂移新行形", err)
 
     def test_apply_refuses_target_drift(self):
         self._capture(cmd_storyline_build, self.game, str(self.defn_path),

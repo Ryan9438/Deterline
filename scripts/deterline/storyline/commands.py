@@ -82,6 +82,7 @@ def _parse_diff_categories(diff_output: str) -> dict:
         "room_inst": {},             # 名: Δinst
         "room_removed": [], "room_added": [], "room_changed": [],
         "code_removed": [], "code_added": [], "code_changed": [],
+        "unclassified": [],          # G1 金丝雀：结构段家族行形漂移/未知类别
     }
     import re as _re
     import ast as _ast
@@ -153,6 +154,12 @@ def _parse_diff_categories(diff_output: str) -> dict:
         if m:
             struct["code_changed"].append(m.group(1))
             continue
+        # G1 金丝雀（R15 P3-2）：结构段家族前缀 + 2 空格缩进（verify.py 结构
+        # 行的统一形态）但未被任何已知正则消费 = verify.py 行形漂移或未知
+        # 差异类别——显式拒绝（解析层漏看 = 假绿）。4 空格缩进的资源级明细
+        # 行（STR/CODEF/INST move 等）不属结构段，不触发。
+        if _re.match(r"^  (COUNT |VARDETERLINE:|ROOM |CODE )", line):
+            struct["unclassified"].append(s)
     return {"counts": counts, "str_ops": str_ops, "struct": struct}
 
 
@@ -162,6 +169,8 @@ def _check_structure(parsed: dict, plan: dict) -> list[str]:
     st = parsed["struct"]
     exp = plan["expected_structure"]
     out: list[str] = []
+    for line in st["unclassified"]:
+        out.append(f"未识别结构行（verify.py 行形漂移/未知类别——闸门不猜）: {line}")
     for k in sorted(set(st["count_deltas"]) | set(exp["count_deltas"])):
         got = st["count_deltas"].get(k, 0)
         want = exp["count_deltas"].get(k, 0)
@@ -326,6 +335,20 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
         # 域生成器构建（写入有名工作区，不触原文件）——自管 game_edit 上下文：
         # 批量提交在上下文**退出**时落盘（data_win 包装内读产物 = 基线副本，
         # C4 CLI 实测教训），指纹/O7 比对必须在其后
+        prospective = (game_file.parent / ".deterline" / game_file.name /
+                       workspace / game_file.name)
+        if prospective.is_file() \
+                and transactions.fingerprint(prospective) != base_sha:
+            # G2（R15 P3-4）：ensure_workspace 复用同名工作区旧产物 → 链式
+            # 叠加（新批打到旧补丁上）。CLI 全局 --workspace 会置
+            # SANDBOX_ACTIVE，plan 探针的读取路由会先创建**基线副本**——
+            # 该副本 sha == 基线，属合法预置；只拒**已补丁**产物（sha ≠
+            # 基线）：链式叠加的闸门增量翻倍虽 fail-closed，但错误难读，
+            # 构建入口直接拒绝，行动点明确。
+            raise _pkg().StorylineError(
+                f"工作区 {workspace} 已存在**已补丁**产物（{prospective}，"
+                "sha ≠ 当前基线）——构建是单次语义：换新工作区名，或确认"
+                "残留后删除该工作区目录重试")
         from .. import state, utmt
         from ..cmds import npc as npc_mod
         old_ws, old_sbx = state.WORKSPACE, state.SANDBOX_ACTIVE

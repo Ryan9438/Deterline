@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import stat
+import sys
 import tempfile
 import time
 from contextlib import ExitStack, contextmanager
@@ -358,6 +359,20 @@ class EditPlan:
                         raise RuntimeError(
                             f"目标是符号链接，拒绝写入: {edit.target}")
                     self._check_baseline(edit)
+                    if edit.target.exists():
+                        # G4 hardlink 语义检测（v2.5.11 前瞻）：多链接目标
+                        # 写入本身安全（备份是独立副本），但 os.replace 断链
+                        # 后其他链接名保留旧内容——如实警告，不拒绝（拒绝会
+                        # 误伤合法硬链接部署）
+                        try:
+                            _nlink = edit.target.stat().st_nlink
+                        except OSError:
+                            _nlink = 1
+                        if _nlink > 1:
+                            print(f"⚠️ 目标是硬链接（st_nlink={_nlink}）: "
+                                  f"{edit.target}——提交后其他链接名将保留"
+                                  "旧内容（os.replace 断链语义；本工具备份"
+                                  "为独立副本，不受影响）", file=sys.stderr)
                     os.replace(staged[edit.target], edit.target)
                     completed.append(edit.target)
             except BaseException as failure:

@@ -51,15 +51,24 @@ class BoundaryBase(unittest.TestCase):
 
 
 class TestSymlinkRefusal(BoundaryBase):
-    """A3：符号链接目标拒绝——os.replace 会替换链接本身而非写穿。"""
+    """A3：符号链接目标拒绝——os.replace 会替换链接本身而非写穿。
 
-    @unittest.skipIf(sys.platform == "win32",
-                     "Windows 建符号链接需特权/开发者模式")
+    G6（07 §3 条1 Windows symlink 回归）：skip 判定从平台静态改为
+    **尝试建链**——有特权/开发者模式的 Windows CI 实跑，无权限环境
+    skipTest 留痕（诚实口径：能跑才跑，跑不了如实记 skip）。
+    """
+
+    def _make_symlink(self, link: Path, real: Path) -> None:
+        real.write_bytes(b"REAL")
+        try:
+            link.symlink_to(real)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前环境建符号链接需特权/开发者模式")
+
     def test_prepare_refuses_symlink(self):
         real = self.root / "real.bin"
-        real.write_bytes(b"REAL")
         link = self.root / "link.bin"
-        link.symlink_to(real)
+        self._make_symlink(link, real)
         with self.assertRaises(RuntimeError) as ctx:
             transactions.FileEdit.prepare(link, b"NEW", backup=True)
         self.assertIn("符号链接", str(ctx.exception))
@@ -67,15 +76,12 @@ class TestSymlinkRefusal(BoundaryBase):
         self.assertTrue(link.is_symlink())
         self.assertEqual(real.read_bytes(), b"REAL")
 
-    @unittest.skipIf(sys.platform == "win32",
-                     "Windows 建符号链接需特权/开发者模式")
     def test_commit_refuses_symlink_target(self):
         """防线 2：绕过 prepare 直接构造的方案（数据类不解析路径）在
         commit 期仍拦截——staging 失败路径，零替换、链接保持。"""
         real = self.root / "real.bin"
-        real.write_bytes(b"REAL")
         link = self.root / "link.bin"
-        link.symlink_to(real)
+        self._make_symlink(link, real)
         edit = transactions.FileEdit(link, b"NEW",
                                      transactions.fingerprint(link),
                                      backup=True)  # 基线=链接当前指向的内容
@@ -84,6 +90,43 @@ class TestSymlinkRefusal(BoundaryBase):
         self.assertIn("符号链接", message)
         self.assertTrue(link.is_symlink())
         self.assertEqual(real.read_bytes(), b"REAL")
+
+
+class TestHardlinkWarning(BoundaryBase):
+    """G4（v2.5.11 前瞻）：硬链接目标提交 → 警告而非拒绝——os.replace
+    断链语义（其他链接名保留旧内容）如实告知；备份为独立副本不受影响。"""
+
+    def test_commit_warns_on_hardlink_and_breaks_link(self):
+        target = self.root / "game.ios"   # BoundaryBase 锚文件（b"GAME"）
+        alias = self.root / "alias.bin"
+        try:
+            os.link(target, alias)
+        except (OSError, NotImplementedError):
+            self.skipTest("当前环境不支持 os.link")
+        self.assertEqual(alias.read_bytes(), b"GAME")
+        edit = transactions.FileEdit(target, b"NEW!",
+                                     transactions.fingerprint(target),
+                                     backup=True)
+        plan = transactions.EditPlan((edit,))
+        buf_out, buf_err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+            plan.commit()
+        self.assertIn("硬链接", buf_err.getvalue())
+        self.assertIn("st_nlink=2", buf_err.getvalue())
+        self.assertEqual(target.read_bytes(), b"NEW!")
+        # 断链语义实证：别名（旧 inode）保留旧内容——警告所述行为
+        self.assertEqual(alias.read_bytes(), b"GAME")
+        # 正常路径回归：无硬链接时零警告
+        plain = self.root / "plain.bin"
+        plain.write_bytes(b"PLAIN")
+        edit2 = transactions.FileEdit(plain, b"NEW2",
+                                      transactions.fingerprint(plain),
+                                      backup=True)
+        plan2 = transactions.EditPlan((edit2,))
+        buf_out2, buf_err2 = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buf_out2), contextlib.redirect_stderr(buf_err2):
+            plan2.commit()
+        self.assertNotIn("硬链接", buf_err2.getvalue())
 
 
 class TestJournalTmpListing(BoundaryBase):

@@ -446,11 +446,21 @@ def run_scenario(scenario: str, seed: int) -> dict:
             try:
                 rec = json.loads(Path(journal["path"]).read_text(encoding="utf-8"))
                 copy_hashes = {}
+                referenced = []
                 for entry in rec.get("targets", []):
                     for key in ("staged", "rollback"):
                         copy = entry.get(key) if isinstance(entry, dict) else None
-                        if copy and Path(copy).is_file():
-                            copy_hashes[copy] = _sha_file(Path(copy))
+                        if copy:
+                            referenced.append(copy)
+                            if Path(copy).is_file():
+                                copy_hashes[copy] = _sha_file(Path(copy))
+                            else:
+                                # G5（v2.5.11 前瞻）：副本在记录前已被消费
+                                # （如 kill 窗口命中 apply 消费段）——显式
+                                # 标记缺失，证据链不留静默空洞
+                                copy_hashes[copy] = "<consumed-before-recording>"
+                if referenced:
+                    record["journal_referenced_copies"] = referenced
                 if copy_hashes:
                     record["copy_hashes"] = copy_hashes
             except (OSError, ValueError):
