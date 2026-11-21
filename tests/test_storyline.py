@@ -134,10 +134,21 @@ class TestCjkFontPipelineFailures(unittest.TestCase):
     """H1（R19/R20 P2 收敛命中）：字形页生成器异常路径回归钉——
     SystemExit / ImportError / rc≠0 三分支都必须带出缓冲诊断
     （StorylineError），不再裸栈/静默；ImportError 分支在此前是死代码
-    （run_path 在 try 外，PIL 缺失直接裸抛）。"""
+    （run_path 在 try 外，PIL 缺失直接裸抛）。
+
+    vendor 字体按 .gitignore 口径不入库（download via assets/fonts/vendor）
+    ——字体缺席环境（干净检出/CI）诚实 skip：异常路径钉在字体在场环境
+    实跑（本机），缺席环境的该分支拒绝行为由"OFL 字体源缺失"先拒覆盖。"""
 
     def _run(self, run_path_side_effect):
         from deterline.storyline import commands as sc
+        from pathlib import Path as _P
+        font_src = (_P(__file__).resolve().parent.parent / "assets" /
+                    "fonts" / "vendor" / "fusion-pixel-12px" /
+                    "fusion-pixel-12px-monospaced-zh_hans.ttf")
+        if not font_src.is_file():
+            self.skipTest("vendor 字体不在库（.gitignore 口径）——异常路径钉"
+                          "在字体在场环境实跑")
         defn = _read_definition(CJK_DEFN)
         with mock.patch("runpy.run_path",
                         side_effect=run_path_side_effect):
