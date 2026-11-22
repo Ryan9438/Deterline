@@ -70,12 +70,19 @@ c1_ensure_dotnet() {
   c1_die "未找到 dotnet（.NET runtime，UTMT CLI 依赖）。安装: brew install dotnet"
 }
 
-# CJK 构建依赖（storyline cjk:true 的字体管线）：Pillow + vendor 字体。
+# CJK 构建依赖（storyline cjk:true 的字体管线）：Pillow + numpy + vendor 字体。
 # 字体按 .gitignore 口径不入库——干净检出自备（来源与 md5 见 README）。
 c1_ensure_cjk_assets() {
   if ! "$PY" -c "import PIL" >/dev/null 2>&1; then
     c1_die "当前解释器缺 Pillow（CJK 字形页生成依赖，requirements.txt）。" \
-      "修法: $PY -m venv <dir> && <dir>/bin/pip install pillow" \
+      "修法: $PY -m venv <dir> && <dir>/bin/pip install pillow numpy" \
+      "然后 DL_PYTHON=<dir>/bin/python 重跑。"
+  fi
+  # numpy 闸门（R31 P2 清偿）：font_emb20_compose 的图集合成依赖 numpy，
+  # run1 实跑证明缺它在完整 pass1 之后才炸 ModuleNotFoundError——预检必须提前拦。
+  if ! "$PY" -c "import numpy" >/dev/null 2>&1; then
+    c1_die "当前解释器缺 numpy（emb20 图集合成依赖，requirements.txt 已登记）。" \
+      "修法: $PY -m venv <dir> && <dir>/bin/pip install pillow numpy" \
       "然后 DL_PYTHON=<dir>/bin/python 重跑。"
   fi
   local font="$C1_REPO_ROOT/$C1_FONT_REL"
