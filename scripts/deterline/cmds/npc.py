@@ -657,6 +657,12 @@ def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: in
             f"选择文本 '{choice_key}' 共 {line_count} 行（含选项行），超过 3 行限制，"
             f"选项会溢出对话框。\n格式: \"* 提问& &         Yes         No      \\C \""
         )
+    if typer not in (5, 31):
+        # I1：证据级白名单——5 = 原版标准（实机 B5 矩阵 4/4）；31 = CJK spacing12
+        # （B4 主臂实证 + storyline cjk 通道）。其余 typer 无渲染证据，fail-closed。
+        raise errors.ValidationError(
+            f"typer={typer} 无渲染证据——当前仅支持 5（原版标准）与 31"
+            "（CJK 组合，spacing12，B4 实证）两值。")
     if no_key is None or no_text is None:
         raise errors.ValidationError("--no-text-key 和 --no-text 是必需的（NO 分支的回应文本）")
     if yes_key is None:
@@ -676,6 +682,14 @@ def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: in
                     f"否则选择框会循环重弹。"
                 )
     dialogue._validate_facechoice(face)
+    if typer == 5 and any(ord(ch) >= 128 for ch in choice_text + (yes_text or "") + (no_text or "")):
+        # I3（B5 R2-CJK 实机缺陷机制闭合）：SCR_TEXTTYPE typer5 spacing=8 vs
+        # typer31 spacing=12；writer 逐字符固定步进 letterx += spacing；
+        # cjk-font 字形 px=12——typer 5 每字符净重叠 4px，结构性不可用。
+        raise errors.ValidationError(
+            "typer=5 的固定步进（spacing 8px）对 CJK 字形（12px）每字符净重叠"
+            " 4px（R2-CJK 实机缺陷，writer letterx += spacing 固定步进）——"
+            "含非 ASCII 的文本必须 --typer 31。")
     if item_id is not None and item_id not in file0.ITEMS:
         print(f"警告: 物品 ID {item_id} 不在已知物品表（{min(file0.ITEMS)}-{max(file0.ITEMS)}），仍将注入 scr_itemget", file=sys.stderr)
 

@@ -218,8 +218,8 @@ def main():
                         help="cjk-trigger: 目标房间名（默认 room_ruins1）")
     parser.add_argument("--object", type=str, default="obj_cactus",
                         help="cjk-trigger: 承载触发块的对象名（其 Step_1 被追加；默认 obj_cactus）")
-    parser.add_argument("--typer", type=int, default=31,
-                        help="cjk-trigger: SCR_TEXTTYPE 编号（默认 31 = fnt_maintext spacing12；须在 CJK_TYPER_TABLE）")
+    parser.add_argument("--typer", type=int, default=None,
+                        help="cjk-trigger: SCR_TEXTTYPE 编号（默认 31 = fnt_maintext spacing12；须在 CJK_TYPER_TABLE）；npc-choice: writer 渲染 typer（默认 5 = 原版标准；CJK 组合传 31）")
     parser.add_argument("--glyphs", type=str, default=None,
                         help="cjk-check/cjk-trigger: 字形表路径（默认 build/font_cjk/glyphs.json）")
     parser.add_argument("--detail", action="store_true",

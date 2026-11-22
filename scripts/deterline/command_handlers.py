@@ -341,13 +341,17 @@ def _npc_choice_data_win(args, parser, game_file):
         parser.error("--value (房间名) 和 --key (对象名) 是必需的")
     if args.text_key is None or args.text is None:
         parser.error("--text-key (选择文本 key) 和 --text (选择文本) 是必需的")
+    # I1（R21 P2 实机窗口教训）：--typer 必须透传——cjk_w3 实机修正链经本通道
+    # 构建，typer 被静默丢弃回 5，r3ok.ios 全文 typer=5（字体栈在而 typer 31
+    # 不在）。None → 5（默认路径零变行为）；显式值原样转发（31 = CJK 组合）。
+    typer = 5 if args.typer is None else args.typer
     npc.cmd_npc_choice(game_file, args.value, args.key, args.x, args.y,
                    args.text_key, args.text,
                    yes_key=args.yes_text_key, yes_text=args.yes_text,
                    no_key=args.no_text_key, no_text=args.no_text,
                    face=args.face, emotion=args.emotion, range_=args.range,
                    goto_room=args.goto, item_id=args.item,
-                   repeat=args.repeat)
+                   repeat=args.repeat, typer=typer)
 
 
 def _guard_npc_alarm_data_win(args, parser, game_file):
@@ -704,7 +708,7 @@ def _cjk_trigger_data_win(args, parser, game_file):
     if not cjk.cmd_cjk_trigger(game_file, args.room, args.object,
                            220 if args.x_raw is None else args.x_raw,
                            330 if args.y_raw is None else args.y_raw,
-                           args.typer, args.text,
+                           31 if args.typer is None else args.typer, args.text,
                            wrap=not args.no_wrap,
                            width_room_px=args.width,
                            glyphs_json=(Path(args.glyphs)

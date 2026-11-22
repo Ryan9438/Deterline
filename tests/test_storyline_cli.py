@@ -10,6 +10,7 @@ CLI 层断言采用**进程内 cli.main()**（recovery_stress 先例：本机安
   零真实数据写入（03 §10 纪律）。
 """
 
+import argparse
 import contextlib
 import hashlib
 import io
@@ -226,3 +227,98 @@ class TestStorylineCliFullChain(unittest.TestCase):
             "--dir", str(self.game))
         self.assertEqual(code, 0, msg=err[-2000:])
         self.assertEqual(self._sha(), self.baseline_sha)
+
+
+class TestTyperWiring(unittest.TestCase):
+    """I1：--typer 全链接线（R21 P2 实机窗口教训）。
+
+    cjk_w3 实机修正链经 npc-choice CLI 构建，handler 静默丢弃 args.typer →
+    cmd_npc_choice 回默认 5，r3ok.ios 全文 typer=5（字体栈在而 31 不在）。
+    修复：全局 --typer 默认改 None（原默认 31 只归 cjk-trigger），npc-choice
+    handler None→5 / 显式值原样转发；cjk-trigger handler None→31。全部无 UTMT
+    依赖：parser 默认（COMMANDS 打桩短路 dispatch 与文件解析）+ handler 转发
+    （下沉函数 mock）+ 白名单拒绝（校验先于任何文件访问，纯函数路径）。"""
+
+    def test_parser_default_typer_none(self):
+        seen = {}
+        with mock.patch.dict(cli_mod.command_handlers.COMMANDS,
+                             {"npc-choice": {"any": lambda a, p, g: seen.setdefault("args", a)}}):
+            code, _out, err = _run_cli(
+                "npc-choice", "--value", "parser_default", "--key", "obj_npc_marker",
+                "--text-key", "500", "--text", "* T& &      Yes      No     \\C ")
+        self.assertEqual(code, 0, msg=err[-2000:])
+        self.assertIsNone(seen["args"].typer)
+
+    def test_npc_choice_handler_resolves_default_5(self):
+        from deterline import command_handlers as ch
+        rec = {}
+
+        def fake_cmd(*a, **kw):
+            rec.update(kw)
+
+        args = argparse.Namespace(
+            value="room_ruins1", key="obj_npc_marker", x=100, y=200,
+            text_key="500", text="* T& &      Yes      No     \\C ",
+            yes_text_key=None, yes_text=None,
+            no_text_key="501", no_text="* N./%%",
+            face=0, emotion=0, range=50, goto=None, item=None,
+            repeat=False, typer=None)
+        with mock.patch.object(ch.npc, "cmd_npc_choice", fake_cmd):
+            ch._npc_choice_data_win(args, mock.Mock(), Path("/fake/t5.ios"))
+        self.assertEqual(rec.get("typer"), 5)
+
+    def test_npc_choice_handler_forwards_explicit_31(self):
+        from deterline import command_handlers as ch
+        rec = {}
+
+        def fake_cmd(*a, **kw):
+            rec.update(kw)
+
+        args = argparse.Namespace(
+            value="room_ruins1", key="obj_npc_marker", x=100, y=200,
+            text_key="500", text="* T& &      Yes      No     \\C ",
+            yes_text_key=None, yes_text=None,
+            no_text_key="501", no_text="* N./%%",
+            face=0, emotion=0, range=50, goto=None, item=None,
+            repeat=False, typer=31)
+        with mock.patch.object(ch.npc, "cmd_npc_choice", fake_cmd):
+            ch._npc_choice_data_win(args, mock.Mock(), Path("/fake/t31.ios"))
+        self.assertEqual(rec.get("typer"), 31)
+
+    def test_cjk_trigger_handler_falls_back_31(self):
+        from deterline import command_handlers as ch
+        rec = {}
+
+        def fake_trigger(*a, **kw):
+            rec["typer"] = a[5]   # (game_file, room, obj, x, y, typer, text, ...)
+            return True
+
+        args = argparse.Namespace(
+            text="* 中文", room="room_ruins1", object="obj_cactus",
+            x_raw=None, y_raw=None, typer=None, no_wrap=False,
+            width=None, glyphs=None)
+        with mock.patch.object(ch.cjk, "cmd_cjk_trigger", fake_trigger):
+            ch._cjk_trigger_data_win(args, mock.Mock(), Path("/fake/tcjk.ios"))
+        self.assertEqual(rec["typer"], 31)
+
+    def test_npc_choice_typer_whitelist_rejects_unproven(self):
+        from deterline import errors
+        from deterline.cmds import npc as npc_mod
+        with self.assertRaises(errors.ValidationError) as cm:
+            npc_mod.cmd_npc_choice(
+                Path("/tmp/none.ios"), "room_ruins1", "obj_npc_marker", 100, 200,
+                "500", "* T& &      Yes      No     \\C ",
+                no_key="501", no_text="* N./%%", typer=7)
+        self.assertIn("无渲染证据", str(cm.exception))
+
+    def test_npc_choice_typer5_cjk_refused(self):
+        """I3 防护：typer=5（spacing 8px）+ 非 ASCII = 实证重叠缺陷组合，fail-closed。"""
+        from deterline import errors, state
+        from deterline.cmds import npc as npc_mod
+        with mock.patch.object(state, "ALLOW_CJK", True), \
+                self.assertRaises(errors.ValidationError) as cm:
+            npc_mod.cmd_npc_choice(
+                Path("/tmp/none.ios"), "room_ruins1", "obj_npc_marker", 100, 200,
+                "500", "* 往东走吗？& &      是      否     \\C ",
+                no_key="501", no_text="* 还是算了。/%%", typer=5)
+        self.assertIn("--typer 31", str(cm.exception))

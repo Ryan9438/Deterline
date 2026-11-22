@@ -6,7 +6,7 @@ room-list P0 的土壤：接线层 bug 不被 CSX golden 钉住，而冷路径�
 1. 覆盖地图（动态计算）：commands.json 的每个 action，其 action 名或实现
    cmd_* 函数名必须在 tests/ 出现过——零覆盖集合必须 ⊆ ALLOWLIST
    （R19 P3-1 口径订正：清洗器剥离 docstring/注释后 95 actions =
-   **72 已覆盖 + 23 条显式豁免**；mock.patch 字符串/docstring/注释
+   **73 已覆盖 + 22 条显式豁免**；mock.patch 字符串/docstring/注释
    剥离后不计覆盖——R14 P2-1 + R16 P2"提及不是覆盖"）。
    新增命令不带测试即爆红。
 2. 三方 SSOT 扩展：commands.json actions == cli.ACTION_CHOICES == dispatch
@@ -42,7 +42,7 @@ import deterline.paths  # noqa: E402
 # 两类豁免：
 #   - md5/sandbox-restore：已收编（2026-11-13 抽 cmd_md5/cmd_sandbox_restore
 #     入 cmds/save_cmds.py，测试见 test_transactions_unittest.TestDispatchRemnantCmds）
-#   - 其余 23 条（R19 P3-1 口径订正；R14 P2-1 时为 20 条，f1e3a58 清洗器
+#   - 其余 22 条（I1 清偿 npc-choice 后；R19 P3-1 口径订正时为 23 条，f1e3a58 清洗器
 #     扩展后如实增记 3 条）：读式/诊断命令（UTMT 查询+打印）或重游戏依赖命令
 #     （npc-dialogue/smoke-test/replace-texture），行为面已由 golden CSX
 #     （28 生成器钉死）+ A3 双轮游戏级快照 parity 覆盖；补单测 = 独立后续项
@@ -69,10 +69,9 @@ ALLOWLIST: dict[str, str] = {
     "list-strings": "读式列表",
     "list-textures": "读式列表",
     "npc-dialogue": "重游戏依赖；_build_npc_step_block golden 钉死 + A3 parity",
-    "npc-choice": "重游戏依赖（触发块+choice 链）；_build_npc_choice_block golden "
-                  "钉死 + storyline E2E mock 调用 + 集成全链 opt-in 真走 handler"
-                  "（R16 P2：静态覆盖计数靠 docstring 提及 = 提及不是覆盖——"
-                  "恢复豁免如实记账）；真实 UTMT 级证据 = C1 实录（域外）",
+    # npc-choice：2026-11-22 移出——TestTyperWiring（I1）直接调用
+    # _npc_choice_data_win 转发 + cmd_npc_choice 白名单/CJK 防护，
+    # handler 分支成为真覆盖（R16 P2 豁免随之清偿）
     "preview-sprite": "读式诊断",
     "replace-texture": "重游戏依赖（真实 UTMT 写纹理页）；A3 parity 实证",
     "room-bg-info": "读式诊断",
