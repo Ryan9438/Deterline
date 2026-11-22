@@ -1,5 +1,43 @@
 # Changelog
 
+## v2.6.0-rc6 — 2026-11-22（I 批次：B5 窗口 sandbox 跟进清偿）
+
+**性质：B5 实机窗口登记的 sandbox 跟进项清偿（I1 CLI typer 接线 + I2/I3 两研究项收口）+ I4 SOP 固化。521→527 测试（+6：TestTyperWiring）。候选 tag 递补 v2.6.0-rc6。**
+
+### I1：CLI typer 接线修复（R21 P2 实证缺口清偿）
+
+- **缺口本体**：npc-choice CLI handler（command_handlers.py `_npc_choice_data_win`）不转发 `args.typer`——B5 实机修正链（cjk_w3：cjk-font + npc-choice CLI 同名工作区）经此通道构建，`--typer`（及无旗标时的 31 默认）被静默丢弃回 5，r3ok.ios 全文 typer=5（字体栈在而 31 不在）。
+- **修法（零默认路径变行为）**：全局 `--typer` 默认 31→**None**（原默认只归 cjk-trigger）；npc-choice handler None→5 / 显式值原样转发；cjk-trigger handler None→31 回退。帮助文本同步（help golden 重新生成）。
+- **证据级白名单**：cmd_npc_choice 校验 `typer ∈ {5, 31}`——5 = 原版标准（B5 矩阵 4/4 实证）；31 = CJK spacing12（B4 主臂 + storyline cjk 通道）。其余值无渲染证据，fail-closed。
+- **typer5+CJK 结构性拒绝**（I3 研究闭环转化）：typer=5 且文本含非 ASCII → 直接拒绝——SCR_TEXTTYPE typer5 spacing=8 vs typer31 spacing=12，writer 逐字符固定步进 `letterx += spacing`，cjk-font 字形 px=12，typer 5 每字符净重叠 4px（R2-CJK 实机缺陷的机制面闭合）。
+- **测试**：+6（parser 默认 None / handler 默认 5 / handler 显式 31 透传 / cjk-trigger 回退 31 / 白名单拒绝 / typer5+CJK 拒绝）；npc-choice 出覆盖豁免 ALLOWLIST（handler 分支成真覆盖，R16 P2 豁免清偿，计数 72+23→**73+22**）。
+
+### I2：门区对话黑洞研究（13 §I 节全量入册；判级"根因未下"维持）
+
+- fixture 矩阵重估：r1a = npc-dialogue @ (60,200)（typer5/face0/textdata）；r1d = cjk-trigger @ (60,200)（typer31/face3/内联）；r1e = npc-dialogue @ **(150,300)** 对照（正常）——typer/facechoice/机制/文本源全部单变量排除，**唯一变量 = 位置**。
+- 几何订正：(60,200) = room_ruins1 **西侧入口门角袋区**（doorB×2 @(0,120)/(0,140) + markerA @(20,120)），非东侧过渡门；该格压着基线实体 obj_sdl [100121] + obj_solidlong [100727] + 探针 NPC 本体。
+- doorB 玩家碰撞（Other_19）：`global.interact = 3` + obj_unfader + alarm[2]=8 → 8 帧后房间过渡——入口角存在真实"门触碰窗口期"。
+- 负标定：writer 存活 + ASCII 的渲染路径无"画不出字"分支；dialoguer Step 无吞噬点；SCR_TEXT(msc=0)=case 0 break；mainchara Collision_12/13 = 墙滑动推回；overworldcontroller/ruinsmusic/readable_room1 无关。
+- 证伪早先"id 错位"假设（r1d 注入块 id=113927 与 obj_cactus [113927] 匹配；probe_step0.gml 是早先草稿）。
+- 活假设（H-A 门触碰竞争 / H-B 袋区视图态 / H-C 原生框混入）+ 决定性探针卡 P1–P4 入 15-实机窗口SOP §6.1。
+
+### I3：typer 5 分支字形重叠——机制面闭合（sandbox 反编译证据链）
+
+- SCR_TEXTTYPE（545 行）：typer5 → spacing **8** / speed 1 / xend view+290（writer 自动折行开）；typer31 → spacing **12** / speed 2 / xend 9999（关，cjk 预折行 202px 无冲突）。
+- obj_base_writer_Draw_0（615 行）：逐字符 `draw_text_transformed` + **固定步进 `letterx += spacing`**（与字形度量无关）；fnt_ja_maintext 分支仅"宽→窄"过渡 +1px 补偿。
+- font_cjk_build：字形 px=12 / cell 13——typer31 spacing12 与 12px 字形精确啮合（B4"typer31 最佳"的机制解释）；typer5 spacing8 = 每字符重叠 4px。
+- r3ok.ios 块 3× `global.typer = 5`（触发/YES/NO 全站）——直接原因 = I1 所修 CLI handler 丢旗标。
+- 机制闭合转化为 I1 的 typer5+CJK 结构性拒绝防护（fail-closed）。
+
+### I4：窗口协议固化（15-实机窗口SOP.md）
+
+- B5 R22 清偿 SOP 5 项 + 既有执行序/焦点确认/备份协议 → 独立可复用文档（09 总索引同步）；附在册探针卡（门区黑洞 P1–P4、全角"？"一帧缺失）。
+
+### 前瞻登记（I 批次）
+
+- 承接既有：工作区目录级符号链接防御纵深、rc2 CLI 层非 JSON 输出形状、F1 闸门真机正例、--journal 选择器、CJK 跨定义字形合并。
+- 门区黑洞与全角"？"两开口项：实机帧级探针（15-SOP §6 探针卡），非 sandbox 可收口。
+
 ## v2.6.0-rc5 — 2026-11-21（H1：清偿提交补审 + 二次清偿）
 
 **性质：用户质询"这几轮提交都交给 subagent 审了吗"暴露复审覆盖缝隙——F/G 批实质代码已双席审，但三个清偿提交（440c18c/f1e3a58/26de982，实现复审席处方的代码）未经独立复审。补审 R19/R20 双席（PASS，无 P0/P1）→ 本批清偿其必修 P2×2（收敛命中同一根因）+ P3×8。517→521 测试（+4）。候选 tag 递补 v2.6.0-rc5。**
