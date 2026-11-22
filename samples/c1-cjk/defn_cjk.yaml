@@ -1,0 +1,14 @@
+schema: deterline.storyline/v1
+patch_id: det_c1_cjk
+room: room_ruins1
+cjk: true
+npc:
+  object: obj_npc_marker
+  x: 100
+  y: 200
+  range: 60
+  prompt: "* 往东走吗？& &      是      否    \C "
+  yes_text: "* 你朝东走去。/%%"
+  no_text: "* 还是算了。/%%"
+  once: true
+flag_id: 508

@@ -2,3 +2,4 @@
 # Core functionality requires no external packages (stdlib only).
 pyyaml>=6.0          # quest compiler (future)
 Pillow>=10.0         # bg_generator.py + create-bg-asset (像素背景生成/注入必需)
+numpy>=1.26          # storyline cjk:true 字形页 emb20 象限合成 (tools/font_emb20_compose.py 必需；C1 样例实跑发现未登记，2026-11-22)
