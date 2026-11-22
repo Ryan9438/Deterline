@@ -60,7 +60,7 @@ samples/c1-cjk/undo.sh  <运行目录>        # 显式撤销回基线
 ASCII 正例（裸 ≥3.10 解释器即可，无需 venv 与字体）：
 
 ```bash
-python3.11 samples/c1-cjk/prepare.sh --defn samples/c1-cjk/defn_ascii.yaml --out <运行目录>
+DL_PYTHON=python3.11 samples/c1-cjk/prepare.sh --defn samples/c1-cjk/defn_ascii.yaml --out <运行目录>
 samples/c1-cjk/verify.sh <运行目录>
 samples/c1-cjk/undo.sh  <运行目录>
 ```
@@ -70,7 +70,7 @@ samples/c1-cjk/undo.sh  <运行目录>
 ```
 <run>/
   run.json            ← 机器可读交接：指纹链/阶段时间线/环境（python·dotnet·UTMT）
-  defn_cjk.yaml       ← 本样例定义副本（patch_id det_c1_cjk，flag 508 declared-only）
+  defn_<腿>.yaml      ← 定义副本（CJK=defn_cjk.yaml/det_c1_cjk/flag 508；ASCII=defn_ascii.yaml/det_c1_ascii/flag 509；均 declared-only）
   game.ios            ← 基线副本（应用后 = 已应用产物；undo 后 = 回基线）
   game.ios.bak        ← 撤销点（prepare 的 EditPlan 备份；undo 后 = 已应用产物）
   game.ios.bak.<时间戳>  ← apply / undo 时对**当时的 game.ios** 的滚动留档
@@ -106,5 +106,5 @@ prepare 失败会留 `FAILED` 标记，现场不清理。
 ## 支持边界
 
 - macOS bash（`md5 -q` / `shasum`）；Windows 游戏侧为等待条件。
-- flag_id 508 仅声明（模板 v1 不写入——无实机证据的写入路径禁用）。
+- flag_id 仅声明（模板 v1 不写入——无实机证据的写入路径禁用）：CJK 腿 508、ASCII 腿 509。
 - 构建差异声明闸门（O7）由工具链强制：未声明资源/结构变更直接拒绝出候选。

@@ -21,9 +21,9 @@ c1_preflight_core
 UTC_START="$(c1_now)"
 # patch_id/cjk 从 run.json 取（prepare 已参数化 --defn；cjk 缺省 true 兼容旧运行目录）。
 PATCH="$(RUN_DIR="$RUN_DIR" "$PY" -c \
-  'import json,os; print(json.load(open(os.environ["RUN_DIR"]+"/run.json", encoding="utf-8"))["patch_id"])')"
+  'import json,os; print(json.load(open(os.environ["RUN_DIR"]+"/run.json", encoding="utf-8")).get("patch_id",""))')"
 case "$PATCH" in
-  *[!A-Za-z0-9_-]*) c1_die "run.json patch_id 含异常字符: '$PATCH'" ;;
+  ""|*[!A-Za-z0-9_-]*) c1_die "run.json patch_id 缺失或含异常字符: '$PATCH'" ;;
 esac
 IS_CJK="$(RUN_DIR="$RUN_DIR" "$PY" -c \
   'import json,os; print("1" if json.load(open(os.environ["RUN_DIR"]+"/run.json", encoding="utf-8")).get("cjk", True) else "0")')"

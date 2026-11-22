@@ -36,7 +36,7 @@ PATCH_ID="$(sed -n 's/^patch_id:[[:space:]]*//p' "$DEFN_SRC" | head -1 | tr -d '
 case "$PATCH_ID" in
   ""|*[!A-Za-z0-9_-]*) c1_die "定义 patch_id 缺失或含异常字符: '$PATCH_ID'" ;;
 esac
-if grep -Eq '^cjk:[[:space:]]*true([[:space:]]|$)' "$DEFN_SRC"; then
+if grep -Eq '^cjk:[[:space:]]*(true|True)([[:space:]]|$)' "$DEFN_SRC"; then
   CJK_FLAG=1
   echo "[c1-cjk] 定义: $DEFN_BASE (patch_id=$PATCH_ID, cjk=true → 字体资产闸门)"
   c1_ensure_cjk_assets
