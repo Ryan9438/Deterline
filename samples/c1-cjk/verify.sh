@@ -67,7 +67,8 @@ SUMMARY="$(grep -o "共 [0-9]* 处差异" "$RUN_DIR/verify_diff.txt" | grep -o "
 grep -q -- "COUNT VARS" "$RUN_DIR/verify_diff.txt" && \
   grep -q -- "VARDETERLINE" "$RUN_DIR/verify_diff.txt" || c1_die \
   "未见到 deterline_state 变量副作用行——计入差异构成与预期不符"
-echo "  差异全在声明范围内（计入 2 处 = deterline_state 变量副作用，已知形态）"
+echo "  下列为 diff --detail 尾部：所列 STR/CODEF 行均为声明内命中（expected_scope 覆盖，不计入）"
+echo "  工具总结「共 2 处差异」= 声明闸门后剩余，预期恰 2 = deterline_state 变量副作用（COUNT VARS + VARDETERLINE，已知形态）"
 tail -n 6 "$RUN_DIR/verify_diff.txt"
 
 echo "== [V2] recovery-scan 收尾确认 =="
