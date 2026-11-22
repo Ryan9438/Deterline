@@ -46,7 +46,7 @@ CJK 字体栈注入），替代旧单脚本形态 `C1-支线脚本/c1_branch_cjk
 
 ```bash
 cd <检出根>
-DL_PYTHON=~/.venvs/dl-c1/bin/python samples/c1-cjk/prepare.sh   # 全新运行目录（缺省 /tmp 下，--out 可指定）；环境 python 已 ≥3.10 时可省 DL_PYTHON 前缀（见前置条件 1/2）
+DL_PYTHON=~/.venvs/dl-c1/bin/python samples/c1-cjk/prepare.sh   # 全新运行目录（缺省 /tmp 下，--out 可指定）；缺省探测已得 ≥3.10 且 Pillow/numpy 就绪时可省 DL_PYTHON 前缀（见前置条件 1/2）
 samples/c1-cjk/verify.sh <运行目录>       # 本地沙箱级验收
 samples/c1-cjk/undo.sh  <运行目录>        # 显式撤销回基线
 ```
@@ -59,7 +59,8 @@ samples/c1-cjk/undo.sh  <运行目录>        # 显式撤销回基线
   defn_cjk.yaml       ← 本样例定义副本（patch_id det_c1_cjk，flag 508 declared-only）
   game.ios            ← 基线副本（应用后 = 已应用产物；undo 后 = 回基线）
   game.ios.bak        ← 撤销点（prepare 的 EditPlan 备份；undo 后 = 已应用产物）
-  game.ios.bak.<时间戳>  ← undo 滚动改存的历次备份（每次撤销把当时的 .bak 改名留档）
+  game.ios.bak.<时间戳>  ← apply / undo 时对**当时的 game.ios** 的滚动留档
+                         （apply 留档应用前值=基线；undo 留档撤销前值=已应用产物）
   plan.json           ← 只读计划（期望资源/结构集）
   build.out.json      ← 构建回执（产物 sha256 / 声明差异 / defn_sha256）
   apply_preview.json / apply_commit.json   ← 应用回执（before/after 指纹）
