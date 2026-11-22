@@ -1,0 +1,14 @@
+schema: deterline.storyline/v1
+patch_id: det_c1_ascii
+room: room_ruins1
+cjk: false
+npc:
+  object: obj_npc_marker
+  x: 100
+  y: 200
+  range: 60
+  prompt: "* Go east?& &      Yes      No    \C "
+  yes_text: "* You head east./%%"
+  no_text: "* Maybe not./%%"
+  once: true
+flag_id: 509

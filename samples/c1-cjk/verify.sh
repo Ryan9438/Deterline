@@ -19,18 +19,26 @@ RUN_DIR="$1"
 c1_preflight_core
 
 UTC_START="$(c1_now)"
-PATCH="det_c1_cjk"
+# patch_id/cjk 从 run.json 取（prepare 已参数化 --defn；cjk 缺省 true 兼容旧运行目录）。
+PATCH="$(RUN_DIR="$RUN_DIR" "$PY" -c \
+  'import json,os; print(json.load(open(os.environ["RUN_DIR"]+"/run.json", encoding="utf-8"))["patch_id"])')"
+case "$PATCH" in
+  *[!A-Za-z0-9_-]*) c1_die "run.json patch_id 含异常字符: '$PATCH'" ;;
+esac
+IS_CJK="$(RUN_DIR="$RUN_DIR" "$PY" -c \
+  'import json,os; print("1" if json.load(open(os.environ["RUN_DIR"]+"/run.json", encoding="utf-8")).get("cjk", True) else "0")')"
 RECEIPT="$RUN_DIR/.deterline/storyline/game.ios/$PATCH/receipt.json"
 [ -f "$RECEIPT" ] || c1_die "apply 回执缺失: ${RECEIPT}（prepare 未成功？）"
 
 # 指纹链：apply 回执 after_sha256 == 副本现值（sha256）；run.json 一致。
 CURRENT_SHA="$(shasum -a 256 "$RUN_DIR/game.ios" | awk '{print $1}')"
-PY="$PY" RUN_DIR="$RUN_DIR" CURRENT_SHA="$CURRENT_SHA" \
+PY="$PY" RUN_DIR="$RUN_DIR" CURRENT_SHA="$CURRENT_SHA" PATCH="$PATCH" \
 "$PY" - <<'PYEOF'
 import json, os, pathlib, sys
 rd = pathlib.Path(os.environ["RUN_DIR"])
-receipt = json.loads((rd / ".deterline/storyline/game.ios/det_c1_cjk/receipt.json")
-                     .read_text(encoding="utf-8"))
+receipt = json.loads(
+    (rd / ".deterline/storyline/game.ios" / os.environ["PATCH"] / "receipt.json")
+    .read_text(encoding="utf-8"))
 run = json.loads((rd / "run.json").read_text(encoding="utf-8"))
 current = os.environ["CURRENT_SHA"]
 ok = True
@@ -97,12 +105,17 @@ rd.joinpath("run.json").write_text(
     json.dumps(run, ensure_ascii=False, indent=2), encoding="utf-8")
 PYEOF
 
-cat <<'EOF'
+if [ "$IS_CJK" = "1" ]; then
+  RENDER_NOTE="首屏中文（typer=31 渲染）/ 选项行 / 是·否两支"
+else
+  RENDER_NOTE="首屏文本（typer=5 标准渲染，ASCII 腿）/ 选项行 / Yes·No 两支"
+fi
+cat <<EOF
 == [V3] 本地沙箱级验收完成（实机级留用户窗口） ==
   实机窗口清单（仅用户值守时执行；口径 05 §5.2 / 15-SOP，逐格记录）:
     ① 真实安装前备份（03 §10 授权）→ 将运行目录副本安装到游戏数据位
     ② steam://run/391540 → room_ruins1 触发点（100,200 半径 60）观察:
-       首屏中文（typer=31 渲染）/ 选项行 / 是·否两支 / once 自毁 / 重进 /
+       $RENDER_NOTE / once 自毁 / 重进 /
        存读档持久语义；holdSeconds ≥ 0.15
     ③ 恢复真实安装备份 + 哈希核对（fc049850856dea4ef1427bbf5653fc47）
   撤销（本地副本）: samples/c1-cjk/undo.sh "<运行目录>"

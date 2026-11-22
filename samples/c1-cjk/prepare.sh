@@ -1,7 +1,9 @@
 #!/bin/bash
 # c1-cjk 样例·阶段 1/3：准备（构建 + 应用到独立副本）。
-# 用法: prepare.sh [--out DIR]
+# 用法: prepare.sh [--out DIR] [--defn FILE]
 #   --out 缺省 = ${DL_C1_RUNS:-${TMPDIR:-/tmp}/dl_c1_runs}/<UTC 时间戳>
+#   --defn 缺省 = 本样例 defn_cjk.yaml；可指向任意 storyline/v1 定义
+#     （如 defn_ascii.yaml——cjk:false 腿，免字体与 Pillow/numpy 闸门）
 #
 # 语义（14 手册 §1 拆解）：
 #   - 每次运行创建**全新独立目录**（已存在即拒——无固定路径复用）；
@@ -14,15 +16,34 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 OUT=""
+DEFN_SRC=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) OUT="$2"; shift 2 ;;
-    *) c1_die "未知参数: $1（用法: prepare.sh [--out DIR]）" ;;
+    --defn) DEFN_SRC="$2"; shift 2 ;;
+    *) c1_die "未知参数: $1（用法: prepare.sh [--out DIR] [--defn FILE]）" ;;
   esac
 done
 
 c1_preflight_core
-c1_ensure_cjk_assets
+# 定义选择先于资产闸门：cjk:false 腿不需要字体/Pillow/numpy（14 手册 §1
+# 正例矩阵的资产缺席形态——ASCII 是最小依赖面）。
+: "${DEFN_SRC:=$C1_SAMPLE_DIR/defn_cjk.yaml}"
+[ -f "$DEFN_SRC" ] || c1_die "定义文件不存在: $DEFN_SRC"
+DEFN_SRC="$(cd "$(dirname "$DEFN_SRC")" && pwd)/$(basename "$DEFN_SRC")"
+DEFN_BASE="$(basename "$DEFN_SRC")"
+PATCH_ID="$(sed -n 's/^patch_id:[[:space:]]*//p' "$DEFN_SRC" | head -1 | tr -d '[:space:]')"
+case "$PATCH_ID" in
+  ""|*[!A-Za-z0-9_-]*) c1_die "定义 patch_id 缺失或含异常字符: '$PATCH_ID'" ;;
+esac
+if grep -Eq '^cjk:[[:space:]]*true([[:space:]]|$)' "$DEFN_SRC"; then
+  CJK_FLAG=1
+  echo "[c1-cjk] 定义: $DEFN_BASE (patch_id=$PATCH_ID, cjk=true → 字体资产闸门)"
+  c1_ensure_cjk_assets
+else
+  CJK_FLAG=0
+  echo "[c1-cjk] 定义: $DEFN_BASE (patch_id=$PATCH_ID, cjk=false → 免字体/Pillow/numpy)"
+fi
 c1_check_baseline
 
 UTC_START="$(c1_now)"
@@ -38,7 +59,7 @@ mkdir -p "$OUT"
 RUN_DIR="$OUT"
 trap 'rc=$?; echo "prepare 于 $(c1_now) 失败（rc=${rc}）——现场保留于 ${RUN_DIR}" > "$RUN_DIR/FAILED"' ERR
 
-cp "$C1_SAMPLE_DIR/defn_cjk.yaml" "$RUN_DIR/defn_cjk.yaml"
+cp "$DEFN_SRC" "$RUN_DIR/$DEFN_BASE"
 cp "$C1_REPO_ROOT/game.ios" "$RUN_DIR/game.ios"
 COPIED_MD5="$(md5 -q "$RUN_DIR/game.ios")"
 [ "$COPIED_MD5" = "$C1_BASELINE_MD5" ] || c1_die "副本指纹不符: $COPIED_MD5"
@@ -46,24 +67,24 @@ BASELINE_SHA="$(shasum -a 256 "$RUN_DIR/game.ios" | awk '{print $1}')"
 
 echo "== [P1] 基线副本: $RUN_DIR/game.ios (md5 $COPIED_MD5) =="
 c1_run_cli --action storyline-plan --file data_win \
-  --value "$RUN_DIR/defn_cjk.yaml" --dir "$RUN_DIR/game.ios" --json \
+  --value "$RUN_DIR/$DEFN_BASE" --dir "$RUN_DIR/game.ios" --json \
   > "$RUN_DIR/plan.json" 2> "$RUN_DIR/plan.err"
 echo "  plan rc=0 → plan.json（期望资源/结构集）"
 
-echo "== [P2] storyline-build（工作区 c1_cjk；cjk:true → 字体栈注入） =="
-c1_run_cli --action storyline-build --value "$RUN_DIR/defn_cjk.yaml" \
+echo "== [P2] storyline-build（工作区 c1_cjk；cjk → 字体栈注入） =="
+c1_run_cli --action storyline-build --value "$RUN_DIR/$DEFN_BASE" \
   --workspace c1_cjk --dir "$RUN_DIR/game.ios" --json \
   > "$RUN_DIR/build.out.json" 2> "$RUN_DIR/build.err"
 echo "  build rc=0 → build.out.json（构建回执：产物 sha256/声明差异）"
 
 echo "== [P3] storyline-apply 预览 =="
-c1_run_cli --action storyline-apply --value "$RUN_DIR/defn_cjk.yaml" \
+c1_run_cli --action storyline-apply --value "$RUN_DIR/$DEFN_BASE" \
   --workspace c1_cjk --dir "$RUN_DIR/game.ios" --json \
   > "$RUN_DIR/apply_preview.json" 2> "$RUN_DIR/apply.err"
 echo "  预览 rc=0 → apply_preview.json"
 
 echo "== [P4] storyline-apply --commit（显式 --no-steam-sync：副本零 Steam 波及） =="
-c1_run_cli --action storyline-apply --value "$RUN_DIR/defn_cjk.yaml" \
+c1_run_cli --action storyline-apply --value "$RUN_DIR/$DEFN_BASE" \
   --workspace c1_cjk --dir "$RUN_DIR/game.ios" --commit --no-steam-sync --json \
   > "$RUN_DIR/apply_commit.json" 2> "$RUN_DIR/apply_commit.err"
 
@@ -75,6 +96,7 @@ UTC_END="$(c1_now)"
 PY="$PY" RUN_DIR="$RUN_DIR" UTC_START="$UTC_START" UTC_END="$UTC_END" \
 BASELINE_SHA="$BASELINE_SHA" AFTER_MD5="$AFTER_MD5" AFTER_SHA="$AFTER_SHA" \
 C1_DOTNET="${C1_DOTNET:-}" UTMT_CLI="$UTMT_CLI" PY_VER="$PY_VER" \
+DEFN_BASE="$DEFN_BASE" PATCH_ID="$PATCH_ID" CJK_FLAG="$CJK_FLAG" \
 "$PY" - <<'PYEOF'
 import json, os, pathlib
 rd = pathlib.Path(os.environ["RUN_DIR"])
@@ -96,7 +118,8 @@ before_sha = sha("apply_commit.json", "baseline_sha256")
 after_receipt_sha = sha("apply_commit.json", "after_sha256")
 manifest = {
     "sample": "c1-cjk",
-    "patch_id": "det_c1_cjk",
+    "patch_id": os.environ["PATCH_ID"],
+    "cjk": os.environ["CJK_FLAG"] == "1",
     "status": "prepared",
     "created_utc": os.environ["UTC_START"],
     "prepare_finished_utc": os.environ["UTC_END"],
@@ -105,7 +128,7 @@ manifest = {
     "utmt_cli": os.environ["UTMT_CLI"],
     "baseline": {"md5": "fc049850856dea4ef1427bbf5653fc47",
                  "sha256": os.environ["BASELINE_SHA"]},
-    "defn": {"file": "defn_cjk.yaml", "sha256": defn_sha},
+    "defn": {"file": os.environ["DEFN_BASE"], "sha256": defn_sha},
     "stages": {"prepare": {
         "started_utc": os.environ["UTC_START"],
         "finished_utc": os.environ["UTC_END"],
@@ -117,7 +140,8 @@ manifest = {
         "applied": {"before_sha256": before_sha,
                     "after_sha256": after_receipt_sha,
                     "after_md5": os.environ["AFTER_MD5"]},
-        "apply_receipt": ".deterline/storyline/game.ios/det_c1_cjk/receipt.json",
+        "apply_receipt": ".deterline/storyline/game.ios/"
+                         + os.environ["PATCH_ID"] + "/receipt.json",
     }},
 }
 (rd / "run.json").write_text(

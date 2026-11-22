@@ -18,6 +18,12 @@ CJK 字体栈注入），替代旧单脚本形态 `C1-支线脚本/c1_branch_cjk
 "提示打印完产物即被撤销" 的旧形态问题。每次运行强制全新目录（已存在
 即拒），构建指纹与交接信息在 `run.json`。
 
+**双正例（14 手册 §1）**：`prepare.sh --defn samples/c1-cjk/defn_ascii.yaml`
+= ASCII 腿（patch_id `det_c1_ascii`，typer=5，flag 509 declared-only）——
+`cjk: false` 免字体、免 Pillow/numpy，是资产缺席形态下的最小依赖正例；
+缺省 defn_cjk.yaml = CJK 腿（typer=31，flag 508）。两腿共用同一套
+verify/undo 与 O7 闸门，运行目录互不相干。
+
 ## 前置条件
 
 1. **Python ≥ 3.10**（`X | None` 模块级注解；3.9 导入期即 TypeError）。
@@ -49,6 +55,14 @@ cd <检出根>
 DL_PYTHON=~/.venvs/dl-c1/bin/python samples/c1-cjk/prepare.sh   # 全新运行目录（缺省 /tmp 下，--out 可指定）；缺省探测已得 ≥3.10 且 Pillow/numpy 就绪时可省 DL_PYTHON 前缀（见前置条件 1/2）
 samples/c1-cjk/verify.sh <运行目录>       # 本地沙箱级验收
 samples/c1-cjk/undo.sh  <运行目录>        # 显式撤销回基线
+```
+
+ASCII 正例（裸 ≥3.10 解释器即可，无需 venv 与字体）：
+
+```bash
+python3.11 samples/c1-cjk/prepare.sh --defn samples/c1-cjk/defn_ascii.yaml --out <运行目录>
+samples/c1-cjk/verify.sh <运行目录>
+samples/c1-cjk/undo.sh  <运行目录>
 ```
 
 ## 运行目录布局（交接信息）
