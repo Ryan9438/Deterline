@@ -33,8 +33,8 @@ c1_preflight_core
 DEFN_SRC="$(cd "$(dirname "$DEFN_SRC")" && pwd)/$(basename "$DEFN_SRC")"
 DEFN_BASE="$(basename "$DEFN_SRC")"
 PATCH_ID="$(sed -n 's/^patch_id:[[:space:]]*//p' "$DEFN_SRC" | head -1 | tr -d '[:space:]' | sed 's/^"//; s/"$//')"
-printf '%s' "$PATCH_ID" | grep -Eq '^[a-z0-9][a-z0-9_]{2,63}$' || c1_die \
-  "定义 patch_id 不合引擎规则（^[a-z0-9][a-z0-9_]{2,63}$）: '$PATCH_ID'"
+PATCH_ID="$PATCH_ID" "$PY" -c 'import os,re,sys; sys.exit(0 if re.fullmatch(r"[a-z0-9][a-z0-9_]{2,63}", os.environ["PATCH_ID"]) else 1)' || c1_die \
+  "定义 patch_id 不合引擎规则（正则 [a-z0-9][a-z0-9_]{2,63}，全串匹配）: '$PATCH_ID'"
 if grep -Eq '^cjk:[[:space:]]*(true|True)([[:space:]]|$)' "$DEFN_SRC"; then
   CJK_FLAG=1
   echo "[c1-cjk] 定义: $DEFN_BASE (patch_id=$PATCH_ID, cjk=true → 字体资产闸门)"

@@ -20,10 +20,13 @@ c1_preflight_core
 
 UTC_START="$(c1_now)"
 # patch_id/cjk 从 run.json 取（prepare 已参数化 --defn；cjk 缺省 true 兼容旧运行目录）。
+RUN_DIR="$RUN_DIR" "$PY" -c \
+  'import json,os,sys; d=json.load(open(os.environ["RUN_DIR"]+"/run.json", encoding="utf-8")); sys.exit(0 if isinstance(d, dict) else 1)' \
+  || c1_die "run.json 顶层不是对象（旧/截断格式）"
 PATCH="$(RUN_DIR="$RUN_DIR" "$PY" -c \
   'import json,os; print(json.load(open(os.environ["RUN_DIR"]+"/run.json", encoding="utf-8")).get("patch_id",""))')"
-printf '%s' "$PATCH" | grep -Eq '^[a-z0-9][a-z0-9_]{2,63}$' || c1_die \
-  "run.json patch_id 不合引擎规则（^[a-z0-9][a-z0-9_]{2,63}$）: '$PATCH'"
+PATCH="$PATCH" "$PY" -c 'import os,re,sys; sys.exit(0 if re.fullmatch(r"[a-z0-9][a-z0-9_]{2,63}", os.environ["PATCH"]) else 1)' || c1_die \
+  "run.json patch_id 不合引擎规则（正则 [a-z0-9][a-z0-9_]{2,63}，全串匹配）: '$PATCH'"
 IS_CJK="$(RUN_DIR="$RUN_DIR" "$PY" -c \
   'import json,os; print("1" if json.load(open(os.environ["RUN_DIR"]+"/run.json", encoding="utf-8")).get("cjk", True) else "0")')"
 RECEIPT="$RUN_DIR/.deterline/storyline/game.ios/$PATCH/receipt.json"
