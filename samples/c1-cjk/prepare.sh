@@ -32,10 +32,9 @@ c1_preflight_core
 [ -f "$DEFN_SRC" ] || c1_die "定义文件不存在: $DEFN_SRC"
 DEFN_SRC="$(cd "$(dirname "$DEFN_SRC")" && pwd)/$(basename "$DEFN_SRC")"
 DEFN_BASE="$(basename "$DEFN_SRC")"
-PATCH_ID="$(sed -n 's/^patch_id:[[:space:]]*//p' "$DEFN_SRC" | head -1 | tr -d '[:space:]')"
-case "$PATCH_ID" in
-  ""|*[!A-Za-z0-9_-]*) c1_die "定义 patch_id 缺失或含异常字符: '$PATCH_ID'" ;;
-esac
+PATCH_ID="$(sed -n 's/^patch_id:[[:space:]]*//p' "$DEFN_SRC" | head -1 | tr -d '[:space:]' | sed 's/^"//; s/"$//')"
+printf '%s' "$PATCH_ID" | grep -Eq '^[a-z0-9][a-z0-9_]{2,63}$' || c1_die \
+  "定义 patch_id 不合引擎规则（^[a-z0-9][a-z0-9_]{2,63}$）: '$PATCH_ID'"
 if grep -Eq '^cjk:[[:space:]]*(true|True)([[:space:]]|$)' "$DEFN_SRC"; then
   CJK_FLAG=1
   echo "[c1-cjk] 定义: $DEFN_BASE (patch_id=$PATCH_ID, cjk=true → 字体资产闸门)"
@@ -55,9 +54,10 @@ fi
 mkdir -p "$OUT"
 
 # 失败留痕：半成品目录带 FAILED 标记，交接时可见（不静默）。
+# EXIT trap 覆盖 set -e 中止与 c1_die 的显式 exit 1（旧 ERR trap 漏掉后者）。
 # 注意先捕 rc 再做命令替换——$(c1_now) 会重置 $?。
 RUN_DIR="$OUT"
-trap 'rc=$?; echo "prepare 于 $(c1_now) 失败（rc=${rc}）——现场保留于 ${RUN_DIR}" > "$RUN_DIR/FAILED"' ERR
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "prepare 于 $(c1_now) 失败（rc=${rc}）——现场保留于 ${RUN_DIR}" > "$RUN_DIR/FAILED"; fi' EXIT
 
 cp "$DEFN_SRC" "$RUN_DIR/$DEFN_BASE"
 cp "$C1_REPO_ROOT/game.ios" "$RUN_DIR/game.ios"

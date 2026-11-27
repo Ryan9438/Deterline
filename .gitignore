@@ -18,6 +18,8 @@ __pycache__/
 *.sandbox.json
 
 # Security-scanner hook artifacts (never commit; keeps release_check clean-tree gate usable)
+# 故意不锚定根：hook 会在仓库根与子目录（scripts/ 等）生成；锚定根会让子目录产物打挂干净树闸门。
+# 名称专用于扫描器状态（非源码目录），盲区可接受（R-A P3-1 登记）。
 .mimosa/
 .v2c/
 

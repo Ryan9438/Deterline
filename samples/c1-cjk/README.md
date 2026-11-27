@@ -65,6 +65,9 @@ samples/c1-cjk/verify.sh <运行目录>
 samples/c1-cjk/undo.sh  <运行目录>
 ```
 
+> 运行目录请放在仓库外（缺省 /tmp）；若放在仓库内，`run.json`/`plan.json` 等会成为
+> 未跟踪脏文件并打挂 `release_check` 的干净树闸门。
+
 ## 运行目录布局（交接信息）
 
 ```
@@ -83,7 +86,8 @@ samples/c1-cjk/undo.sh  <运行目录>
 ```
 
 `run.json.status`: `prepared`（已应用，等验收/撤销）→ `undone`（已回基线）。
-prepare 失败会留 `FAILED` 标记，现场不清理。
+prepare 失败会留 `FAILED` 标记，现场不清理（进入运行目录后的失败——含 `c1_die` 主动拒绝——
+都会留；进入运行目录前的参数/依赖拒绝尚无目录可留）。
 
 **undo 是单次语义**：撤销本身会滚动 `.bak`（撤销后 `.bak` = 已应用产物），
 重复运行 undo.sh 会因基线指纹闸门拒绝——这是 fail-closed 设计；要重建

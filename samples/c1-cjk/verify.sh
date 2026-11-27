@@ -47,8 +47,11 @@ if receipt.get("schema") != "deterline.storyline-apply/v1":
 if receipt.get("after_sha256") != current:
     print(f"✗ 指纹链断裂: 回执 after={receipt.get('after_sha256')[:16]}… "
           f"≠ 副本现值 {current[:16]}…"); ok = False
-staged = run["stages"]["prepare"]["applied"]["after_sha256"]
-if staged != current:
+staged = (run.get("stages", {}).get("prepare", {}).get("applied", {})
+          .get("after_sha256"))
+if not staged:
+    print("✗ run.json 缺 stages.prepare.applied.after_sha256（旧/截断格式）"); ok = False
+elif staged != current:
     print(f"✗ run.json 与副本现值不一致: {staged[:16]}… vs {current[:16]}…"); ok = False
 print("✓ 指纹链一致: run.json == apply 回执 == 副本现值" if ok else "", end="\n" if ok else "")
 sys.exit(0 if ok else 1)
@@ -68,7 +71,8 @@ c1_run_cli --action diff-snapshots --file data_win \
 [ "$RC" = "1" ] || c1_die "diff-snapshots rc=${RC}（预期 1）——看 ${RUN_DIR}/verify_diff.txt"
 grep -q -- "--- 资源级差异" "$RUN_DIR/verify_diff.txt" || c1_die \
   "diff 输出缺成功标记（可能工具错误）——看 verify_diff.txt"
-SUMMARY="$(grep -o "共 [0-9]* 处差异" "$RUN_DIR/verify_diff.txt" | grep -o "[0-9]*")"
+SUMMARY="$(grep -o "共 [0-9]* 处差异" "$RUN_DIR/verify_diff.txt" | grep -o "[0-9]*" || true)"
+[ -n "$SUMMARY" ] || c1_die "diff 输出缺「共 N 处差异」汇总行——看 verify_diff.txt"
 [ "$SUMMARY" = "2" ] || c1_die \
   "计入差异 $SUMMARY 处（当前工具链预期恰 2：deterline_state 变量副作用）" \
   "——看 verify_diff.txt，若工具链闸门行为变化请更新本样例"
@@ -88,7 +92,10 @@ import json, os, pathlib
 d = json.loads((pathlib.Path(os.environ["RUN_DIR"]) / "verify_recovery.json")
                .read_text(encoding="utf-8"))
 n = len(d.get("findings", []))
-print(f"  findings: {n}" + ("（期望 0）" if n else " ✓"))
+if n:
+    print(f"✗ findings: {n}（期望 0）——recovery-scan 报告未完结事务/孤儿文件")
+    raise SystemExit(1)
+print("  findings: 0 ✓")
 PYEOF
 
 UTC_END="$(c1_now)"
