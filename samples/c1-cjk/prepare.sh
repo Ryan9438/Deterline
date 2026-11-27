@@ -147,7 +147,6 @@ manifest = {
 (rd / "run.json").write_text(
     json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 PYEOF
-trap - ERR
 
 cat <<EOF
 == [P5] 准备完成——材料就位，等待显式验收/撤销 ==

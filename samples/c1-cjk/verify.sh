@@ -22,9 +22,8 @@ UTC_START="$(c1_now)"
 # patch_id/cjk 从 run.json 取（prepare 已参数化 --defn；cjk 缺省 true 兼容旧运行目录）。
 PATCH="$(RUN_DIR="$RUN_DIR" "$PY" -c \
   'import json,os; print(json.load(open(os.environ["RUN_DIR"]+"/run.json", encoding="utf-8")).get("patch_id",""))')"
-case "$PATCH" in
-  ""|*[!A-Za-z0-9_-]*) c1_die "run.json patch_id 缺失或含异常字符: '$PATCH'" ;;
-esac
+printf '%s' "$PATCH" | grep -Eq '^[a-z0-9][a-z0-9_]{2,63}$' || c1_die \
+  "run.json patch_id 不合引擎规则（^[a-z0-9][a-z0-9_]{2,63}$）: '$PATCH'"
 IS_CJK="$(RUN_DIR="$RUN_DIR" "$PY" -c \
   'import json,os; print("1" if json.load(open(os.environ["RUN_DIR"]+"/run.json", encoding="utf-8")).get("cjk", True) else "0")')"
 RECEIPT="$RUN_DIR/.deterline/storyline/game.ios/$PATCH/receipt.json"
@@ -42,13 +41,23 @@ receipt = json.loads(
 run = json.loads((rd / "run.json").read_text(encoding="utf-8"))
 current = os.environ["CURRENT_SHA"]
 ok = True
+
+
+def _dict(x):
+    return x if isinstance(x, dict) else {}
+
+
+if not isinstance(run, dict):
+    print("✗ run.json 顶层不是对象（旧/截断格式）"); sys.exit(1)
+if not isinstance(receipt, dict):
+    print("✗ apply 回执顶层不是对象（旧/截断格式）"); sys.exit(1)
 if receipt.get("schema") != "deterline.storyline-apply/v1":
     print(f"✗ apply 回执 schema 异常: {receipt.get('schema')}"); ok = False
 if receipt.get("after_sha256") != current:
     print(f"✗ 指纹链断裂: 回执 after={receipt.get('after_sha256')[:16]}… "
           f"≠ 副本现值 {current[:16]}…"); ok = False
-staged = (run.get("stages", {}).get("prepare", {}).get("applied", {})
-          .get("after_sha256"))
+staged = _dict(_dict(_dict(run.get("stages")).get("prepare"))
+               .get("applied")).get("after_sha256")
 if not staged:
     print("✗ run.json 缺 stages.prepare.applied.after_sha256（旧/截断格式）"); ok = False
 elif staged != current:
