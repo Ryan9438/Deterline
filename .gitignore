@@ -17,6 +17,10 @@ __pycache__/
 *.sandbox
 *.sandbox.json
 
+# Security-scanner hook artifacts (never commit; keeps release_check clean-tree gate usable)
+.mimosa/
+.v2c/
+
 # Game data / saves / runtime artifacts (never commit)
 game.ios
 file0
