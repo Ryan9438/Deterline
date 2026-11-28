@@ -163,5 +163,60 @@ class TestStepBlockFlagWrite(unittest.TestCase):
             _build_npc_step_block(1, "k", 0, 0, False, typer=7)
 
 
+class TestStepBlockViewTrack(unittest.TestCase):
+    """包 20 滚屏候选（方向 B）块级形态：捕获位置/跟踪块/默认字节回归。"""
+
+    def test_default_form_unchanged_with_track_off(self):
+        # view_track=False 与既有形态逐字节一致（组合回归钉）
+        block = _build_npc_step_block(113932, "det_x_receiver", 0, 0, False,
+                                      once=False, range_=60, typer=5,
+                                      flag_write_line="global.flag[520] = 4;")
+        self.assertIn(
+            '        instance_create(0, 0, obj_dialoguer);\n'
+            '            global.flag[520] = 4;\n    }', block)
+        self.assertNotIn("deterline_wy", block)
+
+    def test_capture_lines_after_create_before_flag_and_once(self):
+        block = _build_npc_step_block(
+            1, "k", 0, 0, False, once=True, range_=50, typer=5,
+            flag_write_line="global.flag[520] = 4;", view_track=True)
+        self.assertIn("        deterline_wy = OBJ_WRITER.writingy;", block)
+        self.assertIn("        deterline_wy0 = view_yview[view_current];", block)
+        # 次序：创建 → 捕获 → flag 写 → 自毁
+        self.assertLess(block.index("instance_create(0, 0, obj_dialoguer)"),
+                        block.index("deterline_wy = OBJ_WRITER.writingy"))
+        self.assertLess(block.index("deterline_wy0 = view_yview"),
+                        block.index("global.flag[520]"))
+        self.assertLess(block.index("global.flag[520]"),
+                        block.index("instance_destroy();"))
+
+    def test_track_blocks_appended(self):
+        block = _build_npc_step_block(7, "k", 0, 0, False, typer=5,
+                                      view_track=True)
+        # 主块之后两个跟踪块（writer 文字 + choicer 红心）
+        self.assertIn(
+            "if (id == 7 && instance_exists(obj_dialoguer) "
+            "&& instance_exists(OBJ_WRITER))\n{\n"
+            "    OBJ_WRITER.writingy = deterline_wy + "
+            "(view_yview[view_current] - deterline_wy0);\n}", block)
+        self.assertIn(
+            "if (id == 7 && instance_exists(obj_choicer))\n{\n"
+            "    obj_choicer.y = view_yview[view_current] + 55;\n}", block)
+        # 无状态变量条件（矩阵口径：条件只用 id/instance_exists 族）
+        self.assertNotIn("if (deterline_", block)
+        self.assertNotIn("if (global.flag", block)
+
+    def test_choice_block_view_track(self):
+        from deterline.cmds.npc import _build_npc_choice_block
+        block = _build_npc_choice_block(9, "ck", "yk", "nk", 0, 0, range_=60,
+                                        typer=5, view_track=True)
+        self.assertIn("deterline_wy = OBJ_WRITER.writingy;", block)
+        self.assertIn("obj_choicer.y = view_yview[view_current] + 55;", block)
+        # 默认（不传）选择块不含捕获
+        plain = _build_npc_choice_block(9, "ck", "yk", "nk", 0, 0, range_=60,
+                                        typer=5)
+        self.assertNotIn("deterline_wy", plain)
+
+
 if __name__ == "__main__":
     unittest.main()

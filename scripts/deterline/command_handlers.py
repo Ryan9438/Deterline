@@ -28,7 +28,8 @@ def _storyline_build_any(args, parser, target):
     rc = storyline.cmd_storyline_build(
         paths.resolve_game_data_file(args.dir), args.value, args.workspace,
         json_out=args.json,
-        flag_write=bool(getattr(args, "flag_write", False)))
+        flag_write=bool(getattr(args, "flag_write", False)),
+        view_track=bool(getattr(args, "view_track", False)))
     if rc:
         sys.exit(rc)
 

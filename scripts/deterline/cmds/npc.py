@@ -103,10 +103,47 @@ ScriptMessage("NPC_TARGET:RESULT:" + oname + ":" + (native ? "1" : "0") + ":" + 
     return None
 
 
+def _view_track_blocks(instance_id: int) -> str:
+    """包 20 滚屏候选（方向 B）：文字/红心与框同视图参考（逐帧跟踪）。
+
+    形态纪律（2026-11-07 矩阵）：条件只用 id==/instance_exists 族（已验证
+    形态），块内**无状态变量条件**；全部写入无条件。捕获在触发分支内
+    （instance_create 同步完成 → dialoguer+writer 已存在），捕获值 =
+    writer 游戏自身锚（自校准——不假设 writingy 初始化机制，包 19 坐标
+    模型的未闭合项被绕开）。
+
+    - writer 文字：writingy = 捕获锚 + (当前视图 − 捕获时视图)——静态
+      逐字节等价（视图未动 = 加 0），滚动时与框同参考（框 = Draw_0 实时
+      view_xview/yview，dialoguer.Draw_0 L19/41 实证）。
+    - 红心：obj_choicer.y = view + 55——choicer.Create_0 `y = 210+view`
+      且 side==0 分支恒 `y -= 155`（210−155=55；本工具生成恒 side 0，
+      d==0 字节推导），sprite 随实例位置（面板+心整体跟随）。
+
+    scope：单轴纵滚房间（x 不追——房宽=视宽无横滚）；同房多 npc 不可用
+    （捕获归属无法区分——登记限制）；候选形态未经实机复验（待验卡包 20）。
+    """
+    return f'''
+if (id == {instance_id} && instance_exists(obj_dialoguer) && instance_exists(OBJ_WRITER))
+{{
+    OBJ_WRITER.writingy = deterline_wy + (view_yview[view_current] - deterline_wy0);
+}}
+if (id == {instance_id} && instance_exists(obj_choicer))
+{{
+    obj_choicer.y = view_yview[view_current] + 55;
+}}
+'''
+
+
+_VIEW_TRACK_CAPTURE = (
+    "        deterline_wy = OBJ_WRITER.writingy;\n"
+    "        deterline_wy0 = view_yview[view_current];\n")
+
+
 def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: int,
                           native: bool, once: bool = False, range_: int = 50,
                           typer: int = 5,
-                          flag_write_line: str | None = None) -> str:
+                          flag_write_line: str | None = None,
+                          view_track: bool = False) -> str:
     """Build distance-trigger GML for a spawned NPC instance.
 
     typer（R-1215 P1 清偿）：5 = 原版标准（ASCII）；31 = CJK 组合
@@ -118,6 +155,10 @@ def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: i
     （global.msc/typer/msg）同类形态；**条件门控**（读状态决定是否
     create）按 2026-11-07 矩阵必静默失效，故只有无条件形态合法。flag
     写入本身未经实机复验——整块属候选形态，待验卡随构建回执（包 18）。
+
+    view_track（包 20 滚屏候选，默认 False=逐字节既有形态）：触发分支内
+    自校准捕获（deterline_wy/wy0 = 本对象实例变量，须先
+    _ensure_var_initialized 注册）+ 块尾跟踪（_view_track_blocks）。
 
     ⚠️⚠️ 形态约束（2026-11-07 游戏内实测 15 次启动实验矩阵，见 AUDIT_2026-11-07/域F）：
     本环境（UndertaleModCli 0.9.1.2 + Undertale Mac Runner）对附加/替换代码块存在
@@ -145,6 +186,14 @@ def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: i
                 f"flag_write_line 形态不合法: {flag_write_line!r}"
                 "（仅允许 `global.flag[<int>] = <int>;`——包 18 候选）")
         flag_line = f"\n            {flag_write_line}"
+    track_blocks = _view_track_blocks(instance_id) if view_track else ""
+    mid = ""
+    if view_track:
+        mid += "\n" + _VIEW_TRACK_CAPTURE.rstrip("\n")
+    if flag_line:
+        mid += flag_line
+    if once_line:
+        mid += once_line
     if typer not in (5, 31):
         # 与 npc-choice 同款证据级白名单（I1/R-1215 P1：typer5×CJK 渲染
         # 结构性不可用；31 = B4 实证组合）
@@ -161,16 +210,17 @@ def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: i
         global.faceemotion = {emotion};
         global.msg[0] = scr_gettext("{text_key}");
         global.msg[1] = "%%%";
-        instance_create(0, 0, obj_dialoguer);{flag_line}{once_line}
+        instance_create(0, 0, obj_dialoguer);{mid}
     }}
 }}
-'''
+''' + track_blocks
 
 
 def _build_npc_choice_block(instance_id: int, choice_key: str, yes_key: str | None,
                             no_key: str, face: int, emotion: int, range_: int = 50,
                             goto_room: str | None = None, item_id: int | None = None,
-                            repeat: bool = False, typer: int = 5) -> str:
+                            repeat: bool = False, typer: int = 5,
+                            view_track: bool = False) -> str:
     """Build a distance-trigger GML block for a YES/NO choice NPC.
 
     ⚠️⚠️ 形态约束同 _build_npc_step_block（2026-11-07 游戏内实测 15 次启动）：只生成
@@ -208,6 +258,8 @@ def _build_npc_choice_block(instance_id: int, choice_key: str, yes_key: str | No
         yes_lines += "        instance_destroy();\n"
 
     no_destroy = "        instance_destroy();\n" if not repeat else ""
+    track_capture = _VIEW_TRACK_CAPTURE if view_track else ""
+    track_blocks = _view_track_blocks(instance_id) if view_track else ""
     return f'''if (id == {instance_id} && !instance_exists(obj_dialoguer) && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
 {{
     if (distance_to_object(obj_mainchara) < {range_})
@@ -219,7 +271,7 @@ def _build_npc_choice_block(instance_id: int, choice_key: str, yes_key: str | No
         global.msg[0] = scr_gettext("{choice_key}");
         global.msg[1] = "%%%";
         instance_create(0, 0, obj_dialoguer);
-    }}
+{track_capture}    }}
 }}
 if (id == {instance_id} && global.choice != -1)
 {{
@@ -239,7 +291,7 @@ if (id == {instance_id} && global.choice != -1)
         global.msg[1] = "%%%";
 {no_destroy}    }}
 }}
-'''
+''' + track_blocks
 
 
 def _guard_alarm_for_instance(game_file: Path, alarm_code: str, instance_id: int) -> bool:
@@ -586,7 +638,8 @@ ScriptMessage("VERIFY_INSTANCES:bad=" + bad + " zero=" + badZero + " dup=" + bad
 def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: int,
                      text_key: str, text: str, face: int = 0, emotion: int = 0,
                      once: bool = False, range_: int = 50, typer: int = 5,
-                     flag_write_line: str | None = None) -> None:
+                     flag_write_line: str | None = None,
+                     view_track: bool = False) -> None:
     """One-shot safe NPC dialogue setup.
 
     1. Adds the dialogue to textdata_en
@@ -637,9 +690,14 @@ def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: 
 
     print("Step 4/4: 注入触发代码...")
     _ensure_var_initialized(game_file, info["obj"], "deterline_state")
+    if view_track:
+        # 包 20 滚屏候选：捕获/跟踪用本对象实例变量（Create 注册防 NSID=0 族）
+        _ensure_var_initialized(game_file, info["obj"], "deterline_wy")
+        _ensure_var_initialized(game_file, info["obj"], "deterline_wy0")
     block = _build_npc_step_block(new_id, text_key, face, emotion, native,
                                   once=once, range_=range_, typer=typer,
-                                  flag_write_line=flag_write_line)
+                                  flag_write_line=flag_write_line,
+                                  view_track=view_track)
     step_code = info["step_code"]
     if step_code:
         code._append_to_code(game_file, step_code, block)
@@ -663,7 +721,8 @@ def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: in
                    no_key: str | None = None, no_text: str | None = None,
                    face: int = 0, emotion: int = 0, range_: int = 50,
                    goto_room: str | None = None, item_id: int | None = None,
-                   repeat: bool = False, typer: int = 5) -> None:
+                   repeat: bool = False, typer: int = 5,
+                   view_track: bool = False) -> None:
     """One-shot safe NPC dialogue with a YES/NO choice (`\\C` box).
 
     Uses the in-game-verified flat trigger shape (v2.3.0, 2026-11-07 audit):
@@ -758,10 +817,14 @@ def cmd_npc_choice(game_file: Path, room_name: str, obj_name: str, x: int, y: in
 
     print("Step 4/5: 注入选择触发块（已验证扁平形态）...")
     _ensure_var_initialized(game_file, info["obj"], "deterline_state")  # 保留兼容，非触发依赖
+    if view_track:
+        # 包 20 滚屏候选：捕获/跟踪用本对象实例变量（Create 注册防 NSID=0 族）
+        _ensure_var_initialized(game_file, info["obj"], "deterline_wy")
+        _ensure_var_initialized(game_file, info["obj"], "deterline_wy0")
     block = _build_npc_choice_block(
         new_id, choice_key, yes_key, no_key, face, emotion,
         range_=range_, goto_room=goto_gml, item_id=item_id, repeat=repeat,
-        typer=typer,
+        typer=typer, view_track=view_track,
     )
     step_code = info["step_code"]
     if step_code:

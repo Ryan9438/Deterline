@@ -189,6 +189,10 @@ def main():
                         help="storyline-build: 接运行时旗标载体写入（包 18 候选，"
                              "默认禁用；talk npc 触发写 flag_id 槽——不入存档，"
                              "待实机复验）")
+    parser.add_argument("--view-track", dest="view_track", action="store_true",
+                        help="storyline-build: 滚屏候选方向 B（包 20 候选，默认禁用；"
+                             "文字/红心与框同视图参考——自校准捕获+逐帧跟踪；"
+                             "单轴纵滚房间/同房单 npc 限定，待实机复验）")
     parser.add_argument("--frame", type=int, default=None,
                         help="帧索引 (export-sprite/replace-sprite 用, 默认: replace 全部帧的 0 / export 全部帧到目录; "
                              "export 时 --value 以 .png 结尾则默认单帧导出到该文件)")

@@ -12,8 +12,8 @@ usage: modify_save.py [-h]
                       [--yes-text-key YES_TEXT_KEY] [--yes-text YES_TEXT]
                       [--no-text-key NO_TEXT_KEY] [--no-text NO_TEXT]
                       [--goto GOTO] [--item ITEM] [--range RANGE] [--repeat]
-                      [--flag-write] [--frame FRAME] [--show-diff] [--json]
-                      [--direction {rollback,complete}]
+                      [--flag-write] [--view-track] [--frame FRAME]
+                      [--show-diff] [--json] [--direction {rollback,complete}]
                       [--keep-archives KEEP_ARCHIVES] [--hue-from HUE_FROM]
                       [--hue-to HUE_TO] [--workspace WORKSPACE] [--sandbox]
                       [--commit] [--no-steam-sync] [--allow-cjk] [--asm]
@@ -86,6 +86,9 @@ options:
   --repeat              可重复触发（走开再靠近可再触发；npc-choice 用，默认单次）
   --flag-write          storyline-build: 接运行时旗标载体写入（包 18 候选，默认禁用；talk npc 触发写
                         flag_id 槽——不入存档，待实机复验）
+  --view-track          storyline-build: 滚屏候选方向 B（包 20
+                        候选，默认禁用；文字/红心与框同视图参考——自校准捕获+逐帧跟踪；单轴纵滚房间/同房单 npc
+                        限定，待实机复验）
   --frame FRAME         帧索引 (export-sprite/replace-sprite 用, 默认: replace 全部帧的
                         0 / export 全部帧到目录; export 时 --value 以 .png
                         结尾则默认单帧导出到该文件)

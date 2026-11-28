@@ -435,7 +435,8 @@ def resolve_flag_writes(defn: dict) -> list[dict]:
 
 
 def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
-              base_sha: str, json_out: bool, flag_write: bool = False) -> int:
+              base_sha: str, json_out: bool, flag_write: bool = False,
+              view_track: bool = False) -> int:
     """包 12–15：v2 构建链——按 op 序接领域生成器进有名工作区。
 
     - npc op → cmd_npc_choice（含 \\C）/ cmd_npc_dialogue（纯对话），
@@ -501,7 +502,7 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                                 face=0, emotion=0,
                                 range_=spec.get("range", 60),
                                 repeat=not spec.get("once", True),
-                                typer=typer)
+                                typer=typer, view_track=view_track)
                             keys = [f"det_{defn['patch_id']}_{op['ref']}_choice",
                                     f"det_{defn['patch_id']}_{op['ref']}_yes",
                                     f"det_{defn['patch_id']}_{op['ref']}_no"]
@@ -515,7 +516,8 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                                 range_=spec.get("range", 60),
                                 once=spec.get("once", True),
                                 typer=typer,
-                                flag_write_line=(fw["line"] if fw else None))
+                                flag_write_line=(fw["line"] if fw else None),
+                                view_track=view_track)
                             keys = [f"det_{defn['patch_id']}_{op['ref']}"]
                         op_evidence.append({"op": "npc", "ref": op["ref"],
                                             "room": room_name,
@@ -616,7 +618,16 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                               "无条件写（2026-11-07 矩阵口径）；选择答案分派"
                               "在 dialoguer 内部不可接线（登记）；候选形态"
                               "待实机复验——待验卡见 16 实录包 18",
-            }} if flag_write else {})}
+            }} if flag_write else {}),
+            **({"view_track": {
+                "enabled": True,
+                "ops": [o["ref"] for o in plan["ops"] if o["op"] == "npc"],
+                "scope_note": "滚屏候选方向 B（文字/红心与框同视图参考）：触发时"
+                              "自校准捕获（deterline_wy/wy0）+ 逐帧跟踪；红心 = "
+                              "view+55（choicer.Create_0 210−155 字节推导）；"
+                              "单轴纵滚房间、同房单 npc 限定；候选形态待实机"
+                              "复验——待验卡见 16 实录包 19/20",
+            }} if view_track else {})}
         transactions._write_json_atomic(  # noqa: SLF001 原子写复用
             _pkg().receipt_path(game_file, defn["patch_id"]).with_name(
                 "build.json"),
@@ -630,6 +641,10 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
             if flag_write:
                 print(f"  flag 接线（候选，默认禁用）: flag[{defn.get('flag_id')}] "
                       f"{len(flag_writes)} 处 talk 触发写入——待实机复验")
+            if view_track:
+                print("  滚屏候选（--view-track）: 文字/红心与框同视图参考"
+                      "（自校准捕获+逐帧跟踪）——单轴纵滚/同房单 npc 限定，"
+                      "待实机复验")
             print(f"  声明差异: {cats}")
             for d in receipt["diagnostics"]:
                 print(f"  ℹ️  {d}")
@@ -647,7 +662,8 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
 
 def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
                         json_out: bool = False,
-                        flag_write: bool = False) -> int:
+                        flag_write: bool = False,
+                        view_track: bool = False) -> int:
     """构建：plan → 工作区构建 → O7 差异核验 → 构建回执（仅写工作区）。
     `--preview` 不支持——构建即写工作区（EditPlan 预览不落盘会使产物
     缺失，语义冲突，R13 P3）。
@@ -672,7 +688,8 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
             # 包 12–15：v2 构建链（op 序 npc/door → 工作区；闸门不变量口径）
             # 包 18：flag_write=True 时接运行时载体写入（候选，默认禁用）
             return _build_v2(defn, plan, game_file, workspace, base_sha,
-                             json_out, flag_write=flag_write)
+                             json_out, flag_write=flag_write,
+                             view_track=view_track)
         # 域生成器构建（写入有名工作区，不触原文件）——自管 game_edit 上下文：
         # 批量提交在上下文**退出**时落盘（data_win 包装内读产物 = 基线副本，
         # C4 CLI 实测教训），指纹/O7 比对必须在其后
