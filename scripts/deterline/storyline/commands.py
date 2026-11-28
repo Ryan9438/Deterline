@@ -370,8 +370,72 @@ def _run_cjk_font_pipeline(game_file: Path, chars: list) -> None:
                 "工作区不产出候选")
 
 
+def resolve_flag_writes(defn: dict) -> list[dict]:
+    """包 18：解析 --flag-write 接线点（纯函数，fail-closed）。
+
+    载体 = 定义声明的 flag_id（会话级运行时旗标——包 17 普查：本基线
+    无净空持久旗标槽，存档持久接线拒绝；运行时空带 513-999）。
+    写入点 = talk npc 触发（对话框创建后无条件写——2026-11-07 矩阵：
+    条件门控必失效，只生成无条件形态）；选择 npc 的答案分派在
+    obj_dialoguer 内部，触发点写不出答案条件值——带 code enter 的选择
+    npc 整体拒绝（登记限制）。返回 [{"npc","state","code","line"}]。
+    """
+    st = defn.get("states")
+    if not st:
+        raise _pkg().StorylineError(
+            "--flag-write 需要定义声明 states 块（无可接线写入点）")
+    fid = defn.get("flag_id")
+    if not fid:
+        raise _pkg().StorylineError(
+            "--flag-write 需要定义声明 flag_id（运行时载体槽）")
+    from . import projection
+    occ = projection.check_flag_occupancy(fid)
+    if occ:
+        raise _pkg().StorylineError(
+            f"--flag-write 拒绝：flag {fid} 被游戏代码占用 {occ[:4]}"
+            "（占用普查，包 17）——接线前请换旗标")
+    if st["persistence"] == "flag":
+        raise _pkg().StorylineError(
+            "--flag-write 拒绝 persistence=flag：本基线持久区 500-511 "
+            "全被游戏代码占用（包 17 普查）——无净空持久槽，存档持久"
+            "接线不可交付；运行时载体仅支持 persistence=session")
+    smap = st["map"]
+    per_npc: dict[str, list[tuple[str, int]]] = {}
+    for sid in sorted(smap):
+        ent = smap[sid].get("enter")
+        if ent and "code" in smap[sid]:
+            per_npc.setdefault(ent["npc"], []).append((sid, smap[sid]["code"]))
+    writes: list[dict] = []
+    refused: list[str] = []
+    for oid, spec in sorted((defn.get("npcs") or {}).items()):
+        coded = per_npc.get(oid) or []
+        if not coded:
+            continue
+        if "\\C" in spec["prompt"]:
+            refused.append(f"npcs.{oid}（states.{sorted(s for s, _ in coded)}）")
+            continue
+        if len(coded) > 1:
+            raise _pkg().StorylineError(
+                f"--flag-write 拒绝：npcs.{oid} 有多个 code enter "
+                f"{sorted(s for s, _ in coded)}——触发点无法按当前态分派"
+                "（产物无状态读取），编码歧义拒绝")
+        sid, code_val = coded[0]
+        writes.append({"npc": oid, "state": sid, "code": code_val,
+                       "line": f"global.flag[{fid}] = {code_val};"})
+    if refused:
+        raise _pkg().StorylineError(
+            "--flag-write 拒绝：选择 npc 的 code enter 不可接线（答案分派"
+            f"在 obj_dialoguer 内部——触发点写不出答案条件值）: "
+            + ", ".join(refused))
+    if not writes:
+        raise _pkg().StorylineError(
+            "--flag-write 无可接线写入点（没有带 code 的 talk npc enter）"
+            "——为 talk npc 的状态声明 code 或移除 --flag-write")
+    return writes
+
+
 def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
-              base_sha: str, json_out: bool) -> int:
+              base_sha: str, json_out: bool, flag_write: bool = False) -> int:
     """包 12–15：v2 构建链——按 op 序接领域生成器进有名工作区。
 
     - npc op → cmd_npc_choice（含 \\C）/ cmd_npc_dialogue（纯对话），
@@ -403,6 +467,8 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
         state.WORKSPACE = workspace
         state.SANDBOX_ACTIVE = True
         op_evidence: list[dict] = []
+        flag_writes = resolve_flag_writes(defn) if flag_write else None
+        write_by_npc = {w["npc"]: w for w in (flag_writes or [])}
         try:
             with utmt.game_edit("storyline-build-v2", read_workspace=False):
                 if defn.get("cjk"):
@@ -440,6 +506,7 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                                     f"det_{defn['patch_id']}_{op['ref']}_yes",
                                     f"det_{defn['patch_id']}_{op['ref']}_no"]
                         else:
+                            fw = write_by_npc.get(op["ref"])
                             npc_mod.cmd_npc_dialogue(
                                 game_file, room_name, spec["object"],
                                 spec["x"], spec["y"],
@@ -447,13 +514,16 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                                 spec["prompt"], face=0, emotion=0,
                                 range_=spec.get("range", 60),
                                 once=spec.get("once", True),
-                                typer=typer)
+                                typer=typer,
+                                flag_write_line=(fw["line"] if fw else None))
                             keys = [f"det_{defn['patch_id']}_{op['ref']}"]
                         op_evidence.append({"op": "npc", "ref": op["ref"],
                                             "room": room_name,
                                             "object": n["object"],
                                             "text_keys": keys,
-                                            "typer": typer})
+                                            "typer": typer,
+                                            **({"flag_write": write_by_npc[op["ref"]]}
+                                               if op["ref"] in write_by_npc else {})})
                     else:
                         d = op["door"]
                         if op["op"] not in ("npc", "door"):
@@ -537,7 +607,16 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                           if defn.get("cjk") else []),
             "flag": plan["flag"],
             "diagnostics": plan["diagnostics"],
-        }
+            **({"flag_writes": {
+                "enabled": True,
+                "carrier": defn.get("flag_id"),
+                "persistence": defn["states"]["persistence"],
+                "ops": flag_writes,
+                "scope_note": "会话级运行时载体（不入存档）；仅 talk npc "
+                              "无条件写（2026-11-07 矩阵口径）；选择答案分派"
+                              "在 dialoguer 内部不可接线（登记）；候选形态"
+                              "待实机复验——待验卡见 16 实录包 18",
+            }} if flag_write else {})}
         transactions._write_json_atomic(  # noqa: SLF001 原子写复用
             _pkg().receipt_path(game_file, defn["patch_id"]).with_name(
                 "build.json"),
@@ -548,6 +627,9 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
             print(f"--- storyline-build v2（{receipt['patch_id']}）候选就绪 ---")
             print(f"  工作区: {workspace}  产物 sha256 {product_sha[:16]}…")
             print(f"  op 证据: {len(op_evidence)} 项（npc {sum(1 for o in op_evidence if o['op'] == 'npc')} / door {sum(1 for o in op_evidence if o['op'] == 'door')}）")
+            if flag_write:
+                print(f"  flag 接线（候选，默认禁用）: flag[{defn.get('flag_id')}] "
+                      f"{len(flag_writes)} 处 talk 触发写入——待实机复验")
             print(f"  声明差异: {cats}")
             for d in receipt["diagnostics"]:
                 print(f"  ℹ️  {d}")
@@ -564,10 +646,14 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
 
 
 def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
-                        json_out: bool = False) -> int:
+                        json_out: bool = False,
+                        flag_write: bool = False) -> int:
     """构建：plan → 工作区构建 → O7 差异核验 → 构建回执（仅写工作区）。
     `--preview` 不支持——构建即写工作区（EditPlan 预览不落盘会使产物
-    缺失，语义冲突，R13 P3）。"""
+    缺失，语义冲突，R13 P3）。
+    flag_write（包 18 候选，默认 False=产物与无接线构建逐字节一致）：
+    开启后 talk npc 状态写入 flag_id 运行时载体——resolve_flag_writes
+    fail-closed 前置（占用/持久化/选择 npc/多 code enter 拒绝）。"""
     defn = None
     try:
         from .. import state
@@ -584,8 +670,9 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
             raise errors.NotFoundError(f"基线文件不存在: {game_file}")
         if defn.get("_version") == "v2":
             # 包 12–15：v2 构建链（op 序 npc/door → 工作区；闸门不变量口径）
+            # 包 18：flag_write=True 时接运行时载体写入（候选，默认禁用）
             return _build_v2(defn, plan, game_file, workspace, base_sha,
-                             json_out)
+                             json_out, flag_write=flag_write)
         # 域生成器构建（写入有名工作区，不触原文件）——自管 game_edit 上下文：
         # 批量提交在上下文**退出**时落盘（data_win 包装内读产物 = 基线副本，
         # C4 CLI 实测教训），指纹/O7 比对必须在其后

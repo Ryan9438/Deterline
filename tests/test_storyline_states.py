@@ -273,7 +273,8 @@ class TestStatesContract(unittest.TestCase):
         text = FLAG_V2.replace("flag_id: 511\n", "")
         with self.assertRaises(StorylineError) as cm:
             _defn(text)
-        self.assertIn("需要 flag_id", str(cm.exception))
+        # FLAG_V2 全状态带 code → 统一 code 检查先行（同槽位缺口）
+        self.assertIn("需要顶层 flag_id", str(cm.exception))
 
     def test_flag_persistence_requires_persisted_range(self):
         # 包 17：flag≥512 不入存档（scr_saveprocess 上界）——持久化承诺
@@ -297,15 +298,35 @@ class TestStatesContract(unittest.TestCase):
             _defn(text)
         self.assertIn("code 重复", str(cm.exception))
 
-    def test_code_range_and_session_reject(self):
+    def test_code_range_and_session_rules(self):
         bad_range = FLAG_V2.replace("    code: 3\n", "    code: 1000\n")
         with self.assertRaises(StorylineError) as cm:
             _defn(bad_range)
         self.assertIn("0-999", str(cm.exception))
+        # 包 18：session+code 需要顶层 flag_id（载体槽）；MAIN_V2 无 flag_id
         with self.assertRaises(StorylineError) as cm:
             _defn(MAIN_V2.replace("    require: carrying",
                                   "    require: carrying\n    code: 1"))
-        self.assertIn("persistence=session 不得声明 code", str(cm.exception))
+        self.assertIn("需要顶层 flag_id", str(cm.exception))
+
+    def test_session_partial_codes_valid_with_flag(self):
+        # 包 18：session + flag_id + 局部 code = 运行时载体编码（合法）
+        text = MAIN_V2.replace(
+            "patch_id: det_t1", "patch_id: det_t1\nflag_id: 520").replace(
+            "    require: carrying", "    require: carrying\n    code: 4")
+        st = _defn(text)["states"]
+        self.assertEqual(st["map"]["delivered"]["code"], 4)
+        self.assertEqual(st["persistence"], "session")
+
+    def test_session_duplicate_codes_rejected(self):
+        text = MAIN_V2.replace(
+            "patch_id: det_t1", "patch_id: det_t1\nflag_id: 520").replace(
+            "    require: carrying", "    require: carrying\n    code: 4").replace(
+            "      answer: yes\n    require: not_started\n",
+            "      answer: yes\n    require: not_started\n    code: 4\n", 1)
+        with self.assertRaises(StorylineError) as cm:
+            _defn(text)
+        self.assertIn("code 重复", str(cm.exception))
 
     def test_flag_machine_parses(self):
         st = _defn(FLAG_V2)["states"]
@@ -518,6 +539,18 @@ class TestStatesPlanIntegration(unittest.TestCase):
         enc = plan["states"]["flag_encoding"]
         self.assertEqual(enc["flag_id"], 511)
         self.assertEqual(enc["codes"]["delivered"], 4)
+        self.assertEqual(enc["scope"], "save（包 17 投影）")
+
+    def test_states_flag_encoding_runtime_scope_session(self):
+        # 包 18：session + 局部 code → flag_encoding 标 runtime-carrier
+        text = MAIN_V2.replace(
+            "patch_id: det_t1", "patch_id: det_t1\nflag_id: 520").replace(
+            "    require: carrying", "    require: carrying\n    code: 4")
+        plan = self._plan(text)
+        enc = plan["states"]["flag_encoding"]
+        self.assertEqual(enc["flag_id"], 520)
+        self.assertEqual(enc["codes"], {"delivered": 4})
+        self.assertIn("runtime-carrier", enc["scope"])
 
     def test_unreachable_state_diagnosed(self):
         # accepted 的守卫指向 delivered（delivered 又依赖 carrying→accepted

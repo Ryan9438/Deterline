@@ -185,6 +185,10 @@ def main():
                         help="触发距离像素 (npc-dialogue/npc-choice 用, 默认: 50)")
     parser.add_argument("--repeat", action="store_true",
                         help="可重复触发（走开再靠近可再触发；npc-choice 用，默认单次）")
+    parser.add_argument("--flag-write", dest="flag_write", action="store_true",
+                        help="storyline-build: 接运行时旗标载体写入（包 18 候选，"
+                             "默认禁用；talk npc 触发写 flag_id 槽——不入存档，"
+                             "待实机复验）")
     parser.add_argument("--frame", type=int, default=None,
                         help="帧索引 (export-sprite/replace-sprite 用, 默认: replace 全部帧的 0 / export 全部帧到目录; "
                              "export 时 --value 以 .png 结尾则默认单帧导出到该文件)")

@@ -311,7 +311,7 @@ python run.py --action quest-init
 | `experiment-list` | 列出全部实验快照 | static |
 | `experiment-restore --value "test1"` | 从命名快照恢复（⚠️ 覆盖 game.ios + file0） | static |
 | `storyline-plan --value storyline.yaml --dir /path/game.ios --json` | 支线编排·只读计划（12 §C2）：解析版本化 YAML 定义（deterline.storyline/v1，严格封闭字段集/重复键拒绝/ASCII 合同）→ 房间/对象/goto 预解析 + 期望资源集 + flag 独占区冲突诊断——错房/歧义/冲突/缺字在写目标前拒绝；--json 输出 deterline.storyline-plan/v1；零写盘 | sandbox |
-| `storyline-build --value storyline.yaml --workspace det_demo --dir /path/game.ios` | 支线编排·工作区构建（12 §C3）：plan → 有名工作区构建（域生成器 npc-choice）→ 基线 vs 产物 O7 结构化差异 → 与计划期望资源集比对（未声明变更拒绝出候选）→ 构建回执（fingerprint/声明差异）；构建期间仅写工作区 | sandbox |
+| `storyline-build --value storyline.yaml --workspace det_demo --dir /path/game.ios [--flag-write]` | 支线编排·工作区构建（12 §C3）：plan → 有名工作区构建（域生成器 npc-choice）→ 基线 vs 产物 O7 结构化差异 → 与计划期望资源集比对（未声明变更拒绝出候选）→ 构建回执（fingerprint/声明差异）；构建期间仅写工作区。--flag-write（包 18 候选，默认禁用）接运行时旗标载体写入：talk npc 触发无条件写 flag_id 槽（不入存档；占用/持久化/选择 npc/多 code enter fail-closed 拒绝；待实机复验） | sandbox |
 | `storyline-apply --value storyline.yaml --workspace det_demo --dir /path/game.ios --commit` | 支线编排·整包应用（12 §C4）：构建回执核对 → 幂等（同 ID 同内容且目标==after → 已应用 no-op）/ 同 ID 不同内容或目标漂移拒绝 → EditPlan 事务层整包应用 → 回执落盘 .deterline/storyline/<patch_id>/receipt.json；中断交给恢复分类（journal 复用方案 A） | sandbox |
 
 > ⚠️ `verify-code`: V1 收窄版；注入实验后必跑，能区分活/死代码形态的指纹差异
@@ -328,6 +328,7 @@ python run.py --action quest-init
 > ⚠️ `storyline-build`: 需要 --workspace（构建工作区名）；产物 = .deterline/<file>/<ws>/<file>
 > ⚠️ `storyline-build`: O7 差异类别超出计划声明（STR add/CODEF/INST add）→ 拒绝（deterline.storyline-build/v1）
 > ⚠️ `storyline-build`: 中断不触原文件——失败只留可识别临时材料
+> ⚠️ `storyline-build`: --flag-write 产物形态未经实机复验（候选）；不带它时产物与既有构建逐字节一致
 > ⚠️ `storyline-apply`: 默认预览零动作；--commit 执行（含目标备份 undo --file data_win --value data_win）
 > ⚠️ `storyline-apply`: 幂等/漂移/同 ID 异内容三种出口全在写前裁决；证据等级 sandbox（B5/R2 实机证据待窗口）
 > ⚠️ `storyline-apply`: 回执含 before/after sha256 + undo 指引；重复执行同定义 = 已应用 no-op

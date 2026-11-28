@@ -102,3 +102,4 @@ states:
     enter:
       npc: receiver
     require: carrying
+    code: 4   # 包 18 候选：--flag-write 时运行时载体写入值（flag 520）

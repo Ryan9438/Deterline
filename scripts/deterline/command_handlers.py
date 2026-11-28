@@ -27,7 +27,8 @@ def _storyline_build_any(args, parser, target):
         parser.error("storyline-build 需要 --workspace (构建工作区名)")
     rc = storyline.cmd_storyline_build(
         paths.resolve_game_data_file(args.dir), args.value, args.workspace,
-        json_out=args.json)
+        json_out=args.json,
+        flag_write=bool(getattr(args, "flag_write", False)))
     if rc:
         sys.exit(rc)
 

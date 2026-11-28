@@ -12,7 +12,7 @@ usage: modify_save.py [-h]
                       [--yes-text-key YES_TEXT_KEY] [--yes-text YES_TEXT]
                       [--no-text-key NO_TEXT_KEY] [--no-text NO_TEXT]
                       [--goto GOTO] [--item ITEM] [--range RANGE] [--repeat]
-                      [--frame FRAME] [--show-diff] [--json]
+                      [--flag-write] [--frame FRAME] [--show-diff] [--json]
                       [--direction {rollback,complete}]
                       [--keep-archives KEEP_ARCHIVES] [--hue-from HUE_FROM]
                       [--hue-to HUE_TO] [--workspace WORKSPACE] [--sandbox]
@@ -84,6 +84,8 @@ options:
   --item ITEM           YES 分支奖励物品 ID (npc-choice 用, 0-65)
   --range RANGE         触发距离像素 (npc-dialogue/npc-choice 用, 默认: 50)
   --repeat              可重复触发（走开再靠近可再触发；npc-choice 用，默认单次）
+  --flag-write          storyline-build: 接运行时旗标载体写入（包 18 候选，默认禁用；talk npc 触发写
+                        flag_id 槽——不入存档，待实机复验）
   --frame FRAME         帧索引 (export-sprite/replace-sprite 用, 默认: replace 全部帧的
                         0 / export 全部帧到目录; export 时 --value 以 .png
                         结尾则默认单帧导出到该文件)

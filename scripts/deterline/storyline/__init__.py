@@ -316,8 +316,9 @@ def _validate_states(doc: dict, npcs: dict) -> dict:
     - require 与 enter 同现，引用已声明状态且不得自指；同一触发键
       (npc, answer) 被多状态声明时必须全部带互异 require（静态歧义拒绝，
       运行期按当前态路由——否则重排会改变分派结果）。
-    - code（旗标值编码）仅在 persistence=flag 下合法、全覆盖且唯一；
-      session 态无存档投影，声明 code 拒绝。
+    - code（旗标编码 0-999）须随顶层 flag_id 声明且互异：persistence=flag
+      下 = 存档投影编码（全覆盖）；session 下 = 运行时载体编码（包 18
+      候选接线，默认禁用；不入存档）。
     - 映射声明序不进语义（canonical 按 id 排序入指纹——重排不变指纹，
       R-0610 P2-1 同口径）。
     """
@@ -442,6 +443,21 @@ def _validate_states(doc: dict, npcs: dict) -> dict:
                     f"states: 触发键 npc={key[0]!r} answer={key[1]!r} 的"
                     f"守卫相撞（{sorted(sids)} require={requires}）——"
                     "同触发键的多状态分派要求 require 互异")
+    # code 通用规则（包 18 修订）：任一持久形态均可声明——persistence=flag
+    # 下为存档投影编码（全覆盖）；session 下为运行时载体编码（触发写
+    # flag_id 槽，不入存档——候选接线默认禁用）。都要求 flag_id 声明 +
+    # 编码互异（回读歧义拒绝）。
+    coded = [s for s in ids if "code" in state_map[s]]
+    if coded and not doc.get("flag_id"):
+        raise StorylineError(
+            f"states 声明 code 需要顶层 flag_id（{sorted(coded)}）——"
+            "code 是旗标编码（存档投影/运行时载体），无槽 = 死声明")
+    if len(coded) > 1:
+        codes = [state_map[s]["code"] for s in coded]
+        if len(set(codes)) != len(codes):
+            dup = sorted({c for c in codes if codes.count(c) > 1})
+            raise StorylineError(
+                f"states code 重复: {dup}——编码必须唯一（回读歧义拒绝）")
     if persistence == "flag":
         fid = doc.get("flag_id")
         if not fid:
@@ -460,17 +476,6 @@ def _validate_states(doc: dict, npcs: dict) -> dict:
             raise StorylineError(
                 f"persistence=flag 要求每个状态声明 code（缺失: {missing}）"
                 "——旗标编码必须全覆盖才能投影/回读")
-        codes = [state_map[s]["code"] for s in ids]
-        if len(set(codes)) != len(codes):
-            dup = sorted({c for c in codes if codes.count(c) > 1})
-            raise StorylineError(
-                f"states code 重复: {dup}——旗标编码必须唯一（回读歧义拒绝）")
-    else:
-        coded = sorted(s for s in ids if "code" in state_map[s])
-        if coded:
-            raise StorylineError(
-                f"persistence=session 不得声明 code（{coded}）——session 态"
-                "无存档投影；持久化请改 persistence: flag 并声明 flag_id")
     return {"persistence": persistence, "initial": initial, "map": state_map}
 
 
@@ -911,10 +916,13 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
         plan["states"] = {"persistence": states_def["persistence"],
                           "initial": states_def["initial"],
                           "declared": declared}
-        if states_def["persistence"] == "flag":
+        if any("code" in smap[s] for s in smap):
             plan["states"]["flag_encoding"] = {
                 "flag_id": defn.get("flag_id"),
-                "codes": {sid: smap[sid]["code"] for sid in sorted(smap)}}
+                "codes": {sid: smap[sid]["code"] for sid in sorted(smap)
+                          if "code" in smap[sid]},
+                "scope": ("save（包 17 投影）" if states_def["persistence"] == "flag"
+                          else "runtime-carrier（包 18 候选，默认禁用；不入存档）")}
     # 图诊断（包 09）：从首 npc 房间做可达性遍历（栈式 DFS——queue.pop()；
     # R-0610 P3-1 订正命名）；不可达/死路为诊断（非硬错误）
     diag: list[str] = []
