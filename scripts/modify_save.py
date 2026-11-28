@@ -120,7 +120,8 @@ from deterline.storyline.commands import (cmd_storyline_apply,  # noqa: E402,F40
                                           cmd_storyline_plan,
                                           cmd_storyline_undo,
                                           cmd_storyline_compose,
-                                          cmd_storyline_pack)
+                                          cmd_storyline_pack,
+                                          cmd_storyline_start)
 from deterline.cli import main  # noqa: E402
 
 if __name__ == "__main__":

@@ -901,6 +901,17 @@
         "不可合并的组合生成即拒绝（冲突表随错误 JSON 返回）",
         "重建验收 = 解包文字写回 YAML → storyline-compose 重算语义指纹/defn_sha 与包内 expected 一致"
       ]
+    },
+    {
+      "action": "storyline-start",
+      "group": "safety",
+      "verify": "sandbox",
+      "summary": "支线编排·作者起步路由（16 号计划包 31，只读）：环境诊断（python/dotnet/UTMT_CLI/CJK 依赖/样例路径/基线定位）+ 一条链路由（复制样例→改定义→计划→构建→应用→撤销/组合预览）；fatal 项缺失可行动提示且 ASCII 精简路径仍给出",
+      "example": "storyline-start --dir /path/game.ios --json",
+      "notes": [
+        "CJK 依赖缺失仅提示（ASCII 样例可起步），不阻断",
+        "JSON schema deterline.storyline-start/v1（checks/route/ready/next）"
+      ]
     }
   ]
 }

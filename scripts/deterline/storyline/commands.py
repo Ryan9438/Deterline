@@ -24,6 +24,11 @@ from pathlib import Path
 from .. import errors, transactions
 
 
+# 包 31：起步样例目录（仓库根解析单点；扫描登记见 tests/test_o2_step0.py）
+_SAMPLES_DIR = (Path(__file__).resolve().parents[3] / "samples" / "zhi_x"
+                )  # storyline 起步样例（samples/zhi_x 包根解析）
+
+
 def _pkg():
     """运行时取本包模块（跨模块引用一律运行时属性查找——包纪律）。
     commands 由 __init__ 导入，此处 _sys.modules[__package__] 在运行期
@@ -42,6 +47,86 @@ def _load_composed(defn_path: str, value2: str) -> tuple[dict, dict, dict]:
     comp["_sha256"] = _pkg().hashlib.sha256(
         f"compose:{a['_sha256']}:{b['_sha256']}".encode()).hexdigest()
     return comp, a, b
+
+
+def cmd_storyline_start(dir_override: str | None = None,
+                        json_out: bool = False) -> int:
+    """包 31：作者起步路由（只读）——环境诊断 + 样例/基线定位 + 一条链。
+
+    fatal 检查项（python>=3.13 / UTMT_CLI / 样例路径）缺失时返回 1 并给
+    actionable 提示；CJK 依赖缺失仅提示 ASCII 精简路径（不阻断）。
+    """
+    import shutil as _shutil
+    import sys as _sys
+    checks: list[dict] = []
+
+    def add(label: str, ok: bool, detail: str = "", fatal: bool = False):
+        checks.append({"label": label, "ok": ok,
+                       "detail": detail, "fatal": fatal})
+
+    add("python >= 3.13", _sys.version_info >= (3, 13),
+        _sys.version.split()[0], fatal=True)
+    add("dotnet", _shutil.which("dotnet") is not None, fatal=False)
+    from .. import utmt as _utmt
+    try:
+        add("UTMT_CLI", True, _utmt._find_utmt_cli(), fatal=True)
+    except Exception as exc:  # FileNotFoundError 等
+        add("UTMT_CLI", False, str(exc), fatal=True)
+    try:
+        import PIL  # noqa: F401
+        import numpy  # noqa: F401
+        cjk_ok = True
+    except ImportError:
+        cjk_ok = False
+    add("CJK 依赖（Pillow+numpy；仅 cjk 构建需要）", cjk_ok,
+        "缺失时可用 ASCII 样例（cjk: false）起步", fatal=False)
+    samples = _SAMPLES_DIR
+    add("样例定义 samples/zhi_x/",
+        (samples / "defn_v2_main.yaml").is_file(), str(samples), fatal=True)
+    try:
+        from .. import paths as _paths
+        game_file = _paths.find_game_data_file(dir_override)
+        add("基线游戏文件", True, str(game_file), fatal=False)
+        game_hint = f'--dir "{game_file}"'
+    except Exception as exc:
+        add("基线游戏文件", False, str(exc), fatal=False)
+        game_hint = '--dir "/path/to/game.ios"'
+    route = [
+        f"cp {samples / 'defn_v2_main.yaml'} my_story.yaml   # 复制样例",
+        "编辑 my_story.yaml（patch_id/文本/坐标；ASCII 起步可 cjk: false）",
+        f"storyline-plan --value my_story.yaml {game_hint}",
+        f"storyline-build --value my_story.yaml --workspace my_ws {game_hint}",
+        f"storyline-apply --value my_story.yaml --workspace my_ws "
+        f"{game_hint} --commit",
+        f"storyline-undo --value my_story.yaml {game_hint}",
+        f"storyline-compose --value a.yaml --value2 b.yaml {game_hint}"
+        "   # 双补丁组合预览",
+    ]
+    fatal_missing = [c for c in checks if c["fatal"] and not c["ok"]]
+    out = {
+        "schema": "deterline.storyline-start/v1",
+        "checks": checks,
+        "route": route,
+        "ready": not fatal_missing,
+        "next": ("按 route 起步" if not fatal_missing else
+                 "先修复 fatal 检查项（UTMT_CLI 导出/示例路径），"
+                 "期间可用 storyline-plan 的 ASCII 路径与文档步骤"),
+    }
+    if json_out:
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    else:
+        print("--- storyline-start（作者起步路由，只读） ---")
+        for c in checks:
+            mark = "✓" if c["ok"] else "✗"
+            line = f"  {mark} {c['label']}"
+            if c["detail"]:
+                line += f" — {c['detail']}"
+            print(line)
+        print("  起步链:")
+        for step in route:
+            print(f"    $ {step}")
+        print(f"  → {out['next']}")
+    return 0 if not fatal_missing else 1
 
 
 def cmd_storyline_pack(game_file: Path, defn_path: str, value2: str,

@@ -65,6 +65,13 @@ def _storyline_apply_any(args, parser, target):
         sys.exit(rc)
 
 
+def _storyline_start_any(args, parser, target):
+    # 包 31：作者起步路由（只读；fatal 缺失 exit 1）
+    rc = storyline.cmd_storyline_start(args.dir, json_out=args.json)
+    if rc:
+        sys.exit(rc)
+
+
 def _storyline_pack_any(args, parser, target):
     # 包 30：可重建包（stdout JSON——原创定义 + 元数据；零游戏数据）
     if args.value is None or args.value2 is None:
@@ -957,6 +964,7 @@ COMMANDS = {
     "storyline-undo": {"any": _storyline_undo_any},
     "storyline-compose": {"any": _storyline_compose_any},
     "storyline-pack": {"any": _storyline_pack_any},
+    "storyline-start": {"any": _storyline_start_any},
 }
 
 # Query commands keep reading the source by default; --sandbox/--workspace select a copy.

@@ -107,7 +107,7 @@ python run.py --action quest-init
 ### 全部命令（自动生成 · 与 SKILL.md/COMMANDS.md 逐字节一致）
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 98 个命令 · 版本 2.6.0-rc6 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 99 个命令 · 版本 2.6.0-rc6 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -316,6 +316,7 @@ python run.py --action quest-init
 | `storyline-undo --value storyline.yaml --dir /path/game.ios --json` | 支线编排·前态撤销（16 号计划包 25）：读应用回执 → 拒绝链（无回执/目标被修改/备份缺席——全部保留目标与回执）→ 按 before 指纹匹配备份（.bak/.bak.<ts> 最新优先，不按'最新备份'猜）→ 恢复并原子更新回执（status=undone）；已撤销 = no-op | sandbox |
 | `storyline-compose --value a.yaml --value2 b.yaml --dir /path/game.ios --json` | 支线编排·组合预览（16 号计划包 26/27，只读）：两份 v2 定义 → 资源所有权冲突表（mergeable 可加性 / shared-script 共享可变[仅同一合成构建可合并] / exclusive 独占冲突）+ 合成定义（id/别名加 patch 前缀、执行序按 patch_id 字典序=输入顺序无关、cjk 期望与 flag 声明一致性检查）→ 合成计划摘要；不可合并 exit=1 | sandbox |
 | `storyline-pack --value a.yaml --value2 b.yaml --dir /path/game.ios > pack.json` | 支线编排·可重建包（16 号计划包 30）：两份原创定义 → stdout JSON 包（schema deterline.storyline-pack/v1：定义原文+sha、工具/环境要求、合成 patch_id/defn_sha256/语义指纹/执行序/冲突表）——包内只含重建所需的原创定义与元数据（零游戏数据/产物）；另一独立检出解包重算可逐位复现 | sandbox |
+| `storyline-start --dir /path/game.ios --json` | 支线编排·作者起步路由（16 号计划包 31，只读）：环境诊断（python/dotnet/UTMT_CLI/CJK 依赖/样例路径/基线定位）+ 一条链路由（复制样例→改定义→计划→构建→应用→撤销/组合预览）；fatal 项缺失可行动提示且 ASCII 精简路径仍给出 | sandbox |
 
 > ⚠️ `verify-code`: V1 收窄版；注入实验后必跑，能区分活/死代码形态的指纹差异
 > ⚠️ `smoke-test`: ≈90 秒/次；环境敏感（无人值守开场动画可能卡住）；结束后自动还原并清理
@@ -345,6 +346,8 @@ python run.py --action quest-init
 > ⚠️ `storyline-compose`: 构建侧：storyline-build/apply 加 --value2 走同一合成（一次构建一次闸门）
 > ⚠️ `storyline-pack`: 不可合并的组合生成即拒绝（冲突表随错误 JSON 返回）
 > ⚠️ `storyline-pack`: 重建验收 = 解包文字写回 YAML → storyline-compose 重算语义指纹/defn_sha 与包内 expected 一致
+> ⚠️ `storyline-start`: CJK 依赖缺失仅提示（ASCII 样例可起步），不阻断
+> ⚠️ `storyline-start`: JSON schema deterline.storyline-start/v1（checks/route/ready/next）
 <!-- END generated:commands -->
 
 完整命令列表见 [COMMANDS.md](COMMANDS.md)，Agent Skill 文档见 [SKILL.md](SKILL.md)。

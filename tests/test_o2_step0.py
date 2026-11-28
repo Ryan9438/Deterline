@@ -95,6 +95,9 @@ class TestFileMigrationChecklist(unittest.TestCase):
         ("storyline CJK 包根单点（storyline/commands.py，F4 中文组合："
          "包根解析 parents[3]=仓库根 → tools/font_cjk_build.py + vendor 字体）",
          'resolve().parents[3]  # storyline'),
+        ("storyline 起步样例目录（storyline/commands.py，包 31："
+         "parents[3]=仓库根 → samples/zhi_x）",
+         'parents[3] / "samples" / "zhi_x"'),
     ]
 
     def test_file_usage_set_matches_checklist(self):
