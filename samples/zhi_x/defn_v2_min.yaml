@@ -1,0 +1,16 @@
+# 16 号计划包 06 · 最小单房定义（v2 合同冒烟：一房一 NPC 纯对话）
+schema: deterline.storyline/v2
+patch_id: det_zhi_min
+cjk: false
+rooms:
+  only: room_ruins1
+npcs:
+  greeter:
+    room: only
+    object: obj_npc_marker
+    x: 100
+    y: 200
+    prompt: "* Hello! This is the minimal v2 single-room node./%%"
+    once: false
+order:
+  - npc:greeter

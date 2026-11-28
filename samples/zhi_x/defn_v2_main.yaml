@@ -1,0 +1,77 @@
+# 16 号计划包 06 · 主样例「纸星回信」（v2 合同，声明层）
+# 三房间两分支：接任务(start) → 取纸星(pickup) → 递交(turn_in)；拒绝线收束。
+# 门为单向（回访路径由反向门显式声明）；flag 声明保留（状态写入为包 18 候选）。
+schema: deterline.storyline/v2
+patch_id: det_zhi_x
+flag_id: 512
+cjk: true
+rooms:
+  start: room_ruins1
+  pickup: room_ruins2
+  turn_in: room_ruins4
+npcs:
+  requester:
+    room: start
+    object: obj_npc_marker
+    x: 100
+    y: 200
+    range: 60
+    prompt: "* 可以帮我送一封系着纸星的回信吗？& &         Yes         No      \C "
+    yes_text: "* 太好了！纸星就停在隔壁谜题房里，请取来交给人偶房的长椅先生。/%%"
+    no_text: "* 好吧……那我自己想办法。/%%"
+    once: false
+  star:
+    room: pickup
+    object: obj_npc_marker
+    x: 160
+    y: 150
+    range: 60
+    prompt: "* 花坛边停着一颗纸折的星星。要捡起来吗？& &         Yes         No      \C "
+    yes_text: "* 你小心地把纸星收进了口袋。/%%"
+    no_text: "* 你决定再看看四周。/%%"
+    once: false
+  receiver:
+    room: turn_in
+    object: obj_npc_marker
+    x: 160
+    y: 150
+    range: 60
+    prompt: "* 长椅上的先生收到了纸星回信，道了谢。/%%"
+    once: false
+doors:
+  to_pickup:
+    from: start
+    to: pickup
+    x: 300
+    y: 120
+    spawn_x: 40
+    spawn_y: 120
+  back_to_start:
+    from: pickup
+    to: start
+    x: 20
+    y: 120
+    spawn_x: 280
+    spawn_y: 120
+  to_turn_in:
+    from: pickup
+    to: turn_in
+    x: 300
+    y: 120
+    spawn_x: 40
+    spawn_y: 120
+  back_to_pickup:
+    from: turn_in
+    to: pickup
+    x: 20
+    y: 120
+    spawn_x: 280
+    spawn_y: 120
+order:
+  - npc:requester
+  - door:to_pickup
+  - npc:star
+  - door:to_turn_in
+  - npc:receiver
+  - door:back_to_pickup
+  - door:back_to_start

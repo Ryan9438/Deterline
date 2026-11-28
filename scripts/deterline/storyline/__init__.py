@@ -23,6 +23,17 @@ PLAN_SCHEMA = "deterline.storyline-plan/v1"
 BUILD_SCHEMA = "deterline.storyline-build/v1"
 APPLY_SCHEMA = "deterline.storyline-apply/v1"
 
+# v2 合同（16 号计划包 06）：三房间、双分支、显式 ID 与稳定执行顺序。
+# 计划层先交付（只读）；build/apply 接入在包 11–15（第三周）。
+DEFN_SCHEMA_V2 = "deterline.storyline/v2"
+PLAN_SCHEMA_V2 = "deterline.storyline-plan/v2"
+V2_TOP_FIELDS = {"schema", "patch_id", "flag_id", "cjk",
+                 "rooms", "npcs", "doors", "order"}
+V2_NPC_FIELDS = {"room", "object", "x", "y", "range", "prompt",
+                 "yes_text", "no_text", "once"}
+V2_DOOR_FIELDS = {"from", "to", "x", "y", "spawn_x", "spawn_y"}
+V2_ORDER_KINDS = {"npc", "door"}
+
 # v1 合同字段集（严格封闭：未知字段拒绝）
 TOP_FIELDS = {"schema", "patch_id", "room", "npc", "flag_id", "cjk"}
 NPC_FIELDS = {"object", "x", "y", "range", "prompt", "yes_text", "no_text",
@@ -121,11 +132,176 @@ def _read_definition(text: str) -> dict:
     return doc
 
 
+def _read_definition_v2(text: str) -> dict:
+    """v2 合同解析（包 06/07）：三房间、双分支、显式 ID + 稳定执行顺序。
+
+    与 v1 同一 fail-closed 风格：YAML 层错误带行号（yaml_min），合同层
+    错误指向字段。结构 = rooms（别名→房间名）+ npcs（id→规格）+
+    doors（id→连接）+ order（"<kind>:<id>" 稳定执行序）。
+    """
+    doc = yaml_min.parse(text)
+    if not isinstance(doc, dict):
+        raise StorylineError("定义必须是映射")
+    unknown = set(doc) - V2_TOP_FIELDS
+    if unknown:
+        raise StorylineError(
+            f"未知字段: {sorted(unknown)}（允许: {sorted(V2_TOP_FIELDS)}）")
+    missing = {"schema", "patch_id", "rooms", "npcs", "order"} - set(doc)
+    if missing:
+        raise StorylineError(f"缺少必需字段: {sorted(missing)}")
+    if doc["schema"] != DEFN_SCHEMA_V2:
+        raise StorylineError(
+            f"schema 必须是 {DEFN_SCHEMA_V2}（收到 {doc['schema']!r}）——版本漂移拒绝")
+    pid = doc["patch_id"]
+    if not isinstance(pid, str) or not PATCH_ID_RE.fullmatch(pid):
+        raise StorylineError(
+            f"patch_id 须匹配 {PATCH_ID_RE.pattern}（收到 {pid!r}）")
+    flag = doc.get("flag_id")
+    if flag is not None and (
+            not isinstance(flag, int) or isinstance(flag, bool)
+            or not (FLAG_RANGE[0] <= flag <= FLAG_RANGE[1])):
+        raise StorylineError(
+            f"flag_id 必须是 {FLAG_RANGE[0]}-{FLAG_RANGE[1]} 的整数（声明保留）"
+            "；缺省 = 不声明（状态写入为包 18 候选）")
+    cjk = doc.get("cjk", False)
+    if not isinstance(cjk, bool):
+        raise StorylineError("cjk 必须是布尔（true = 中文组合构建）")
+    rooms = doc["rooms"]
+    if not isinstance(rooms, dict) or not rooms:
+        raise StorylineError("rooms 必须是非空映射（别名 → 房间名）")
+    for alias, name in rooms.items():
+        if not isinstance(name, str) or not name:
+            raise StorylineError(f"rooms.{alias} 必须是非空字符串（房间名）")
+    npcs = doc.get("npcs") or {}
+    doors = doc.get("doors") or {}
+    if not isinstance(npcs, dict) or not npcs:
+        raise StorylineError("npcs 必须是非空映射（npc id → 规格）")
+    for nid, spec in npcs.items():
+        if not isinstance(spec, dict):
+            raise StorylineError(f"npcs.{nid} 必须是映射")
+        unknown_npc = set(spec) - V2_NPC_FIELDS
+        if unknown_npc:
+            raise StorylineError(
+                f"npcs.{nid} 未知字段: {sorted(unknown_npc)}"
+                f"（允许: {sorted(V2_NPC_FIELDS)}）")
+        miss = {"room", "object", "x", "y", "prompt"} - set(spec)
+        if miss:
+            raise StorylineError(f"npcs.{nid} 缺少必需字段: {sorted(miss)}")
+        if not isinstance(spec["room"], str) or not spec["room"]:
+            raise StorylineError(f"npcs.{nid}.room 必须是 rooms 别名（字符串）")
+        if spec["room"] not in rooms:
+            raise StorylineError(
+                f"npcs.{nid}.room 引用未知房间别名 '{spec['room']}'"
+                f"（已有: {sorted(rooms)}）")
+        if not isinstance(spec["object"], str) or not spec["object"]:
+            raise StorylineError(f"npcs.{nid}.object 必须是非空字符串")
+        for k in ("x", "y"):
+            if not isinstance(spec[k], int) or isinstance(spec[k], bool):
+                raise StorylineError(f"npcs.{nid}.{k} 必须是整数")
+        rng = spec.get("range", 60)
+        if not isinstance(rng, int) or isinstance(rng, bool) or rng <= 0:
+            raise StorylineError(f"npcs.{nid}.range 必须是正整数")
+        prompt = spec["prompt"]
+        if not isinstance(prompt, str) or not prompt:
+            raise StorylineError(f"npcs.{nid}.prompt 必须是非空字符串")
+        has_choice = "\\C" in prompt
+        if has_choice:
+            for k in ("yes_text", "no_text"):
+                v = spec.get(k)
+                if not isinstance(v, str) or not v:
+                    raise StorylineError(
+                        f"npcs.{nid}.{k} 必须是非空字符串（prompt 含 \\C "
+                        "即选择语义，YES/NO 分支文本必填）")
+                if "\\C" in v:
+                    raise StorylineError(
+                        f"npcs.{nid}.{k} 不得含 \\C（分支文本防选择框重弹）")
+        elif "yes_text" in spec or "no_text" in spec:
+            raise StorylineError(
+                f"npcs.{nid}: 无 \\C 的 prompt 是纯对话，不得带 yes_text/no_text"
+                "（选择语义需在 prompt 内加 \\C）")
+        once = spec.get("once", True)
+        if not isinstance(once, bool):
+            raise StorylineError(f"npcs.{nid}.once 必须是布尔")
+        if not cjk:
+            keys = ["prompt"] + [k for k in ("yes_text", "no_text") if k in spec]
+            for k in keys:
+                try:
+                    spec[k].encode("ascii")
+                except UnicodeEncodeError:
+                    raise StorylineError(
+                        f"npcs.{nid}.{k} 含非 ASCII 字符——默认合同为 ASCII；"
+                        "中文组合请在定义顶层声明 cjk: true")
+    for did, spec in doors.items():
+        if not isinstance(spec, dict):
+            raise StorylineError(f"doors.{did} 必须是映射")
+        unknown_door = set(spec) - V2_DOOR_FIELDS
+        if unknown_door:
+            raise StorylineError(
+                f"doors.{did} 未知字段: {sorted(unknown_door)}"
+                f"（允许: {sorted(V2_DOOR_FIELDS)}）")
+        miss = set(V2_DOOR_FIELDS) - set(spec)
+        if miss:
+            raise StorylineError(f"doors.{did} 缺少必需字段: {sorted(miss)}")
+        for k in ("from", "to"):
+            if not isinstance(spec[k], str) or spec[k] not in rooms:
+                raise StorylineError(
+                    f"doors.{did}.{k} 必须引用 rooms 别名"
+                    f"（收到 {spec[k]!r}；已有: {sorted(rooms)}）")
+        for k in ("x", "y", "spawn_x", "spawn_y"):
+            if not isinstance(spec[k], int) or isinstance(spec[k], bool):
+                raise StorylineError(f"doors.{did}.{k} 必须是整数")
+    order = doc["order"]
+    if not isinstance(order, list) or not order:
+        raise StorylineError(
+            "order 必须是非空标量序列（\"<kind>:<id>\" 稳定执行序）")
+    seen: dict[str, int] = {}
+    for i, ref in enumerate(order, 1):
+        if not isinstance(ref, str) or ":" not in ref:
+            raise StorylineError(
+                f"order[{i}] 必须是 \"<kind>:<id>\"（kind ∈ "
+                f"{sorted(V2_ORDER_KINDS)}；收到 {ref!r}）")
+        kind, _, oid = ref.partition(":")
+        if kind not in V2_ORDER_KINDS:
+            raise StorylineError(
+                f"order[{i}] 未知 kind '{kind}'（允许: {sorted(V2_ORDER_KINDS)}）")
+        table = npcs if kind == "npc" else doors
+        if oid not in table:
+            raise StorylineError(
+                f"order[{i}] 引用不存在的 {kind} id '{oid}'"
+                f"（已有: {sorted(table)}）")
+        key = f"{kind}:{oid}"
+        if key in seen:
+            raise StorylineError(
+                f"order[{i}] 重复引用 {key}（首次在 order[{seen[key]}]）")
+        seen[key] = i
+    for kind, table in (("npc", npcs), ("door", doors)):
+        for oid in table:
+            if f"{kind}:{oid}" not in seen:
+                raise StorylineError(
+                    f"{kind} '{oid}' 未出现在 order 中（每个 npc/door 必须"
+                    "恰好排入执行序一次——稳定排序合同）")
+    return doc
+
+
 def load_definition(path: Path) -> dict:
+    """定义载入 + 版本分派（包 07）：按 schema 分派 v1/v2 合同校验。
+
+    v1 路径与既有调用方式完全兼容（未知 schema 落 v1 → 原样版本漂移拒绝）。
+    """
     text = Path(path).read_text(encoding="utf-8")
-    doc = _read_definition(text)
+    peek = yaml_min.parse(text)
+    schema = peek.get("schema") if isinstance(peek, dict) else None
+    if schema == DEFN_SCHEMA_V2:
+        doc = _read_definition_v2(text)
+        doc["_version"] = "v2"
+    else:
+        doc = _read_definition(text)
+        doc["_version"] = "v1"
     doc["_sha256"] = hashlib.sha256(text.encode("utf-8")).hexdigest()
     return doc
+
+
+
 
 
 def _receipt_dir(game_file: Path) -> Path:
@@ -204,7 +380,12 @@ if ({int(idx)} < 0 || {int(idx)} >= Data.Rooms.Count) {{
 
 def build_plan(defn: dict, game_file: Path) -> dict:
     """只读计划（零写盘）：房间/对象解析 + goto 预解析 + 期望资源集 +
-    诊断。解析失败（错房/歧义/缺对象）在写目标前拒绝（12 §C2 验收）。"""
+    诊断。解析失败（错房/歧义/缺对象）在写目标前拒绝（12 §C2 验收）。
+
+    版本分派（包 07/10）：v2 定义走 build_plan_v2（三房间/双分支/操作序）。
+    """
+    if defn.get("_version") == "v2":
+        return build_plan_v2(defn, game_file)
     from ..cmds import template_common, npc as npc_mod, code as code_mod
 
     plan: dict = {"schema": PLAN_SCHEMA,
@@ -386,6 +567,147 @@ def build_plan(defn: dict, game_file: Path) -> dict:
 def _tool_version() -> str:
     import sys as _sys
     return _sys.modules[__package__.split(".")[0]].__version__
+
+
+def build_plan_v2(defn: dict, game_file: Path) -> dict:
+    """v2 只读计划（包 08 编译 + 包 09 图诊断）：别名解析、对象/Create 探针、
+    操作序编译（order 即执行序）、门图连通性诊断、语义指纹。零写盘。"""
+    from ..cmds import template_common, npc as npc_mod, code as code_mod
+
+    rooms_def = defn["rooms"]
+    npcs_def = defn.get("npcs") or {}
+    doors_def = defn.get("doors") or {}
+    plan: dict = {"schema": PLAN_SCHEMA_V2, "version": "v2",
+                  "patch_id": defn["patch_id"],
+                  "defn_sha256": defn["_sha256"],
+                  "tool_version": _tool_version(),
+                  "cjk": bool(defn.get("cjk", False))}
+    # 房间别名解析（复用 v1 两段式预查 + 歧义判据，R13 P2-3 口径）
+    resolved: dict[str, dict] = {}
+    for alias, requested in rooms_def.items():
+        idx = template_common.idx_room_lookup(game_file, requested)
+        if idx < 0:
+            raise errors.NotFoundError(f"rooms.{alias} 房间不存在: {requested}")
+        actual = _room_name_by_idx(game_file, idx)
+        if actual is None:
+            raise errors.ValidationError(
+                f"rooms.{alias} 房间序号 {idx} 越界"
+                "（idx_room_lookup 与实际表不一致）")
+        exact, partial = _room_match_count(game_file, requested)
+        if exact > 1 or (exact == 0 and partial > 1):
+            raise errors.ValidationError(
+                f"rooms.{alias} 房间歧义: '{requested}'（exact {exact} / "
+                f"其余子串 {partial}）——请用完整唯一房间名")
+        resolved[alias] = {"requested": requested, "name": actual,
+                           "idx": idx, "exact_hits": exact,
+                           "partial_hits": partial}
+        if actual != requested:
+            resolved[alias]["note"] = f"两段式子串解析: {requested} → {actual}"
+    plan["rooms"] = resolved
+    # npc 规格 → 对象/Create 探针（复用 v1 探针；逐 npc 记录）
+    npc_plan: dict = {}
+    for nid, spec in npcs_def.items():
+        info = npc_mod._query_npc_target(game_file, spec["object"])
+        if info is None:
+            raise errors.NotFoundError(
+                f"npcs.{nid}.object 对象不存在: {spec['object']}")
+        create_code = npc_mod._find_create_code(game_file, info["obj"])
+        create_mode = "create"
+        if create_code is not None:
+            status, create_lines, _detail = code_mod.decompile_classified(
+                game_file, create_code)
+            if status != "ok":
+                raise StorylineError(
+                    f"npcs.{nid} Create 事件探针读失败（{create_code} "
+                    f"status={status}）——无法标定期望资源集，拒绝"
+                    "（读失败不作假设，B3 三分类口径）")
+            create_mode = ("skip" if any("deterline_state" in ln
+                                         for ln in create_lines) else "prepend")
+        if create_mode == "skip":
+            raise StorylineError(
+                f"npcs.{nid}: {info['obj']} 的 Create 已引用 deterline_state"
+                f"（{create_code}）——基线非干净，v2 拒绝（干净基线合同）")
+        npc_plan[nid] = {"room": spec["room"], "object": info["obj"],
+                         "native": bool(info["native"]),
+                         "step_code": info["step_code"],
+                         "x": spec["x"], "y": spec["y"],
+                         "range": spec.get("range", 60),
+                         "choice": "\\C" in spec["prompt"],
+                         "once": spec.get("once", True),
+                         "create_code": create_code,
+                         "create_mode": create_mode}
+    plan["npcs"] = npc_plan
+    # 门解析（别名 → 已解析房间）
+    door_plan: dict = {}
+    for did, spec in doors_def.items():
+        door_plan[did] = {"from": resolved[spec["from"]],
+                          "to": resolved[spec["to"]],
+                          "x": spec["x"], "y": spec["y"],
+                          "spawn_x": spec["spawn_x"],
+                          "spawn_y": spec["spawn_y"]}
+    plan["doors"] = door_plan
+    # 操作序编译（order 即执行序——稳定排序合同；顺序变更 = 语义变更）
+    ops: list[dict] = []
+    for ref in defn["order"]:
+        kind, _, oid = ref.partition(":")
+        if kind == "npc":
+            spec = npcs_def[oid]
+            ops.append({"op": "npc", "ref": oid, "npc": npc_plan[oid],
+                        "prompt": spec["prompt"],
+                        "yes_text": spec.get("yes_text"),
+                        "no_text": spec.get("no_text")})
+        else:
+            ops.append({"op": "door", "ref": oid,
+                        "door": door_plan[oid]})
+    plan["ops"] = ops
+    # 图诊断（包 09）：从首 npc 房间 BFS 门图；不可达/死路为诊断（非硬错误）
+    diag: list[str] = []
+    first_npc = next((o["ref"] for o in ops if o["op"] == "npc"), None)
+    if first_npc is not None:
+        start_alias = npcs_def[first_npc]["room"]
+        adj: dict[str, set] = {a: set() for a in resolved}
+        for spec in doors_def.values():
+            adj[spec["from"]].add(spec["to"])
+        seen_rooms = {start_alias}
+        queue = [start_alias]
+        while queue:
+            cur = queue.pop()
+            for nxt in sorted(adj.get(cur, ())):
+                if nxt not in seen_rooms:
+                    seen_rooms.add(nxt)
+                    queue.append(nxt)
+        unreachable = sorted(set(resolved) - seen_rooms)
+        if unreachable:
+            diag.append(f"从首 npc 房间 '{start_alias}' 不可达的房间: "
+                        f"{unreachable}（检查 doors 连接）")
+        dead = sorted(a for a in resolved
+                      if not adj.get(a) and a != start_alias)
+        if dead:
+            diag.append(f"无出向门（死路）的房间: {dead}（若为终点可忽略）")
+    for nid, spec in npcs_def.items():
+        if spec.get("once", True):
+            diag.append(f"npcs.{nid}.once=true：触发后自毁（v2 状态语义）")
+    if defn.get("cjk"):
+        diag.append("cjk=true：构建链先注入 CJK 字体栈（包 15 整包复用）")
+    diag.append("flag 声明保留（v2 状态写入为独立候选——包 18）")
+    plan["diagnostics"] = diag
+    # 语义指纹（包 08）：规范化（sort_keys）哈希——内容变更可定位
+    semantic = {"patch_id": defn["patch_id"],
+                "defn_sha256": defn["_sha256"],
+                "rooms": plan["rooms"], "npcs": npc_plan,
+                "doors": door_plan, "ops": ops, "cjk": plan["cjk"]}
+    plan["semantic_sha256"] = hashlib.sha256(
+        json.dumps(semantic, sort_keys=True, ensure_ascii=False)
+        .encode("utf-8")).hexdigest()
+    plan["flag"] = {"id": defn.get("flag_id"), "status": "declared-only",
+                    "conflicts": _flag_conflicts(defn, game_file),
+                    "note": "v2 状态写入为独立候选（包 18），模板不写入"}
+    plan["unverified"] = [
+        "构建/应用接入（包 11–15，第三周）",
+        "状态模型与存读档轨迹（包 16–17，第四周）",
+        "游戏侧状态写入候选（包 18；缺实机时主样例交模拟轨迹+待验卡）",
+        "渲染/按键/真实存读档（游戏前台，16 §7 附录）"]
+    return plan
 
 
 def receipt_path(game_file: Path, patch_id: str) -> Path:

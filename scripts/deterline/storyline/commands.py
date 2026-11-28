@@ -37,13 +37,42 @@ def cmd_storyline_plan(game_file: Path, defn_path: str, json_out: bool = False) 
         defn = _pkg().load_definition(Path(defn_path))
         plan = _pkg().build_plan(defn, game_file)
     except (_pkg().StorylineError, errors.DeterlineError, FileNotFoundError,
-            OSError) as exc:
+            OSError, ValueError) as exc:
+        # ValueError 覆盖 yaml_min.YamlMinError（YAML 层解析拒绝）——JSON
+        # 模式错误形态对 v1/v2 一致（包 10 合同：JSON 与实际退出码一致）。
         if json_out:
             print(json.dumps({"schema": _pkg().PLAN_SCHEMA, "error": str(exc)},
                              ensure_ascii=False, indent=2))
         else:
             print(f"✗ storyline-plan 拒绝: {exc}", file=sys.stderr)
         return 1
+    if plan.get("version") == "v2":
+        # v2 只读计划（包 10）：结构化 human 输出与 JSON 同源互证
+        if json_out:
+            print(json.dumps(plan, ensure_ascii=False, indent=2))
+        else:
+            print(f"--- storyline-plan v2（{plan['patch_id']}） ---")
+            for alias, r in plan["rooms"].items():
+                note = f"（{r['note']}）" if "note" in r else ""
+                print(f"  房间 {alias}: {r['name']} (idx {r['idx']}){note}")
+            for oid, n in plan["npcs"].items():
+                kind = "choice" if n["choice"] else "talk"
+                print(f"  NPC {oid}: {n['object']} @({n['x']},{n['y']}) "
+                      f"in {n['room']} [{kind}] once={n['once']} "
+                      f"create={n['create_mode']}")
+            for oid, d in plan["doors"].items():
+                print(f"  门 {oid}: {d['from']['name']} → {d['to']['name']} "
+                      f"door@({d['x']},{d['y']}) "
+                      f"spawn@({d['spawn_x']},{d['spawn_y']})")
+            print("  执行序:")
+            for op in plan["ops"]:
+                print(f"    - {op['op']}:{op['ref']}")
+            print(f"  语义指纹: {plan['semantic_sha256'][:16]}…")
+            for d in plan["diagnostics"]:
+                print(f"  ℹ️  {d}")
+            for u in plan["unverified"]:
+                print(f"  ⏳ 未验证: {u}")
+        return 0
     if json_out:
         print(json.dumps(plan, ensure_ascii=False, indent=2))
     else:
