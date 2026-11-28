@@ -26,6 +26,14 @@ def _sig(text: str) -> list:
 
 
 PLAN = {
+    "doors": {
+        "to_pickup": {"from": {"name": "room_ruins1"},
+                      "to": {"name": "room_ruins2"},
+                      "x": 300, "y": 120, "spawn_x": 40, "spawn_y": 120},
+        "to_turn_in": {"from": {"name": "room_ruins2"},
+                       "to": {"name": "room_ruins4"},
+                       "x": 300, "y": 120, "spawn_x": 40, "spawn_y": 120},
+    },
     "rooms": {"start": {"name": "room_ruins1"},
               "pickup": {"name": "room_ruins2"},
               "turn_in": {"name": "room_ruins4"}},
@@ -171,6 +179,121 @@ class TestDeclaredAssertions(unittest.TestCase):
         self.structured["code"]["removed"].append("gml_Script_textdata_en")
         refusals = _v2_declared_assertions(self.structured, self.defn, PLAN)
         self.assertTrue(any("CODE removed 非空" in r for r in refusals))
+
+
+class TestCorrelateOps(unittest.TestCase):
+    """包 22：逐 op 产物对应证据（一对一匹配 + 缺失拒绝）。"""
+
+    def _evidence(self):
+        return [
+            {"op": "npc", "ref": "requester", "room": "room_ruins1",
+             "object": "obj_npc_marker", "text_keys": ["k"]},
+            {"op": "door", "ref": "to_pickup"},
+            {"op": "npc", "ref": "star", "room": "room_ruins2",
+             "object": "obj_npc_marker", "text_keys": ["k"]},
+            {"op": "door", "ref": "to_turn_in"},
+            {"op": "npc", "ref": "receiver", "room": "room_ruins4",
+             "object": "obj_npc_marker", "text_keys": ["k"]},
+        ]
+
+    def test_correlates_all_ops(self):
+        from deterline.storyline.commands import _correlate_ops
+        defn = _defn(MAIN_V2)
+        out = _correlate_ops(PLAN, self._evidence(),
+                             _good_structured(defn), defn)
+        self.assertEqual(len(out), 5)
+        ids = [ev["o7_instance"]["instance_id"] for ev in out]
+        self.assertEqual(len(set(ids)), 5)  # 一对一，无重复占用
+        npc_ev = out[0]
+        self.assertEqual(npc_ev["o7_instance"]["room"], "room_ruins1")
+        self.assertEqual(npc_ev["o7_instance"]["object"], "obj_npc_marker")
+        self.assertIn("gml_Object_obj_npc_marker_Step_0", npc_ev["o7_code"])
+        door_ev = out[1]
+        self.assertEqual(door_ev["o7_instance"]["object"],
+                         "obj_deterline_door")
+        self.assertIn("gml_Script_deterline_door_back", door_ev["o7_code"])
+
+    def test_missing_correspondence_refused(self):
+        from deterline.storyline.commands import _correlate_ops
+        defn = _defn(MAIN_V2)
+        st = _good_structured(defn)
+        st["instances"]["added"] = [r for r in st["instances"]["added"]
+                                    if r[0] != "room_ruins4"]
+        from deterline.storyline import StorylineError
+        with self.assertRaises(StorylineError) as cm:
+            _correlate_ops(PLAN, self._evidence(), st, defn)
+        self.assertIn("对应证据缺失", str(cm.exception))
+        self.assertIn("receiver", str(cm.exception))
+
+    def test_duplicate_same_key_gets_distinct_rows(self):
+        from deterline.storyline.commands import _correlate_ops
+        defn = _defn(MAIN_V2)
+        st = _good_structured(defn)
+        # 同一 (room,obj,x,y) 两行（两 op 同坐标的构造）——逐 op 各占一行
+        st["instances"]["added"].append(
+            ["room_ruins1", 113999, "obj_npc_marker", 100, 200])
+        ev = self._evidence() + [{"op": "npc", "ref": "requester",
+                                  "room": "room_ruins1",
+                                  "object": "obj_npc_marker",
+                                  "text_keys": ["k2"]}]
+        out = _correlate_ops(PLAN, ev, st, defn)
+        last = out[-1]["o7_instance"]["instance_id"]
+        self.assertEqual(last, 113999)  # 第二个 requester 占第二行
+        first = out[0]["o7_instance"]["instance_id"]
+        self.assertEqual(first, 113928)
+
+
+class TestReceiptMetaValidation(unittest.TestCase):
+    """包 22：回执元数据版本/关联字段校验（apply 写前拒绝）。"""
+
+    def _rcpt(self):
+        return {"schema": "deterline.storyline-build/v2",
+                "patch_id": "det_t1", "defn_sha256": "x",
+                "baseline_sha256": "y", "product": "/p",
+                "product_sha256": "z", "tool_version": "2.6.0"}
+
+    def test_v2_receipt_passes(self):
+        from deterline.storyline.commands import _validate_build_receipt_meta
+        defn = _defn(MAIN_V2)
+        defn["_version"] = "v2"
+        _validate_build_receipt_meta(self._rcpt(), defn)  # 不抛
+
+    def test_schema_version_mismatch(self):
+        from deterline.storyline.commands import _validate_build_receipt_meta
+        from deterline.storyline import StorylineError
+        defn = _defn(MAIN_V2)
+        defn["_version"] = "v2"
+        rcpt = self._rcpt()
+        rcpt["schema"] = "deterline.storyline-build/v1"
+        with self.assertRaises(StorylineError) as cm:
+            _validate_build_receipt_meta(rcpt, defn)
+        self.assertIn("版本不匹配", str(cm.exception))
+
+    def test_unknown_schema_and_missing_fields(self):
+        from deterline.storyline.commands import _validate_build_receipt_meta
+        from deterline.storyline import StorylineError
+        defn = _defn(MAIN_V2)
+        defn["_version"] = "v2"
+        rcpt = self._rcpt()
+        rcpt["schema"] = "deterline.storyline-build/v9"
+        with self.assertRaises(StorylineError):
+            _validate_build_receipt_meta(rcpt, defn)
+        rcpt = self._rcpt()
+        del rcpt["product_sha256"]
+        with self.assertRaises(StorylineError) as cm:
+            _validate_build_receipt_meta(rcpt, defn)
+        self.assertIn("缺关联字段", str(cm.exception))
+
+    def test_patch_id_mismatch(self):
+        from deterline.storyline.commands import _validate_build_receipt_meta
+        from deterline.storyline import StorylineError
+        defn = _defn(MAIN_V2)
+        defn["_version"] = "v2"
+        rcpt = self._rcpt()
+        rcpt["patch_id"] = "det_other"
+        with self.assertRaises(StorylineError) as cm:
+            _validate_build_receipt_meta(rcpt, defn)
+        self.assertIn("patch_id 不符", str(cm.exception))
 
 
 class TestCategoriesFromStructured(unittest.TestCase):

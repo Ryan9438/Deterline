@@ -409,6 +409,82 @@ def _categories_from_structured(structured: dict) -> dict:
             "struct": struct}
 
 
+def _correlate_ops(plan: dict, op_evidence: list[dict],
+                   structured: dict, defn: dict) -> list[dict]:
+    """包 22：逐 op 的产物对应证据（计划变更 → 实例行 + 代码条目）。
+
+    每个 npc/door op 必须在结构化 O7 的新增实例集合中恰有一行
+    (room, object, x, y)（一对一，按集合扣除匹配；缺失/重复即拒绝）
+    ——"每项计划变更在产物上有对应证据"由本函数落进回执 ops_evidence。
+    代码条目按对象/模板前缀归属（npc 对象 Step/Create/Alarm；door
+    模板 + door_back 脚本）。
+    """
+    from collections import defaultdict as _dd
+    rows = [tuple(r) for r in structured["instances"]["added"]]
+    by_key: dict[tuple, list[int]] = _dd(list)
+    for i, (room, _iid, obj, x, y) in enumerate(rows):
+        by_key[(room, obj, x, y)].append(i)
+    used: set[int] = set()
+    out: list[dict] = []
+    npc_objs = {n["object"] for n in plan["npcs"].values()}
+    code_names = (structured["code"]["added"]
+                  + structured["code"]["changed"])
+    for op in op_evidence:
+        ev = dict(op)
+        if op["op"] == "npc":
+            n = plan["npcs"][op["ref"]]
+            key = (op["room"], op["object"], n["x"], n["y"])
+        else:
+            d = plan["doors"][op["ref"]]
+            key = (d["from"]["name"], "obj_deterline_door", d["x"], d["y"])
+        cand = [i for i in by_key.get(key, []) if i not in used]
+        if not cand:
+            raise _pkg().StorylineError(
+                f"包 22 对应证据缺失：op {op['op']}:{op['ref']} 在产物新增"
+                f"实例中无匹配行 {key}——计划变更与产物不对应，拒绝出候选")
+        idx = cand[0]
+        used.add(idx)
+        room, iid, obj, x, y = rows[idx]
+        ev["o7_instance"] = {"room": room, "instance_id": iid,
+                             "object": obj, "x": x, "y": y}
+        if op["op"] == "npc":
+            ev["o7_code"] = sorted(
+                nm for nm in code_names
+                if nm.startswith(f"gml_Object_{op['object']}_"))
+        else:
+            ev["o7_code"] = sorted(
+                nm for nm in code_names
+                if nm.startswith("gml_Object_obj_deterline_door_")
+                or nm == "gml_Script_deterline_door_back")
+        out.append(ev)
+    return out
+
+
+def _validate_build_receipt_meta(build_rcpt: dict, defn: dict) -> None:
+    """包 22：构建回执元数据版本校验（apply 写前拒绝路径之一）。
+
+    schema 必须与定义版本匹配（v1 ↔ BUILD_SCHEMA；v2 ↔ BUILD_SCHEMA_V2）
+    且必需关联字段齐全——版本/元数据不匹配拒绝，绝不按猜测应用。
+    """
+    want = (_pkg().BUILD_SCHEMA_V2
+            if defn.get("_version") == "v2" else _pkg().BUILD_SCHEMA)
+    schema = build_rcpt.get("schema")
+    if schema != want:
+        raise _pkg().StorylineError(
+            f"构建回执元数据版本不匹配：schema={schema!r}（定义版本 "
+            f"{defn.get('_version')} 需要 {want}）——重新 storyline-build")
+    missing = [k for k in ("patch_id", "defn_sha256", "baseline_sha256",
+                           "product", "product_sha256", "tool_version")
+               if k not in build_rcpt]
+    if missing:
+        raise _pkg().StorylineError(
+            f"构建回执缺关联字段: {missing}——回执不完整，重新 storyline-build")
+    if build_rcpt.get("patch_id") != defn.get("patch_id"):
+        raise _pkg().StorylineError(
+            f"构建回执 patch_id 不符: {build_rcpt.get('patch_id')!r} vs "
+            f"{defn.get('patch_id')!r}——重新 storyline-build")
+
+
 def _v2_declared_assertions(structured: dict, defn: dict,
                             plan: dict) -> list[str]:
     """包 21：v2 声明的逐对象断言（纯函数——结构化 O7 结果 → 拒绝清单）。
@@ -748,6 +824,9 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                 "每个 npc/door op 恰 1 实例）")
         # 包 21：逐对象断言（计数相同而对象不同在此识别；O7 结构化）
         refusals.extend(_v2_declared_assertions(structured, defn, plan))
+        # 包 22：逐 op 产物对应证据（缺失即拒绝——见 _correlate_ops）
+        if not refusals:
+            op_evidence = _correlate_ops(plan, op_evidence, structured, defn)
         if refusals:
             raise _pkg().StorylineError(
                 "发现未声明资源/结构变更，拒绝出候选（12 §C3）: "
@@ -1037,6 +1116,8 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
                 raise _pkg().StorylineError(
                     f"build.json 形状不符（应为对象）: {build_rcpt_path}——"
                     "重新 storyline-build")
+            # 包 22：元数据版本/关联字段校验（写前拒绝路径）
+            _validate_build_receipt_meta(build_rcpt, defn)
         prior = None
         if apply_rcpt_path.is_file():
             prior = json.loads(apply_rcpt_path.read_text(encoding="utf-8"))
