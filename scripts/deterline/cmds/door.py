@@ -69,6 +69,59 @@ if (target_room >= 0 && instance_exists(obj_mainchara))
 '''
 
 
+def ensure_deterline_door_object(game_file: Path) -> str:
+    """确保 obj_deterline_door 存在（16 号计划包 13：干净基线首次建门的前置）。
+
+    干净基线无此对象——cmd_create_door 只往对象上挂分支/生成实例，不建
+    对象表条目（实测 `create-door` 对 fc049850 基线报 "ERROR: not found"）。
+    本函数幂等：对象在场即返回 "exists"；否则创建代码三件套（Create_0/
+    Step_0/back 脚本，AutoCreateAssets）+ 对象定义（sprite=spr_cactus，
+    缺 sprite 留空不失败）并返回 "created"。CSX 失败 fail-closed。
+    """
+    verb_base = utmt._csx_verbatim_escape(DOOR_CREATE_BASE.strip())
+    verb_step = utmt._csx_verbatim_escape(DOOR_STEP_CODE.strip())
+    verb_back = utmt._csx_verbatim_escape(DOOR_GOTO_BACK_SCRIPT.strip())
+    csx = f'''
+try {{
+    var doorObj = Data.GameObjects.ByName("obj_deterline_door");
+    if (doorObj != null) {{
+        ScriptMessage("DOOR_OBJ:exists");
+        return;
+    }}
+    var ig = new CodeImportGroup(Data) {{
+        AutoCreateAssets = true,
+        MainThreadAction = MainThreadAction
+    }};
+    ig.QueueReplace("gml_Object_obj_deterline_door_Create_0", @"{verb_base}");
+    ig.QueueReplace("gml_Object_obj_deterline_door_Step_0", @"{verb_step}");
+    ig.QueueReplace("gml_Script_deterline_door_back", @"{verb_back}");
+    ig.Import();
+    var nm = new UndertaleString("obj_deterline_door");
+    Data.Strings.Add(nm);
+    var obj = new UndertaleGameObject();
+    obj.Name = nm;
+    var spr = Data.Sprites.ByName("spr_cactus");
+    if (spr != null) {{
+        obj.Sprite = spr;
+    }}
+    Data.GameObjects.Add(obj);
+    ScriptMessage("DOOR_OBJ:created");
+}} catch (Exception ex) {{
+    ScriptMessage("ERROR: " + ex.Message);
+    return;
+}}
+'''
+    out = utmt._run_utmt(csx, game_file, save=True)
+    for line in utmt._parse_msg(out):
+        if line.startswith("DOOR_OBJ:"):
+            return line[len("DOOR_OBJ:"):]
+        if line.startswith("ERROR:"):
+            raise errors.DeterlineError(
+                f"obj_deterline_door 确保失败: {line[len('ERROR:'):]}")
+    raise errors.DeterlineError(
+        "obj_deterline_door 确认失败（CSX 无 DOOR_OBJ 标记）——拒绝")
+
+
 def cmd_create_door(game_file: Path, cur_room: str, target_room: str,
                     x: int, y: int, spawn_x: int, spawn_y: int) -> None:
     """Create a teleport door in cur_room that leads to target_room."""

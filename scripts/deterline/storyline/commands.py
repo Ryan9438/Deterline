@@ -287,10 +287,11 @@ def _validate_workspace_name(workspace: str) -> None:
             f"工作区名须匹配 [a-z0-9][a-z0-9_-]{{0,63}}（收到 {workspace!r}）")
 
 
-def _run_cjk_font_pipeline(game_file: Path, defn: dict) -> None:
-    """F4 中文组合：字形页预处理 + 五步字体管线（pass1/pass2 经外层
-    game_edit 批量写入当前工作区）。字符集 = 定义三文本字段的全部唯一
-    字符（最小集，确定性：同定义 → 同字形集 → 同产物）。
+def _run_cjk_font_pipeline(game_file: Path, chars: list) -> None:
+    """F4 中文组合（包 15：字形集由**调用方**按全定义文本一次汇总——
+    v1 = 单 npc 三字段；v2 = 全部 npc 的 prompt/yes/no 汇总）。
+    字形页预处理 + 五步字体管线（pass1/pass2 经外层 game_edit 批量写入
+    当前工作区）。最小集，确定性：同定义 → 同字形集 → 同产物。
 
     字形页生成器以**进程内**方式调用（runpy 加载 tools/font_cjk_build.py
     → main() + sys.argv patch——与测试层同款进程内形态；subprocess+
@@ -313,9 +314,6 @@ def _run_cjk_font_pipeline(game_file: Path, defn: dict) -> None:
         raise _pkg().StorylineError(f"OFL 字体源缺失: {font_src}")
     if not tool.is_file():
         raise _pkg().StorylineError(f"字形页生成器缺失: {tool}")
-    npc = defn["npc"]
-    chars = sorted({ch for ch in (npc["prompt"] + npc["yes_text"]
-                                  + npc["no_text"]) if ch not in "\r\n\t"})
     with _tmp.TemporaryDirectory(prefix="deterline_cjk_") as td:
         chars_file = _Path(td) / "chars.txt"
         chars_file.write_text("".join(chars), encoding="utf-8")
@@ -353,6 +351,193 @@ def _run_cjk_font_pipeline(game_file: Path, defn: dict) -> None:
                 "工作区不产出候选")
 
 
+def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
+              base_sha: str, json_out: bool) -> int:
+    """包 12–15：v2 构建链——按 op 序接领域生成器进有名工作区。
+
+    - npc op → cmd_npc_choice（含 \\C）/ cmd_npc_dialogue（纯对话），
+      文本键 `det_<patch>_<ref>[_choice|_yes|_no]`（按 patch+节点分配，
+      防共享脚本重复追加——包 12 命名规则）；typer = 31(cjk)/5。
+    - door op → ensure_deterline_door_object（包 13：干净基线前置，
+      幂等）+ cmd_create_door（共享门对象挂分支，双向各一 op）。
+    - 包 15：cjk=true 时字形集 = 全定义 npc 文本一次汇总注入。
+    - 闸门（O7 不变量 + 字段指向）：STR 全 add；INST remove/move=0；
+      CODEF removed=0；FONT changed==cjk?1:0；INST add == npc op 数 +
+      door op 数（每个 op 恰生成 1 实例）。多 op 组成的精确计数推导
+      （对象共享变量/门对象首建）不进总数闸门——以 per-op 证据回执。
+    """
+    try:
+        from .. import state, utmt
+        from ..cmds import npc as npc_mod, door as door_mod
+        prospective = (game_file.parent / ".deterline" / game_file.name /
+                       workspace / game_file.name)
+        if prospective.is_symlink():
+            raise _pkg().StorylineError(
+                f"工作区产物路径是符号链接（{prospective}）——拒绝")
+        if prospective.is_file() \
+                and transactions.fingerprint(prospective) != base_sha:
+            raise _pkg().StorylineError(
+                f"工作区 {workspace} 已存在**已补丁**产物（sha ≠ 当前基线）"
+                "——构建是单次语义：换新工作区名或清除残留")
+        old_ws, old_sbx = state.WORKSPACE, state.SANDBOX_ACTIVE
+        old_cjk = state.ALLOW_CJK
+        state.WORKSPACE = workspace
+        state.SANDBOX_ACTIVE = True
+        op_evidence: list[dict] = []
+        try:
+            with utmt.game_edit("storyline-build-v2", read_workspace=False):
+                if defn.get("cjk"):
+                    state.ALLOW_CJK = True
+                    chars = sorted({ch for spec in (defn.get("npcs") or {})
+                                    .values()
+                                    for ch in (spec.get("prompt", "")
+                                               + spec.get("yes_text", "")
+                                               + spec.get("no_text", ""))
+                                    if ch not in "\r\n\t"})
+                    _run_cjk_font_pipeline(game_file, chars)
+                door_ready = None
+                for op in plan["ops"]:
+                    if op["op"] == "npc":
+                        n = op["npc"]
+                        spec = (defn.get("npcs") or {})[op["ref"]]
+                        room_name = plan["rooms"][n["room"]]["name"]
+                        typer = 31 if defn.get("cjk") else 5
+                        if n["choice"]:
+                            npc_mod.cmd_npc_choice(
+                                game_file, room_name, spec["object"],
+                                spec["x"], spec["y"],
+                                f"det_{defn['patch_id']}_{op['ref']}_choice",
+                                spec["prompt"],
+                                yes_key=(f"det_{defn['patch_id']}"
+                                         f"_{op['ref']}_yes"),
+                                yes_text=spec["yes_text"],
+                                no_key=(f"det_{defn['patch_id']}"
+                                        f"_{op['ref']}_no"),
+                                no_text=spec["no_text"],
+                                face=0, emotion=0,
+                                range_=spec.get("range", 60),
+                                repeat=not spec.get("once", True),
+                                typer=typer)
+                            keys = [f"det_{defn['patch_id']}_{op['ref']}_choice",
+                                    f"det_{defn['patch_id']}_{op['ref']}_yes",
+                                    f"det_{defn['patch_id']}_{op['ref']}_no"]
+                        else:
+                            npc_mod.cmd_npc_dialogue(
+                                game_file, room_name, spec["object"],
+                                spec["x"], spec["y"],
+                                f"det_{defn['patch_id']}_{op['ref']}",
+                                spec["prompt"], face=0, emotion=0,
+                                range_=spec.get("range", 60),
+                                once=spec.get("once", True))
+                            keys = [f"det_{defn['patch_id']}_{op['ref']}"]
+                        op_evidence.append({"op": "npc", "ref": op["ref"],
+                                            "room": room_name,
+                                            "object": n["object"],
+                                            "text_keys": keys,
+                                            "typer": typer})
+                    else:
+                        d = op["door"]
+                        if door_ready is None:
+                            door_ready = door_mod.ensure_deterline_door_object(
+                                game_file)
+                        door_mod.cmd_create_door(
+                            game_file, d["from"]["name"], d["to"]["name"],
+                            d["x"], d["y"], d["spawn_x"], d["spawn_y"])
+                        op_evidence.append({"op": "door", "ref": op["ref"],
+                                            "from": d["from"]["name"],
+                                            "to": d["to"]["name"],
+                                            "door_object": door_ready})
+        finally:
+            state.WORKSPACE, state.SANDBOX_ACTIVE = old_ws, old_sbx
+            state.ALLOW_CJK = old_cjk
+        product = (game_file.parent / ".deterline" / game_file.name /
+                   workspace / game_file.name)
+        if not product.is_file():
+            raise _pkg().StorylineError(f"工作区产物缺失: {product}")
+        product_sha = transactions.fingerprint(product)
+        # O7 差异采集（v2 闸门 = 不变量 + 组成计数，非逐项总数）
+        from ..cmds import verify
+        import io as _io
+        import contextlib as _ctx
+        buf = _io.StringIO()
+        with _ctx.redirect_stdout(buf):
+            verify.cmd_diff_snapshots(game_file, product, detail=True)
+        parsed = _parse_diff_categories(buf.getvalue())
+        cats = parsed["counts"]
+        n_inst = sum(1 for o in plan["ops"])
+        refusals = []
+        bad_ops = sorted({o for o in parsed["str_ops"] if o != "add"})
+        if bad_ops:
+            refusals.append(f"STR op 含非 add 形态: {','.join(bad_ops)}")
+        if cats.get("INST remove", 0) or cats.get("INST move", 0):
+            refusals.append("INST remove/move 非 0（实例只增不变位）")
+        if cats.get("CODEF removed", 0):
+            refusals.append("CODEF removed 非 0")
+        font_want = 1 if defn.get("cjk") else 0
+        if cats.get("FONT changed", 0) != font_want \
+                or cats.get("FONT added", 0) or cats.get("FONT removed", 0):
+            refusals.append(f"FONT 变更不符声明（changed {cats.get('FONT changed', 0)}"
+                            f"/added {cats.get('FONT added', 0)}"
+                            f"/removed {cats.get('FONT removed', 0)}，"
+                            f"声明 changed {font_want}）")
+        if cats.get("INST add", 0) != n_inst:
+            refusals.append(
+                f"INST add {cats.get('INST add', 0)}（声明 {n_inst}："
+                "每个 npc/door op 恰 1 实例）")
+        if refusals:
+            raise _pkg().StorylineError(
+                "发现未声明资源/结构变更，拒绝出候选（12 §C3）: "
+                + "; ".join(refusals) + f"（O7 计数: {cats}）")
+        receipt = {
+            "schema": _pkg().BUILD_SCHEMA_V2,
+            "version": "v2",
+            "patch_id": defn["patch_id"],
+            "defn_sha256": defn["_sha256"],
+            "semantic_sha256": plan["semantic_sha256"],
+            "tool_version": plan["tool_version"],
+            "baseline_sha256": base_sha,
+            "target": str(game_file),
+            "workspace": workspace,
+            "product": str(product),
+            "product_sha256": product_sha,
+            "declared_diff": cats,
+            "ops_evidence": op_evidence,
+            "cjk": bool(defn.get("cjk", False)),
+            "cjk_chars": (sorted({ch for spec in (defn.get("npcs") or {})
+                                  .values()
+                                  for ch in (spec.get("prompt", "")
+                                             + spec.get("yes_text", "")
+                                             + spec.get("no_text", ""))
+                                  if ch not in "\r\n\t"})
+                          if defn.get("cjk") else []),
+            "flag": plan["flag"],
+            "diagnostics": plan["diagnostics"],
+        }
+        transactions._write_json_atomic(  # noqa: SLF001 原子写复用
+            _pkg().receipt_path(game_file, defn["patch_id"]).with_name(
+                "build.json"),
+            receipt)
+        if json_out:
+            print(json.dumps(receipt, ensure_ascii=False, indent=2))
+        else:
+            print(f"--- storyline-build v2（{receipt['patch_id']}）候选就绪 ---")
+            print(f"  工作区: {workspace}  产物 sha256 {product_sha[:16]}…")
+            print(f"  op 证据: {len(op_evidence)} 项（npc {sum(1 for o in op_evidence if o['op'] == 'npc')} / door {sum(1 for o in op_evidence if o['op'] == 'door')}）")
+            print(f"  声明差异: {cats}")
+            for d in receipt["diagnostics"]:
+                print(f"  ℹ️  {d}")
+        return 0
+    except (_pkg().StorylineError, errors.DeterlineError, FileNotFoundError,
+            OSError, RuntimeError, ValueError) as exc:
+        if json_out:
+            print(json.dumps({"schema": _pkg().BUILD_SCHEMA_V2,
+                              "error": str(exc)},
+                             ensure_ascii=False, indent=2))
+        else:
+            print(f"✗ storyline-build v2 拒绝: {exc}", file=sys.stderr)
+        return 1
+
+
 def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
                         json_out: bool = False) -> int:
     """构建：plan → 工作区构建 → O7 差异核验 → 构建回执（仅写工作区）。
@@ -371,6 +556,10 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
         base_sha = transactions.fingerprint(game_file)
         if base_sha is None:
             raise errors.NotFoundError(f"基线文件不存在: {game_file}")
+        if defn.get("_version") == "v2":
+            # 包 12–15：v2 构建链（op 序 npc/door → 工作区；闸门不变量口径）
+            return _build_v2(defn, plan, game_file, workspace, base_sha,
+                             json_out)
         # 域生成器构建（写入有名工作区，不触原文件）——自管 game_edit 上下文：
         # 批量提交在上下文**退出**时落盘（data_win 包装内读产物 = 基线副本，
         # C4 CLI 实测教训），指纹/O7 比对必须在其后
@@ -407,7 +596,11 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
                     # NPC——typer=31（CJK_TYPER_TABLE B4 主臂实证）；文本校验
                     # 放行非 ASCII（ALLOW_CJK 仅在此作用域内开启）
                     state.ALLOW_CJK = True
-                    _run_cjk_font_pipeline(game_file, defn)
+                    npc = defn["npc"]
+                    chars = sorted({ch for ch in (npc["prompt"] + npc["yes_text"]
+                                                  + npc["no_text"])
+                                    if ch not in "\r\n\t"})
+                    _run_cjk_font_pipeline(game_file, chars)
                 npc = defn["npc"]
                 npc_mod.cmd_npc_choice(
                     game_file, plan["room"]["name"], npc["object"],
@@ -564,6 +757,13 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
                 refusals.append(
                     "同 patch_id 不同内容（定义已变更 vs 已应用回执）——"
                     "拒绝叠写（12 §C4）；先 undo 或更换 patch_id")
+            elif product_sha is None:
+                # v2 收口（包 12 链实测）：undo 回基线后再次 apply——目标回
+                # 基线但工作区产物已被单次消费，拒绝点前移到闸门层（此前
+                # 深层 cmd_sandbox_restore 报"沙箱备份不存在"）
+                refusals.append(
+                    "工作区产物缺失（应用为单次消费语义：应用后工作区即不在"
+                    "；目标已回基线）——重新 storyline-build")
             elif current != prior.get("baseline_sha256"):
                 refusals.append(
                     "目标基线漂移（当前 != 已应用回执 baseline）——拒绝")

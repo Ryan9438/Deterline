@@ -27,6 +27,7 @@ APPLY_SCHEMA = "deterline.storyline-apply/v1"
 # 计划层先交付（只读）；build/apply 接入在包 11–15（第三周）。
 DEFN_SCHEMA_V2 = "deterline.storyline/v2"
 PLAN_SCHEMA_V2 = "deterline.storyline-plan/v2"
+BUILD_SCHEMA_V2 = "deterline.storyline-build/v2"
 V2_TOP_FIELDS = {"schema", "patch_id", "flag_id", "cjk",
                  "rooms", "npcs", "doors", "order"}
 V2_NPC_FIELDS = {"room", "object", "x", "y", "range", "prompt",
