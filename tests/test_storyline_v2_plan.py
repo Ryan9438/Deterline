@@ -77,6 +77,10 @@ def _make_plan(text: str, tmp: str):
                             (k for k, v in PROBES.items() if v == idx), None)), \
              mock.patch("deterline.storyline._room_match_count",
                         return_value=(1, 0)), \
+             mock.patch("deterline.storyline._room_size_by_idx",
+                        side_effect=lambda gf, idx: {
+                            6: (320, 480), 7: (320, 240),
+                            9: (320, 240)}.get(idx)), \
              mock.patch("deterline.cmds.npc._query_npc_target",
                         return_value={"obj": "obj_npc_marker",
                                       "native": False, "step_code": None,
@@ -141,3 +145,29 @@ class TestV2PlanCompile(unittest.TestCase):
         with self.assertRaises(Exception) as cm:
             _make_plan(bad, self._tmp.name)
         self.assertIn("别名必须是标识符", str(cm.exception))
+
+    def test_npc_coordinate_out_of_bounds_rejected(self):
+        # 包 11：npc 坐标必须落在所属房间界内（room_ruins1 = 320×480）
+        bad = MAIN_V2.replace("    x: 100\n    y: 200",
+                              "    x: 100\n    y: 500", 1)
+        with self.assertRaises(Exception) as cm:
+            _make_plan(bad, self._tmp.name)
+        self.assertIn("坐标越界", str(cm.exception))
+        self.assertIn("npcs.requester", str(cm.exception))
+
+    def test_door_coordinate_out_of_bounds_rejected(self):
+        # 包 11：门坐标须在 from 房界内（room_ruins2 = 320×240，x=400 越界）
+        bad = MAIN_V2.replace("    x: 300\n    y: 120",
+                              "    x: 400\n    y: 120", 1)
+        with self.assertRaises(Exception) as cm:
+            _make_plan(bad, self._tmp.name)
+        self.assertIn("坐标越界", str(cm.exception))
+        self.assertIn("doors.to_pickup", str(cm.exception))
+
+    def test_spawn_coordinate_out_of_bounds_rejected(self):
+        # 包 11：出生点须在 to 房界内（room_ruins2 = 320×240，y=400 越界）
+        bad = MAIN_V2.replace("    spawn_x: 40\n    spawn_y: 120",
+                              "    spawn_x: 40\n    spawn_y: 400", 1)
+        with self.assertRaises(Exception) as cm:
+            _make_plan(bad, self._tmp.name)
+        self.assertIn("spawn", str(cm.exception))

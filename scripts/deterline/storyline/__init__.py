@@ -386,6 +386,28 @@ if ({int(idx)} < 0 || {int(idx)} >= Data.Rooms.Count) {{
     return None
 
 
+def _room_size_by_idx(game_file: Path, idx: int) -> tuple | None:
+    """只读 CSX 探针：房间尺寸 (W, H)（包 11 资源清单：坐标范围校验依据）。"""
+    from .. import utmt
+    csx = f'''
+if ({int(idx)} < 0 || {int(idx)} >= Data.Rooms.Count) {{
+    ScriptMessage("ROOM_SIZE:NOT_FOUND");
+}} else {{
+    ScriptMessage("ROOM_SIZE:" + Data.Rooms[{int(idx)}].Width + "x"
+                  + Data.Rooms[{int(idx)}].Height);
+}}
+'''
+    out = utmt._run_utmt(csx, game_file, save=False)
+    for line in utmt._parse_msg(out):
+        if line.startswith("ROOM_SIZE:"):
+            val = line[len("ROOM_SIZE:"):]
+            if val == "NOT_FOUND":
+                return None
+            w, _, h = val.partition("x")
+            return (int(w), int(h))
+    return None
+
+
 def build_plan(defn: dict, game_file: Path) -> dict:
     """只读计划（零写盘）：房间/对象解析 + goto 预解析 + 期望资源集 +
     诊断。解析失败（错房/歧义/缺对象）在写目标前拒绝（12 §C2 验收）。
@@ -609,9 +631,29 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
         resolved[alias] = {"requested": requested, "name": actual,
                            "idx": idx, "exact_hits": exact,
                            "partial_hits": partial}
+        size = _room_size_by_idx(game_file, idx)
+        if size is None:
+            raise errors.ValidationError(
+                f"rooms.{alias} 尺寸探针失败（idx {idx}）——拒绝"
+                "（资源清单必须可读，包 11）")
+        resolved[alias]["size_w"], resolved[alias]["size_h"] = size
         if actual != requested:
             resolved[alias]["note"] = f"两段式子串解析: {requested} → {actual}"
     plan["rooms"] = resolved
+    # 坐标范围校验（包 11）：npc 与门坐标必须落在所属房间界内
+    def _in_bounds(alias: str, x: int, y: int, field: str) -> None:
+        r = resolved[alias]
+        if not (0 <= x < r["size_w"]) or not (0 <= y < r["size_h"]):
+            raise errors.ValidationError(
+                f"{field} 坐标越界: ({x},{y}) 不在 rooms.{alias} "
+                f"{r['size_w']}x{r['size_h']} 界内（包 11 资源清单）")
+    for nid, spec in npcs_def.items():
+        _in_bounds(npcs_def[nid]["room"], spec["x"], spec["y"],
+                   f"npcs.{nid}")
+    for did, spec in doors_def.items():
+        _in_bounds(spec["from"], spec["x"], spec["y"], f"doors.{did}")
+        _in_bounds(spec["to"], spec["spawn_x"], spec["spawn_y"],
+                   f"doors.{did} spawn")
     # npc 规格 → 对象/Create 探针（复用 v1 探针；逐 npc 记录）
     npc_plan: dict = {}
     for nid, spec in npcs_def.items():
