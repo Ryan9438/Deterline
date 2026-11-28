@@ -100,8 +100,13 @@ ScriptMessage("NPC_TARGET:RESULT:" + oname + ":" + (native ? "1" : "0") + ":" + 
 
 
 def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: int,
-                          native: bool, once: bool = False, range_: int = 50) -> str:
+                          native: bool, once: bool = False, range_: int = 50,
+                          typer: int = 5) -> str:
     """Build distance-trigger GML for a spawned NPC instance.
+
+    typer（R-1215 P1 清偿）：5 = 原版标准（ASCII）；31 = CJK 组合
+    （spacing 12，B4 实证）——typer5 渲染 12px CJK 字形净重叠 4px
+    （I3 结构性不可用），CJK 文本调用方必须传 31。fail-closed 白名单。
 
     ⚠️⚠️ 形态约束（2026-11-07 游戏内实测 15 次启动实验矩阵，见 AUDIT_2026-11-07/域F）：
     本环境（UndertaleModCli 0.9.1.2 + Undertale Mac Runner）对附加/替换代码块存在
@@ -122,12 +127,18 @@ def _build_npc_step_block(instance_id: int, text_key: str, face: int, emotion: i
     `native` 只影响 Alarm_0 守卫（调用方处理），与本块无关。
     """
     once_line = "\n            instance_destroy();" if once else ""
+    if typer not in (5, 31):
+        # 与 npc-choice 同款证据级白名单（I1/R-1215 P1：typer5×CJK 渲染
+        # 结构性不可用；31 = B4 实证组合）
+        raise errors.ValidationError(
+            f"typer={typer} 无渲染证据——当前仅支持 5（原版标准）与 31"
+            "（CJK 组合，spacing12，B4 实证）两值。")
     return f'''if (id == {instance_id} && !instance_exists(obj_dialoguer) && !instance_exists(OBJ_WRITER) && !instance_exists(obj_choicer))
 {{
     if (distance_to_object(obj_mainchara) < {range_})
     {{
         global.msc = 0;
-        global.typer = 5;
+        global.typer = {typer};
         global.facechoice = {face};
         global.faceemotion = {emotion};
         global.msg[0] = scr_gettext("{text_key}");
@@ -556,7 +567,7 @@ ScriptMessage("VERIFY_INSTANCES:bad=" + bad + " zero=" + badZero + " dup=" + bad
 
 def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: int,
                      text_key: str, text: str, face: int = 0, emotion: int = 0,
-                     once: bool = False, range_: int = 50) -> None:
+                     once: bool = False, range_: int = 50, typer: int = 5) -> None:
     """One-shot safe NPC dialogue setup.
 
     1. Adds the dialogue to textdata_en
@@ -568,6 +579,8 @@ def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: 
        with `if (id == N) exit;` to prevent the default dialogue from overlapping.
 
     range_ = trigger distance in pixels (default 50).
+    typer = writer 渲染 typer（默认 5 = 原版 ASCII；CJK 组合传 31——
+    R-1215 P1 清偿：typer5×12px CJK 字形净重叠 4px 结构性不可用）。
     """
     print("--- npc-dialogue ---")
     utmt._validate_ascii_text(text, f"对话 '{text_key}'")
@@ -603,7 +616,8 @@ def cmd_npc_dialogue(game_file: Path, room_name: str, obj_name: str, x: int, y: 
 
     print("Step 4/4: 注入触发代码...")
     _ensure_var_initialized(game_file, info["obj"], "deterline_state")
-    block = _build_npc_step_block(new_id, text_key, face, emotion, native, once=once, range_=range_)
+    block = _build_npc_step_block(new_id, text_key, face, emotion, native,
+                                  once=once, range_=range_, typer=typer)
     step_code = info["step_code"]
     if step_code:
         code._append_to_code(game_file, step_code, block)

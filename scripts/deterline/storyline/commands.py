@@ -395,7 +395,6 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                                                + spec.get("no_text", ""))
                                     if ch not in "\r\n\t"})
                     _run_cjk_font_pipeline(game_file, chars)
-                door_ready = None
                 for op in plan["ops"]:
                     if op["op"] == "npc":
                         n = op["npc"]
@@ -428,7 +427,8 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                                 f"det_{defn['patch_id']}_{op['ref']}",
                                 spec["prompt"], face=0, emotion=0,
                                 range_=spec.get("range", 60),
-                                once=spec.get("once", True))
+                                once=spec.get("once", True),
+                                typer=typer)
                             keys = [f"det_{defn['patch_id']}_{op['ref']}"]
                         op_evidence.append({"op": "npc", "ref": op["ref"],
                                             "room": room_name,
@@ -437,9 +437,13 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                                             "typer": typer})
                     else:
                         d = op["door"]
-                        if door_ready is None:
-                            door_ready = door_mod.ensure_deterline_door_object(
-                                game_file)
+                        if op["op"] not in ("npc", "door"):
+                            raise _pkg().StorylineError(
+                                f"未知 op 类型: {op['op']}（V2_ORDER_KINDS "
+                                "之外的 kind 不进构建——合同层应已拒绝）")
+                        # ensure 幂等（R-1215：per-op 记录实际值，不缓存失真）
+                        door_ready = door_mod.ensure_deterline_door_object(
+                            game_file)
                         door_mod.cmd_create_door(
                             game_file, d["from"]["name"], d["to"]["name"],
                             d["x"], d["y"], d["spawn_x"], d["spawn_y"])
@@ -464,7 +468,7 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
             verify.cmd_diff_snapshots(game_file, product, detail=True)
         parsed = _parse_diff_categories(buf.getvalue())
         cats = parsed["counts"]
-        n_inst = sum(1 for o in plan["ops"])
+        n_inst = sum(1 for o in plan["ops"] if o["op"] in ("npc", "door"))
         refusals = []
         bad_ops = sorted({o for o in parsed["str_ops"] if o != "add"})
         if bad_ops:
@@ -501,6 +505,8 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
             "product": str(product),
             "product_sha256": product_sha,
             "declared_diff": cats,
+            "declared_str_ops": parsed["str_ops"],
+            "declared_structure": parsed["struct"],
             "ops_evidence": op_evidence,
             "cjk": bool(defn.get("cjk", False)),
             "cjk_chars": (sorted({ch for spec in (defn.get("npcs") or {})
@@ -543,6 +549,7 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
     """构建：plan → 工作区构建 → O7 差异核验 → 构建回执（仅写工作区）。
     `--preview` 不支持——构建即写工作区（EditPlan 预览不落盘会使产物
     缺失，语义冲突，R13 P3）。"""
+    defn = None
     try:
         from .. import state
         if state.PREVIEW:
@@ -652,8 +659,13 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
                 + "; ".join(undeclared) + f"（允许: {allowed}）")
     except (_pkg().StorylineError, errors.DeterlineError, FileNotFoundError,
             OSError, RuntimeError) as exc:
+        # JSON 错误壳按定义版本（R-1215 P3：v2 计划阶段失败不再挂 v1 壳；
+        # defn 未及载入时落 v1——与既有 v1 拒绝形态一致）
+        shell = (_pkg().BUILD_SCHEMA_V2
+                 if defn is not None and defn.get("_version") == "v2"
+                 else _pkg().BUILD_SCHEMA)
         if json_out:
-            print(json.dumps({"schema": _pkg().BUILD_SCHEMA, "error": str(exc)},
+            print(json.dumps({"schema": shell, "error": str(exc)},
                              ensure_ascii=False, indent=2))
         else:
             print(f"✗ storyline-build 拒绝: {exc}", file=sys.stderr)
@@ -757,13 +769,6 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
                 refusals.append(
                     "同 patch_id 不同内容（定义已变更 vs 已应用回执）——"
                     "拒绝叠写（12 §C4）；先 undo 或更换 patch_id")
-            elif product_sha is None:
-                # v2 收口（包 12 链实测）：undo 回基线后再次 apply——目标回
-                # 基线但工作区产物已被单次消费，拒绝点前移到闸门层（此前
-                # 深层 cmd_sandbox_restore 报"沙箱备份不存在"）
-                refusals.append(
-                    "工作区产物缺失（应用为单次消费语义：应用后工作区即不在"
-                    "；目标已回基线）——重新 storyline-build")
             elif current != prior.get("baseline_sha256"):
                 refusals.append(
                     "目标基线漂移（当前 != 已应用回执 baseline）——拒绝")
@@ -774,6 +779,13 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
             elif build_rcpt.get("product_sha256") != prior.get("product_sha256"):
                 refusals.append(
                     "新构建与已应用回执产物不一致——拒绝叠写")
+            elif product_sha is None:
+                # v2 收口（包 12 链实测，R-1215 P3 顺序订正：置于漂移/异内容
+                # 之后——目标漂移时不得误报"已回基线"）：undo 回基线后再次
+                # apply，工作区产物已被单次消费
+                refusals.append(
+                    "工作区产物缺失（应用为单次消费语义：应用后工作区即不在"
+                    "；目标已回基线）——重新 storyline-build")
         else:
             # 无应用回执：目标须等于构建时基线，产物须与构建回执一致，
             # 且构建回执必须对应**当前定义**（R13 P1-2：陈旧构建 + 新定义

@@ -15,7 +15,8 @@ from unittest import mock
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 
-from deterline.storyline import (APPLY_SCHEMA, StorylineError, yaml_min)  # noqa: E402
+from deterline.storyline import (APPLY_SCHEMA, StorylineError, yaml_min,
+                                 load_definition)  # noqa: E402
 from deterline.storyline.commands import (  # noqa: E402
     cmd_storyline_apply, cmd_storyline_build, cmd_storyline_plan)
 from deterline.storyline import _read_definition  # noqa: E402
@@ -818,6 +819,12 @@ class StorylineEndToEnd(unittest.TestCase):
         # 字体管线恰一次、先于域生成器（同批工作区）；包 15 签名 chars 化
         # ——v1 调用点按单 npc 三文本字段汇总（字形集仍最小集确定性）
         self.assertEqual(len(font_calls), 1)
+        _dn = load_definition(cjk_path)
+        _npc = _dn["npc"]
+        _expected = tuple(sorted(
+            {ch for ch in (_npc["prompt"] + _npc["yes_text"] + _npc["no_text"])
+             if ch not in "\r\n\t"}))
+        self.assertEqual(font_calls[0], _expected)
         # typer=31（B4 实证）传入 npc-choice
         self.assertEqual(len(self._choice_kwargs), 1)
         self.assertEqual(self._choice_kwargs[0].get("typer"), 31)
