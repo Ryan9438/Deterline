@@ -32,16 +32,18 @@ c1_preflight_core
 [ -f "$DEFN_SRC" ] || c1_die "定义文件不存在: $DEFN_SRC"
 DEFN_SRC="$(cd "$(dirname "$DEFN_SRC")" && pwd)/$(basename "$DEFN_SRC")"
 DEFN_BASE="$(basename "$DEFN_SRC")"
-PATCH_ID="$(sed -n 's/^patch_id:[[:space:]]*//p' "$DEFN_SRC" | head -1 | tr -d '[:space:]' | sed 's/^"//; s/"$//')"
-PATCH_ID="$PATCH_ID" "$PY" -c 'import os,re,sys; sys.exit(0 if re.fullmatch(r"[a-z0-9][a-z0-9_]{2,63}", os.environ["PATCH_ID"]) else 1)' || c1_die \
-  "定义 patch_id 不合引擎规则（正则 [a-z0-9][a-z0-9_]{2,63}，全串匹配）: $(printf '%q' "$PATCH_ID")"
-if grep -Eq '^cjk:[[:space:]]*(true|True)([[:space:]]|$)' "$DEFN_SRC"; then
-  CJK_FLAG=1
-  echo "[c1-cjk] 定义: $DEFN_BASE (patch_id=$PATCH_ID, cjk=true → 字体资产闸门)"
+# 包 04：定义闸门与引擎同源——_read_definition 单一来源（重复键/未知字段/
+# 类型/patch_id 正则全部引擎裁决、带行号），样例不再 sed/grep 文本截取。
+# 闸门输出 JSON {"patch_id","cjk"}；失败时引擎错误原样过 stderr 并退出。
+GATE_JSON="$("$PY" "$C1_SAMPLE_DIR/defn_gate.py" "$DEFN_SRC")"
+PATCH_ID="$(printf '%s' "$GATE_JSON" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["patch_id"])')"
+CJK_FLAG="$(printf '%s' "$GATE_JSON" | "$PY" -c 'import json,sys; print("1" if json.load(sys.stdin)["cjk"] else "0")')"
+echo "[c1-cjk] 定义: $DEFN_BASE (patch_id=$PATCH_ID, cjk=$CJK_FLAG → 引擎同源闸门)"
+if [ "$CJK_FLAG" = "1" ]; then
+  echo "[c1-cjk] cjk=true → 字体资产闸门"
   c1_ensure_cjk_assets
 else
-  CJK_FLAG=0
-  echo "[c1-cjk] 定义: $DEFN_BASE (patch_id=$PATCH_ID, cjk=false → 免字体/Pillow/numpy)"
+  echo "[c1-cjk] cjk=false → 免字体/Pillow/numpy"
 fi
 c1_check_baseline
 

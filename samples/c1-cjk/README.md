@@ -18,6 +18,11 @@ CJK 字体栈注入），替代旧单脚本形态 `C1-支线脚本/c1_branch_cjk
 "提示打印完产物即被撤销" 的旧形态问题。每次运行强制全新目录（已存在
 即拒），构建指纹与交接信息在 `run.json`。
 
+**定义闸门（包 04）**：`prepare.sh` 经 `defn_gate.py` 用引擎
+`storyline._read_definition` **同源**解析定义——重复键/未知字段/类型/
+patch_id 正则全部引擎裁决（带行号、指向字段），样例侧不再做文本截取；
+闸门失败 = 引擎错误原样过 stderr。
+
 **双正例（14 手册 §1）**：`prepare.sh --defn samples/c1-cjk/defn_ascii.yaml`
 = ASCII 腿（patch_id `det_c1_ascii`，typer=5，flag 509 declared-only）——
 `cjk: false` 免字体、免 Pillow/numpy，是资产缺席形态下的最小依赖正例；
