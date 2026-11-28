@@ -189,6 +189,9 @@ def main():
                         help="storyline-build: 接运行时旗标载体写入（包 18 候选，"
                              "默认禁用；talk npc 触发写 flag_id 槽——不入存档，"
                              "待实机复验）")
+    parser.add_argument("--value2", dest="value2", default=None,
+                        help="storyline-compose/storyline-build/storyline-apply: "
+                             "第二份定义 YAML（双补丁合成：一次构建合并）")
     parser.add_argument("--view-track", dest="view_track", action="store_true",
                         help="storyline-build: 滚屏候选方向 B（包 20 候选，默认禁用；"
                              "文字/红心与框同视图参考——自校准捕获+逐帧跟踪；"

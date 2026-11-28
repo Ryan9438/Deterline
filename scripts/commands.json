@@ -877,6 +877,30 @@
         "目标被修改或备份缺席 → 拒绝，目标与回执保留（人工核查后再处置）",
         "证据等级 sandbox（副本实测正例/重复/漂移/备份缺席四臂）"
       ]
+    },
+    {
+      "action": "storyline-compose",
+      "group": "safety",
+      "verify": "sandbox",
+      "summary": "支线编排·组合预览（16 号计划包 26/27，只读）：两份 v2 定义 → 资源所有权冲突表（mergeable 可加性 / shared-script 共享可变[仅同一合成构建可合并] / exclusive 独占冲突）+ 合成定义（id/别名加 patch 前缀、执行序按 patch_id 字典序=输入顺序无关、cjk 期望与 flag 声明一致性检查）→ 合成计划摘要；不可合并 exit=1",
+      "example": "storyline-compose --value a.yaml --value2 b.yaml --dir /path/game.ios --json",
+      "notes": [
+        "调换 --value/--value2 产生同一合成计划（patch_id 字典序内各自声明序）",
+        "同房同坐标实例重叠 / cjk 期望不一致 / 双 flag 声明 / 同 patch_id → 拒绝",
+        "同名不同内容、缺依赖在合成计划编译期由既有合同/诊断裁决",
+        "构建侧：storyline-build/apply 加 --value2 走同一合成（一次构建一次闸门）"
+      ]
+    },
+    {
+      "action": "storyline-pack",
+      "group": "safety",
+      "verify": "sandbox",
+      "summary": "支线编排·可重建包（16 号计划包 30）：两份原创定义 → stdout JSON 包（schema deterline.storyline-pack/v1：定义原文+sha、工具/环境要求、合成 patch_id/defn_sha256/语义指纹/执行序/冲突表）——包内只含重建所需的原创定义与元数据（零游戏数据/产物）；另一独立检出解包重算可逐位复现",
+      "example": "storyline-pack --value a.yaml --value2 b.yaml --dir /path/game.ios > pack.json",
+      "notes": [
+        "不可合并的组合生成即拒绝（冲突表随错误 JSON 返回）",
+        "重建验收 = 解包文字写回 YAML → storyline-compose 重算语义指纹/defn_sha 与包内 expected 一致"
+      ]
     }
   ]
 }

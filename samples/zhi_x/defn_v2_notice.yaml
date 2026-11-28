@@ -1,0 +1,19 @@
+# 16 号计划包 26–30 · 组合对照样例「告示」（v2 合同，原创）
+# 与「纸星回信」同基线组合：独立补丁（同房不同坐标、无门、无 flag 声明），
+# 演示 shared-script（obj_npc_marker 共享事件脚本）经同一合成构建合并。
+schema: deterline.storyline/v2
+patch_id: det_notice
+cjk: true
+rooms:
+  yard: room_ruins1
+npcs:
+  notice:
+    room: yard
+    object: obj_npc_marker
+    x: 180
+    y: 120
+    range: 50
+    prompt: "* 告示：纸星驿站今日开张，欢迎投递。/%%"
+    once: false
+order:
+  - npc:notice

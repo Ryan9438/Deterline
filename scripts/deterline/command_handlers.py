@@ -29,7 +29,8 @@ def _storyline_build_any(args, parser, target):
         paths.resolve_game_data_file(args.dir), args.value, args.workspace,
         json_out=args.json,
         flag_write=bool(getattr(args, "flag_write", False)),
-        view_track=bool(getattr(args, "view_track", False)))
+        view_track=bool(getattr(args, "view_track", False)),
+        value2=getattr(args, "value2", None))
     if rc:
         sys.exit(rc)
 
@@ -40,7 +41,7 @@ def _storyline_undo_any(args, parser, target):
         parser.error("storyline-undo 需要 --value (定义 YAML 路径)")
     rc = storyline.cmd_storyline_undo(
         paths.resolve_game_data_file(args.dir), args.value,
-        json_out=args.json)
+        json_out=args.json, value2=getattr(args, "value2", None))
     if rc:
         sys.exit(rc)
 
@@ -58,7 +59,29 @@ def _storyline_apply_any(args, parser, target):
         parser.error("storyline-apply 的 --commit 与 --preview 互斥（预览=零动作）")
     rc = storyline.cmd_storyline_apply(
         None, paths.resolve_game_data_file(args.dir), args.value,
-        args.workspace, commit=bool(args.commit), json_out=args.json)
+        args.workspace, commit=bool(args.commit), json_out=args.json,
+        value2=getattr(args, "value2", None))
+    if rc:
+        sys.exit(rc)
+
+
+def _storyline_pack_any(args, parser, target):
+    # 包 30：可重建包（stdout JSON——原创定义 + 元数据；零游戏数据）
+    if args.value is None or args.value2 is None:
+        parser.error("storyline-pack 需要 --value 与 --value2（两份定义）")
+    rc = storyline.cmd_storyline_pack(
+        paths.resolve_game_data_file(args.dir), args.value, args.value2)
+    if rc:
+        sys.exit(rc)
+
+
+def _storyline_compose_any(args, parser, target):
+    # 包 26/27：组合预览（只读）——所有权冲突表 + 合成计划
+    if args.value is None or args.value2 is None:
+        parser.error("storyline-compose 需要 --value 与 --value2（两份定义）")
+    rc = storyline.cmd_storyline_compose(
+        paths.resolve_game_data_file(args.dir), args.value, args.value2,
+        json_out=args.json)
     if rc:
         sys.exit(rc)
 
@@ -932,6 +955,8 @@ COMMANDS = {
     "storyline-build": {"any": _storyline_build_any},
     "storyline-apply": {"any": _storyline_apply_any},
     "storyline-undo": {"any": _storyline_undo_any},
+    "storyline-compose": {"any": _storyline_compose_any},
+    "storyline-pack": {"any": _storyline_pack_any},
 }
 
 # Query commands keep reading the source by default; --sandbox/--workspace select a copy.

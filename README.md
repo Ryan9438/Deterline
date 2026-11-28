@@ -107,7 +107,7 @@ python run.py --action quest-init
 ### 全部命令（自动生成 · 与 SKILL.md/COMMANDS.md 逐字节一致）
 
 <!-- BEGIN generated:commands (SSOT: scripts/commands.json · python3 tools/gen_docs.py 生成，勿手改) -->
-> 全量 96 个命令 · 版本 2.6.0-rc6 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
+> 全量 98 个命令 · 版本 2.6.0-rc6 · 由 `scripts/commands.json` 生成（改命令表 → 改 json → `python3 tools/gen_docs.py`）
 > 验证级别（验收总原则，见 AUDIT_2026-11-07/01-ROADMAP §六）：**static** = 反编译/代码审查 · **sandbox** = 沙箱副本注入实测 · **in-game** = 游戏内启动实测
 
 ### 📁 存档编辑 — --file ini / --file file0，零依赖立即可用
@@ -314,6 +314,8 @@ python run.py --action quest-init
 | `storyline-build --value storyline.yaml --workspace det_demo --dir /path/game.ios [--flag-write] [--view-track]` | 支线编排·工作区构建（12 §C3）：plan → 有名工作区构建（域生成器 npc-choice）→ 基线 vs 产物 O7 结构化差异 → 与计划期望资源集比对（未声明变更拒绝出候选）→ 构建回执（fingerprint/声明差异）；构建期间仅写工作区。--flag-write（包 18 候选，默认禁用）接运行时旗标载体写入：talk npc 触发无条件写 flag_id 槽（不入存档；占用/持久化/选择 npc/多 code enter fail-closed 拒绝；待实机复验）。--view-track（包 20 候选，默认禁用）滚屏修复方向 B：文字/红心与框同视图参考（自校准捕获+逐帧跟踪；单轴纵滚房间/同房单 npc 限定；待实机复验） | sandbox |
 | `storyline-apply --value storyline.yaml --workspace det_demo --dir /path/game.ios --commit` | 支线编排·整包应用（12 §C4）：构建回执核对 → 幂等（同 ID 同内容且目标==after → 已应用 no-op）/ 同 ID 不同内容或目标漂移拒绝 → EditPlan 事务层整包应用 → 回执落盘 .deterline/storyline/<patch_id>/receipt.json；中断交给恢复分类（journal 复用方案 A） | sandbox |
 | `storyline-undo --value storyline.yaml --dir /path/game.ios --json` | 支线编排·前态撤销（16 号计划包 25）：读应用回执 → 拒绝链（无回执/目标被修改/备份缺席——全部保留目标与回执）→ 按 before 指纹匹配备份（.bak/.bak.<ts> 最新优先，不按'最新备份'猜）→ 恢复并原子更新回执（status=undone）；已撤销 = no-op | sandbox |
+| `storyline-compose --value a.yaml --value2 b.yaml --dir /path/game.ios --json` | 支线编排·组合预览（16 号计划包 26/27，只读）：两份 v2 定义 → 资源所有权冲突表（mergeable 可加性 / shared-script 共享可变[仅同一合成构建可合并] / exclusive 独占冲突）+ 合成定义（id/别名加 patch 前缀、执行序按 patch_id 字典序=输入顺序无关、cjk 期望与 flag 声明一致性检查）→ 合成计划摘要；不可合并 exit=1 | sandbox |
+| `storyline-pack --value a.yaml --value2 b.yaml --dir /path/game.ios > pack.json` | 支线编排·可重建包（16 号计划包 30）：两份原创定义 → stdout JSON 包（schema deterline.storyline-pack/v1：定义原文+sha、工具/环境要求、合成 patch_id/defn_sha256/语义指纹/执行序/冲突表）——包内只含重建所需的原创定义与元数据（零游戏数据/产物）；另一独立检出解包重算可逐位复现 | sandbox |
 
 > ⚠️ `verify-code`: V1 收窄版；注入实验后必跑，能区分活/死代码形态的指纹差异
 > ⚠️ `smoke-test`: ≈90 秒/次；环境敏感（无人值守开场动画可能卡住）；结束后自动还原并清理
@@ -337,6 +339,12 @@ python run.py --action quest-init
 > ⚠️ `storyline-undo`: 正例恢复回本次前态（回执 before_sha256）；重复撤销为可识别 no-op
 > ⚠️ `storyline-undo`: 目标被修改或备份缺席 → 拒绝，目标与回执保留（人工核查后再处置）
 > ⚠️ `storyline-undo`: 证据等级 sandbox（副本实测正例/重复/漂移/备份缺席四臂）
+> ⚠️ `storyline-compose`: 调换 --value/--value2 产生同一合成计划（patch_id 字典序内各自声明序）
+> ⚠️ `storyline-compose`: 同房同坐标实例重叠 / cjk 期望不一致 / 双 flag 声明 / 同 patch_id → 拒绝
+> ⚠️ `storyline-compose`: 同名不同内容、缺依赖在合成计划编译期由既有合同/诊断裁决
+> ⚠️ `storyline-compose`: 构建侧：storyline-build/apply 加 --value2 走同一合成（一次构建一次闸门）
+> ⚠️ `storyline-pack`: 不可合并的组合生成即拒绝（冲突表随错误 JSON 返回）
+> ⚠️ `storyline-pack`: 重建验收 = 解包文字写回 YAML → storyline-compose 重算语义指纹/defn_sha 与包内 expected 一致
 <!-- END generated:commands -->
 
 完整命令列表见 [COMMANDS.md](COMMANDS.md)，Agent Skill 文档见 [SKILL.md](SKILL.md)。

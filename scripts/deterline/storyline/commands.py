@@ -32,6 +32,130 @@ def _pkg():
     return _sys.modules[__package__]
 
 
+def _load_composed(defn_path: str, value2: str) -> tuple[dict, dict, dict]:
+    """包 27/28：载入两定义并合成（合成 defn_sha = 两组件 sha 的定值哈希——
+    同一对文件恒同指纹，apply 侧可复算比对）。"""
+    a = _pkg().load_definition(Path(defn_path))
+    b = _pkg().load_definition(Path(value2))
+    from . import ownership
+    comp = ownership.compose_definitions(a, b)
+    comp["_sha256"] = _pkg().hashlib.sha256(
+        f"compose:{a['_sha256']}:{b['_sha256']}".encode()).hexdigest()
+    return comp, a, b
+
+
+def cmd_storyline_pack(game_file: Path, defn_path: str, value2: str,
+                       json_out: bool = True) -> int:
+    """包 30：本地可重建包（原创定义 + 元数据；不含游戏数据/产物）。
+
+    包内 = 两份原创定义原文 + 工具/环境要求 + 期望（合成 patch_id /
+    defn_sha256 / 语义指纹 / O7 摘要 / 执行序）。在另一独立检出解包
+    重算可等价复现（验收：语义指纹与 defn_sha 逐位一致）。
+    """
+    try:
+        comp, a, b = _load_composed(defn_path, value2)
+        plan_c = _pkg().build_plan(comp, game_file)
+        from . import ownership
+        plan_a = _pkg().build_plan(a, game_file)
+        plan_b = _pkg().build_plan(b, game_file)
+        table = ownership.compare_ownership(
+            ownership.extract_ownership(plan_a),
+            ownership.extract_ownership(plan_b))
+        if not table["mergeable"]:
+            raise _pkg().StorylineError(
+                "包生成拒绝：两定义不可合并——" + "; ".join(
+                    f"[{c['class']}] {c['kind']}:{c['id']}"
+                    for c in table["conflicts"]))
+        pack = {
+            "schema": "deterline.storyline-pack/v1",
+            "tool_version": _pkg()._tool_version(),
+            "tool_requirements": {
+                "python": ">=3.13（release_check 金标口径）",
+                "utmt_cli": "UndertaleModCli（dotnet 8+）",
+                "cjk_deps": "Pillow + numpy（cjk 构建时）",
+            },
+            "composition": True,
+            "definitions": {
+                "a": {"filename": Path(defn_path).name,
+                      "sha256": a["_sha256"],
+                      "text": Path(defn_path).read_text(encoding="utf-8")},
+                "b": {"filename": Path(value2).name,
+                      "sha256": b["_sha256"],
+                      "text": Path(value2).read_text(encoding="utf-8")},
+            },
+            "expected": {
+                "merged_patch_id": comp["patch_id"],
+                "merged_defn_sha256": comp["_sha256"],
+                "semantic_sha256": plan_c["semantic_sha256"],
+                "ops": [f"{o['op']}:{o['ref']}" for o in plan_c["ops"]],
+                "conflict_table": table["conflicts"],
+            },
+        }
+        print(json.dumps(pack, ensure_ascii=False, indent=2))
+        return 0
+    except (_pkg().StorylineError, errors.DeterlineError, FileNotFoundError,
+            OSError, ValueError) as exc:
+        print(json.dumps({"schema": "deterline.storyline-pack/v1",
+                          "error": str(exc)},
+                         ensure_ascii=False, indent=2))
+        return 1
+
+
+def cmd_storyline_compose(game_file: Path, defn_path: str, value2: str,
+                          json_out: bool = False) -> int:
+    """包 26/27：组合预览（只读）——所有权冲突表 + 合成计划摘要。"""
+    try:
+        comp, a, b = _load_composed(defn_path, value2)
+        from . import ownership
+        plan_a = _pkg().build_plan(a, game_file)
+        plan_b = _pkg().build_plan(b, game_file)
+        table = ownership.compare_ownership(
+            ownership.extract_ownership(plan_a),
+            ownership.extract_ownership(plan_b))
+        if table["mergeable"]:
+            plan_c = _pkg().build_plan(comp, game_file)
+        else:
+            plan_c = None
+        out = {
+            "schema": "deterline.storyline-compose/v1",
+            "patches": [a["patch_id"], b["patch_id"]],
+            "merged_patch_id": comp["patch_id"],
+            "conflicts": table["conflicts"],
+            "mergeable": table["mergeable"],
+            "advice": table["advice"],
+            "composed_plan": (None if plan_c is None else {
+                "ops": [f"{o['op']}:{o['ref']}" for o in plan_c["ops"]],
+                "semantic_sha256": plan_c["semantic_sha256"],
+                "defn_sha256": comp["_sha256"],
+            }),
+        }
+        if json_out:
+            print(json.dumps(out, ensure_ascii=False, indent=2))
+        else:
+            print(f"--- storyline-compose（{a['patch_id']} + {b['patch_id']}） ---")
+            print(f"  可合并: {table['mergeable']}  合成 patch_id: {comp['patch_id']}")
+            for c in table["conflicts"]:
+                print(f"  [{c['class']}] {c['kind']}:{c['id']}")
+            if table.get("advice"):
+                print(f"  建议: {table['advice']}")
+            if plan_c is not None:
+                print("  合成执行序:")
+                for op in plan_c["ops"]:
+                    print(f"    - {op['op']}:{op['ref']}")
+                print(f"  合成语义指纹: {plan_c['semantic_sha256'][:16]}…")
+                print(f"  合成 defn_sha256: {comp['_sha256'][:16]}…")
+        return 0 if table["mergeable"] else 1
+    except (_pkg().StorylineError, errors.DeterlineError, FileNotFoundError,
+            OSError, ValueError) as exc:
+        if json_out:
+            print(json.dumps({"schema": "deterline.storyline-compose/v1",
+                              "error": str(exc)},
+                             ensure_ascii=False, indent=2))
+        else:
+            print(f"✗ storyline-compose 拒绝: {exc}", file=sys.stderr)
+        return 1
+
+
 def cmd_storyline_plan(game_file: Path, defn_path: str, json_out: bool = False) -> int:
     """只读计划：定义 → 计划 JSON（零写盘）。"""
     try:
@@ -915,7 +1039,8 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
 def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
                         json_out: bool = False,
                         flag_write: bool = False,
-                        view_track: bool = False) -> int:
+                        view_track: bool = False,
+                        value2: str | None = None) -> int:
     """构建：plan → 工作区构建 → O7 差异核验 → 构建回执（仅写工作区）。
     `--preview` 不支持——构建即写工作区（EditPlan 预览不落盘会使产物
     缺失，语义冲突，R13 P3）。
@@ -931,7 +1056,11 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
                 "storyline-plan 或 build 后的 storyline-apply 预览）")
         _validate_workspace_name(workspace)
         game_file = Path(game_file).resolve()
-        defn = _pkg().load_definition(Path(defn_path))
+        if value2:
+            # 包 27/28：双补丁合成构建（同一干净基线一次构建）
+            defn, _a, _b = _load_composed(defn_path, value2)
+        else:
+            defn = _pkg().load_definition(Path(defn_path))
         plan = _pkg().build_plan(defn, game_file)
         base_sha = transactions.fingerprint(game_file)
         if base_sha is None:
@@ -1082,7 +1211,8 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
 
 def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
                         workspace: str, commit: bool = False,
-                        json_out: bool = False) -> int:
+                        json_out: bool = False,
+                        value2: str | None = None) -> int:
     """整包应用：幂等/漂移/同 ID 异内容拒绝 → 应用 → 回执。默认预览。
 
     核对依据 = build.json（构建回执，storyline-build 落盘）；应用后回执
@@ -1098,7 +1228,11 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
                 "--preview）——previews 语义不得被 commit 覆盖")
         _validate_workspace_name(workspace)
         game_file = Path(game_file).resolve()
-        defn = _pkg().load_definition(Path(defn_path))
+        if value2:
+            # 包 28：合成补丁的 apply 侧用同一对文件复算合成定义/指纹
+            defn, _a, _b = _load_composed(defn_path, value2)
+        else:
+            defn = _pkg().load_definition(Path(defn_path))
         build_rcpt_path = _pkg().receipt_path(game_file, defn["patch_id"]).with_name(
             "build.json")
         apply_rcpt_path = _pkg().receipt_path(game_file, defn["patch_id"])
@@ -1305,7 +1439,8 @@ def _find_restore_backup(game_file: Path, before_sha: str) -> Path | None:
 
 
 def cmd_storyline_undo(game_file: Path, defn_path: str,
-                       json_out: bool = False) -> int:
+                       json_out: bool = False,
+                       value2: str | None = None) -> int:
     """包 25：v2 补丁前态撤销入口（按应用回执 + 既有备份机制）。
 
     拒绝链（全部保留目标与回执）：无应用回执 / 目标被修改（当前既非
@@ -1315,7 +1450,10 @@ def cmd_storyline_undo(game_file: Path, defn_path: str,
     """
     try:
         game_file = Path(game_file).resolve()
-        defn = _pkg().load_definition(Path(defn_path))
+        if value2:
+            defn, _a, _b = _load_composed(defn_path, value2)
+        else:
+            defn = _pkg().load_definition(Path(defn_path))
         rcpt_path = _pkg().receipt_path(game_file, defn["patch_id"])
         if not rcpt_path.is_file():
             raise _pkg().StorylineError(

@@ -341,6 +341,8 @@ FROZEN_EXPORTS = [
     "cmd_sprite_search",
     "cmd_storyline_apply",
     "cmd_storyline_build",
+    "cmd_storyline_compose",
+    "cmd_storyline_pack",
     "cmd_storyline_plan",
     "cmd_storyline_undo",
     "cmd_strg_add",

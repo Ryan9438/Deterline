@@ -1,5 +1,5 @@
 usage: modify_save.py [-h]
-                      --action {get,set,list,find,reset-flags,reset-all,room-list,create-system-info,undo,list-backups,list-strings,get-string,set-string,add-string,delete-string,replace-string,search-strings,list-codes,decompile-code,replace-code,find-replace-code,append-code,prepend-code,search-textdata,add-textentry,update-textentry,delete-textentry,batch-add-textentry,guided-add-dialogue,search-vars,search-code,create-script,room-objects,search-sctext,spawn-obj,remove-obj,npc-dialogue,npc-choice,guard-npc-alarm,quest-init,quest-status,sandbox-restore,list-sprites,search-sprite,get-obj,set-obj-sprite,list-textures,export-sprite,replace-sprite,duplicate-sprite,preview-sprite,colorize-sprite,export-texture,replace-texture,dump-sprites,experiment-snapshot,experiment-list,experiment-restore,room-info,create-room,set-room-bg,set-room-prop,set-room-view,list-game-bgs,create-bg-asset,gml-bg,set-room-solid-bg,room-bg-info,remove-tile,handler-extract,create-door,list-doors,remove-door,create-pit,create-battle,verify-nsid,verify-instances,verify-code,smoke-test,diff-snapshots,backup-index,backup-prune,prune-purge,set-derived,cjk-font,cjk-trigger,cjk-check,doctor,recovery-scan,recovery-apply,recovery-clean,md5,storyline-plan,storyline-build,storyline-apply,storyline-undo}
+                      --action {get,set,list,find,reset-flags,reset-all,room-list,create-system-info,undo,list-backups,list-strings,get-string,set-string,add-string,delete-string,replace-string,search-strings,list-codes,decompile-code,replace-code,find-replace-code,append-code,prepend-code,search-textdata,add-textentry,update-textentry,delete-textentry,batch-add-textentry,guided-add-dialogue,search-vars,search-code,create-script,room-objects,search-sctext,spawn-obj,remove-obj,npc-dialogue,npc-choice,guard-npc-alarm,quest-init,quest-status,sandbox-restore,list-sprites,search-sprite,get-obj,set-obj-sprite,list-textures,export-sprite,replace-sprite,duplicate-sprite,preview-sprite,colorize-sprite,export-texture,replace-texture,dump-sprites,experiment-snapshot,experiment-list,experiment-restore,room-info,create-room,set-room-bg,set-room-prop,set-room-view,list-game-bgs,create-bg-asset,gml-bg,set-room-solid-bg,room-bg-info,remove-tile,handler-extract,create-door,list-doors,remove-door,create-pit,create-battle,verify-nsid,verify-instances,verify-code,smoke-test,diff-snapshots,backup-index,backup-prune,prune-purge,set-derived,cjk-font,cjk-trigger,cjk-check,doctor,recovery-scan,recovery-apply,recovery-clean,md5,storyline-plan,storyline-build,storyline-apply,storyline-undo,storyline-compose,storyline-pack}
                       [--key KEY] [--value VALUE] [--old OLD]
                       [--search SEARCH] [--preview] [--dry-run]
                       [--section SECTION] [--file {ini,file0,data_win}]
@@ -12,8 +12,9 @@ usage: modify_save.py [-h]
                       [--yes-text-key YES_TEXT_KEY] [--yes-text YES_TEXT]
                       [--no-text-key NO_TEXT_KEY] [--no-text NO_TEXT]
                       [--goto GOTO] [--item ITEM] [--range RANGE] [--repeat]
-                      [--flag-write] [--view-track] [--frame FRAME]
-                      [--show-diff] [--json] [--direction {rollback,complete}]
+                      [--flag-write] [--value2 VALUE2] [--view-track]
+                      [--frame FRAME] [--show-diff] [--json]
+                      [--direction {rollback,complete}]
                       [--keep-archives KEEP_ARCHIVES] [--hue-from HUE_FROM]
                       [--hue-to HUE_TO] [--workspace WORKSPACE] [--sandbox]
                       [--commit] [--no-steam-sync] [--allow-cjk] [--asm]
@@ -40,7 +41,7 @@ UNDERTALE Save Editor — 修改 undertale.ini / file0
 
 options:
   -h, --help            show this help message and exit
-  --action {get,set,list,find,reset-flags,reset-all,room-list,create-system-info,undo,list-backups,list-strings,get-string,set-string,add-string,delete-string,replace-string,search-strings,list-codes,decompile-code,replace-code,find-replace-code,append-code,prepend-code,search-textdata,add-textentry,update-textentry,delete-textentry,batch-add-textentry,guided-add-dialogue,search-vars,search-code,create-script,room-objects,search-sctext,spawn-obj,remove-obj,npc-dialogue,npc-choice,guard-npc-alarm,quest-init,quest-status,sandbox-restore,list-sprites,search-sprite,get-obj,set-obj-sprite,list-textures,export-sprite,replace-sprite,duplicate-sprite,preview-sprite,colorize-sprite,export-texture,replace-texture,dump-sprites,experiment-snapshot,experiment-list,experiment-restore,room-info,create-room,set-room-bg,set-room-prop,set-room-view,list-game-bgs,create-bg-asset,gml-bg,set-room-solid-bg,room-bg-info,remove-tile,handler-extract,create-door,list-doors,remove-door,create-pit,create-battle,verify-nsid,verify-instances,verify-code,smoke-test,diff-snapshots,backup-index,backup-prune,prune-purge,set-derived,cjk-font,cjk-trigger,cjk-check,doctor,recovery-scan,recovery-apply,recovery-clean,md5,storyline-plan,storyline-build,storyline-apply,storyline-undo}
+  --action {get,set,list,find,reset-flags,reset-all,room-list,create-system-info,undo,list-backups,list-strings,get-string,set-string,add-string,delete-string,replace-string,search-strings,list-codes,decompile-code,replace-code,find-replace-code,append-code,prepend-code,search-textdata,add-textentry,update-textentry,delete-textentry,batch-add-textentry,guided-add-dialogue,search-vars,search-code,create-script,room-objects,search-sctext,spawn-obj,remove-obj,npc-dialogue,npc-choice,guard-npc-alarm,quest-init,quest-status,sandbox-restore,list-sprites,search-sprite,get-obj,set-obj-sprite,list-textures,export-sprite,replace-sprite,duplicate-sprite,preview-sprite,colorize-sprite,export-texture,replace-texture,dump-sprites,experiment-snapshot,experiment-list,experiment-restore,room-info,create-room,set-room-bg,set-room-prop,set-room-view,list-game-bgs,create-bg-asset,gml-bg,set-room-solid-bg,room-bg-info,remove-tile,handler-extract,create-door,list-doors,remove-door,create-pit,create-battle,verify-nsid,verify-instances,verify-code,smoke-test,diff-snapshots,backup-index,backup-prune,prune-purge,set-derived,cjk-font,cjk-trigger,cjk-check,doctor,recovery-scan,recovery-apply,recovery-clean,md5,storyline-plan,storyline-build,storyline-apply,storyline-undo,storyline-compose,storyline-pack}
   --key KEY             键名或数字索引 (file0 用数字)
   --value VALUE         按 action 而异的值 (set/find/undo/room-name/recovery
                         等用——房间名/搜索词/路径/快照标签/备份时间戳等)
@@ -86,6 +87,8 @@ options:
   --repeat              可重复触发（走开再靠近可再触发；npc-choice 用，默认单次）
   --flag-write          storyline-build: 接运行时旗标载体写入（包 18 候选，默认禁用；talk npc 触发写
                         flag_id 槽——不入存档，待实机复验）
+  --value2 VALUE2       storyline-compose/storyline-build/storyline-apply:
+                        第二份定义 YAML（双补丁合成：一次构建合并）
   --view-track          storyline-build: 滚屏候选方向 B（包 20
                         候选，默认禁用；文字/红心与框同视图参考——自校准捕获+逐帧跟踪；单轴纵滚房间/同房单 npc
                         限定，待实机复验）
