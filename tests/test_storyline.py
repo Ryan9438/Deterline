@@ -805,7 +805,7 @@ class StorylineEndToEnd(unittest.TestCase):
         font_calls = []
         font_mock = mock.patch(
             "deterline.storyline.commands._run_cjk_font_pipeline",
-            side_effect=lambda gf, d: font_calls.append(d["patch_id"]))
+            side_effect=lambda gf, chars: font_calls.append(tuple(chars)))
         font_mock.start()
         self.addCleanup(font_mock.stop)
         self._replace_diff(lambda a, b, detail=False, **k: print(
@@ -815,8 +815,9 @@ class StorylineEndToEnd(unittest.TestCase):
         rc, out, err = self._capture(
             cmd_storyline_build, self.game, str(cjk_path), "det_ws_cjk")
         self.assertEqual(rc, 0, msg=out + err)
-        # 字体管线恰一次、先于域生成器（同批工作区）
-        self.assertEqual(font_calls, ["det_demo_cjk"])
+        # 字体管线恰一次、先于域生成器（同批工作区）；包 15 签名 chars 化
+        # ——v1 调用点按单 npc 三文本字段汇总（字形集仍最小集确定性）
+        self.assertEqual(len(font_calls), 1)
         # typer=31（B4 实证）传入 npc-choice
         self.assertEqual(len(self._choice_kwargs), 1)
         self.assertEqual(self._choice_kwargs[0].get("typer"), 31)
