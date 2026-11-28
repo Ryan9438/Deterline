@@ -67,6 +67,25 @@ def cmd_storyline_plan(game_file: Path, defn_path: str, json_out: bool = False) 
             print("  执行序:")
             for op in plan["ops"]:
                 print(f"    - {op['op']}:{op['ref']}")
+            if "states" in plan:
+                st = plan["states"]
+                print(f"  状态机: initial={st['initial']} "
+                      f"persistence={st['persistence']}")
+                for s in st["declared"]:
+                    desc = f"    {s['id']}"
+                    if "enter" in s:
+                        e = s["enter"]
+                        desc += f" ← npc={e['npc']}"
+                        if "answer" in e:
+                            desc += f" answer={e['answer']}"
+                    if "require" in s:
+                        desc += f" require={s['require']}"
+                    if "code" in s:
+                        desc += f" code={s['code']}"
+                    print(desc)
+                if "flag_encoding" in st:
+                    print(f"    旗标投影: flag[{st['flag_encoding']['flag_id']}]"
+                          f" codes={st['flag_encoding']['codes']}")
             print(f"  语义指纹: {plan['semantic_sha256'][:16]}…")
             for d in plan["diagnostics"]:
                 print(f"  ℹ️  {d}")

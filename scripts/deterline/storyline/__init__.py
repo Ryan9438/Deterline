@@ -29,11 +29,17 @@ DEFN_SCHEMA_V2 = "deterline.storyline/v2"
 PLAN_SCHEMA_V2 = "deterline.storyline-plan/v2"
 BUILD_SCHEMA_V2 = "deterline.storyline-build/v2"
 V2_TOP_FIELDS = {"schema", "patch_id", "flag_id", "cjk",
-                 "rooms", "npcs", "doors", "order"}
+                 "rooms", "npcs", "doors", "order", "states"}
 V2_NPC_FIELDS = {"room", "object", "x", "y", "range", "prompt",
                  "yes_text", "no_text", "once"}
 V2_DOOR_FIELDS = {"from", "to", "x", "y", "spawn_x", "spawn_y"}
 V2_ORDER_KINDS = {"npc", "door"}
+# 包 16 状态机合同（可选块；缺省 = 无状态机，v2 既有定义不受影响）
+V2_STATE_FIELDS = {"enter", "require", "code"}
+V2_STATE_ENTER_FIELDS = {"npc", "answer"}
+V2_STATE_PERSISTENCE = {"session", "flag"}
+V2_STATE_RESERVED_IDS = {"persistence", "initial"}   # 机器字段名，不得作状态 id
+V2_STATE_ID_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")  # 同 rooms 别名合同
 
 # v1 合同字段集（严格封闭：未知字段拒绝）
 TOP_FIELDS = {"schema", "patch_id", "room", "npc", "flag_id", "cjk"}
@@ -289,7 +295,175 @@ def _read_definition_v2(text: str) -> dict:
                 raise StorylineError(
                     f"{kind} '{oid}' 未出现在 order 中（每个 npc/door 必须"
                     "恰好排入执行序一次——稳定排序合同）")
+    if doc.get("states") is not None:
+        doc["states"] = _validate_states(doc, npcs)
     return doc
+
+
+def _validate_states(doc: dict, npcs: dict) -> dict:
+    """包 16：states 块合同校验（可选扩展；返回规范化机器描述）。
+
+    形态（块映射；键 = 机器字段 + 状态 id）：
+      states:
+        persistence: session|flag   # flag 需 flag_id 声明 + 全状态 code
+        initial: <id>               # 必填——缺省初始态会随映射重排漂移，显式化
+        <id>: {enter: {npc, answer}, require: <id>, code: <int>}
+    规则（fail-closed，逐条可定位）：
+    - initial 不得声明 enter/require（初始态是入口，不是转换目标）；
+      persistence=flag 下 initial 可声明 code（初始态同样有投影）。
+    - enter.npc 引用已声明 npc；选择 npc（prompt 含 \\C）必须带
+      answer∈{yes,no}，纯对话 npc 禁带 answer。
+    - require 与 enter 同现，引用已声明状态且不得自指；同一触发键
+      (npc, answer) 被多状态声明时必须全部带互异 require（静态歧义拒绝，
+      运行期按当前态路由——否则重排会改变分派结果）。
+    - code（旗标值编码）仅在 persistence=flag 下合法、全覆盖且唯一；
+      session 态无存档投影，声明 code 拒绝。
+    - 映射声明序不进语义（canonical 按 id 排序入指纹——重排不变指纹，
+      R-0610 P2-1 同口径）。
+    """
+    raw = doc["states"]
+    if not isinstance(raw, dict) or not raw:
+        raise StorylineError(
+            "states 必须是非空映射（persistence/initial + 状态 id → 规格）")
+    persistence = raw.get("persistence", "session")
+    if persistence not in V2_STATE_PERSISTENCE:
+        raise StorylineError(
+            f"states.persistence 必须是 {sorted(V2_STATE_PERSISTENCE)}"
+            f"（收到 {persistence!r}）")
+    initial = raw.get("initial")
+    if not isinstance(initial, str) or not initial:
+        raise StorylineError(
+            "states.initial 必填且为字符串（显式声明初始态——"
+            "映射重排不得改变初始态）")
+    ids = [k for k in raw if k not in V2_STATE_RESERVED_IDS]
+    if not ids:
+        raise StorylineError(
+            "states 除 persistence/initial 外必须声明至少一个状态 id")
+    if initial not in ids:
+        raise StorylineError(
+            f"states.initial 引用未声明状态 '{initial}'（已有: {sorted(ids)}）")
+    state_map: dict[str, dict] = {}
+    trigger_key_map: dict[tuple, list[str]] = {}
+    for sid in ids:
+        if not isinstance(sid, str) or not V2_STATE_ID_RE.fullmatch(sid):
+            raise StorylineError(
+                f"states 状态 id 必须是标识符"
+                f"（[A-Za-z_][A-Za-z0-9_]{{0,63}}，收到 {sid!r}）")
+        spec = raw[sid]
+        if spec is None:
+            # yaml_min 无流式 {}：空规格的惟一书写形态 = 裸键（null）——
+            # 仅 initial 合法（初始态无转换规格）；非初始态空规格 = 死声明
+            if sid == initial:
+                spec = {}
+            else:
+                raise StorylineError(
+                    f"states.{sid} 规格不能为空——非初始态至少需要 enter"
+                    "（裸键形态仅允许用于 initial）")
+        if not isinstance(spec, dict):
+            raise StorylineError(f"states.{sid} 必须是映射")
+        unknown = set(spec) - V2_STATE_FIELDS
+        if unknown:
+            raise StorylineError(
+                f"states.{sid} 未知字段: {sorted(unknown)}"
+                f"（允许: {sorted(V2_STATE_FIELDS)}）")
+        if sid == initial:
+            bad = sorted(set(spec) - {"code"})
+            if bad:
+                raise StorylineError(
+                    f"states.initial='{initial}' 只允许声明 code（enter/require "
+                    f"不合法——初始态是入口，不是转换目标；收到 {bad}）")
+        norm: dict = {}
+        enter = spec.get("enter")
+        if enter is not None:
+            if not isinstance(enter, dict):
+                raise StorylineError(f"states.{sid}.enter 必须是映射")
+            unknown_e = set(enter) - V2_STATE_ENTER_FIELDS
+            if unknown_e:
+                raise StorylineError(
+                    f"states.{sid}.enter 未知字段: {sorted(unknown_e)}"
+                    f"（允许: {sorted(V2_STATE_ENTER_FIELDS)}）")
+            npc_ref = enter.get("npc")
+            if not isinstance(npc_ref, str) or npc_ref not in npcs:
+                raise StorylineError(
+                    f"states.{sid}.enter.npc 必须引用已声明 npc id"
+                    f"（收到 {npc_ref!r}；已有: {sorted(npcs)}）")
+            answer = enter.get("answer")
+            if "\\C" in npcs[npc_ref]["prompt"]:
+                if answer not in ("yes", "no"):
+                    raise StorylineError(
+                        f"states.{sid}.enter.answer 必须是 'yes'|'no'"
+                        f"（npcs.{npc_ref} 为选择 npc——prompt 含 \\C）")
+                norm["enter"] = {"npc": npc_ref, "answer": answer}
+            else:
+                if answer is not None:
+                    raise StorylineError(
+                        f"states.{sid}.enter.answer 不得出现"
+                        f"（npcs.{npc_ref} 为纯对话 npc——触发即转换）")
+                norm["enter"] = {"npc": npc_ref}
+            trigger_key_map.setdefault(
+                (npc_ref, norm["enter"].get("answer")), []).append(sid)
+        require = spec.get("require")
+        if require is not None:
+            if "enter" not in spec:
+                raise StorylineError(
+                    f"states.{sid}.require 必须与 enter 同现"
+                    "（无转换目标的守卫是死声明）")
+            if not isinstance(require, str) or require not in ids:
+                raise StorylineError(
+                    f"states.{sid}.require 必须引用已声明状态 id"
+                    f"（收到 {require!r}；已有: {sorted(ids)}）")
+            if require == sid:
+                raise StorylineError(
+                    f"states.{sid}.require 不得自指（守卫指向目标态自身"
+                    "无意义——该转换永远无法满足）")
+            norm["require"] = require
+        code = spec.get("code")
+        if code is not None:
+            if not isinstance(code, int) or isinstance(code, bool) \
+                    or not (0 <= code <= 999):
+                raise StorylineError(
+                    f"states.{sid}.code 必须是 0-999 整数（旗标值编码；"
+                    f"收到 {code!r}）")
+            norm["code"] = code
+        state_map[sid] = norm
+    # 静态歧义拒绝：同触发键多状态分派必须全守卫且互异（运行期按当前态
+    # 路由；无守卫或守卫相撞 = 重排/叠加会改变分派结果，写前拒绝）
+    for key in sorted(trigger_key_map, key=lambda k: (k[0], k[1] or "")):
+        sids = trigger_key_map[key]
+        if len(sids) > 1:
+            requires = [state_map[s].get("require") for s in sids]
+            if any(r is None for r in requires):
+                raise StorylineError(
+                    f"states: 触发键 npc={key[0]!r} answer={key[1]!r} 被 "
+                    f"{sorted(sids)} 多状态声明且含无守卫 enter——分派歧义。"
+                    "规则：多状态共享触发键时每个 enter 必须带互异 require")
+            if len(set(requires)) != len(requires):
+                raise StorylineError(
+                    f"states: 触发键 npc={key[0]!r} answer={key[1]!r} 的"
+                    f"守卫相撞（{sorted(sids)} require={requires}）——"
+                    "同触发键的多状态分派要求 require 互异")
+    if persistence == "flag":
+        if not doc.get("flag_id"):
+            raise StorylineError(
+                "states.persistence=flag 需要 flag_id 声明（存档投影槽位；"
+                "flag_id 缺省 = 无投影槽——包 17/18 接线）")
+        missing = sorted(s for s in ids if "code" not in state_map[s])
+        if missing:
+            raise StorylineError(
+                f"persistence=flag 要求每个状态声明 code（缺失: {missing}）"
+                "——旗标编码必须全覆盖才能投影/回读")
+        codes = [state_map[s]["code"] for s in ids]
+        if len(set(codes)) != len(codes):
+            dup = sorted({c for c in codes if codes.count(c) > 1})
+            raise StorylineError(
+                f"states code 重复: {dup}——旗标编码必须唯一（回读歧义拒绝）")
+    else:
+        coded = sorted(s for s in ids if "code" in state_map[s])
+        if coded:
+            raise StorylineError(
+                f"persistence=session 不得声明 code（{coded}）——session 态"
+                "无存档投影；持久化请改 persistence: flag 并声明 flag_id")
+    return {"persistence": persistence, "initial": initial, "map": state_map}
 
 
 def load_definition(path: Path) -> dict:
@@ -711,6 +885,28 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
             ops.append({"op": "door", "ref": oid,
                         "door": door_plan[oid]})
     plan["ops"] = ops
+    # 状态机（包 16，声明层——产物不接线，写入为包 18 候选）：canonical
+    # 按 id 排序（映射声明序不进语义）；flag 持久化附投影编码表（包 17）
+    states_def = defn.get("states")
+    if states_def:
+        smap = states_def["map"]
+        declared = []
+        for sid in sorted(smap):
+            entry: dict = {"id": sid}
+            if "enter" in smap[sid]:
+                entry["enter"] = dict(smap[sid]["enter"])
+            if "require" in smap[sid]:
+                entry["require"] = smap[sid]["require"]
+            if "code" in smap[sid]:
+                entry["code"] = smap[sid]["code"]
+            declared.append(entry)
+        plan["states"] = {"persistence": states_def["persistence"],
+                          "initial": states_def["initial"],
+                          "declared": declared}
+        if states_def["persistence"] == "flag":
+            plan["states"]["flag_encoding"] = {
+                "flag_id": defn.get("flag_id"),
+                "codes": {sid: smap[sid]["code"] for sid in sorted(smap)}}
     # 图诊断（包 09）：从首 npc 房间做可达性遍历（栈式 DFS——queue.pop()；
     # R-0610 P3-1 订正命名）；不可达/死路为诊断（非硬错误）
     diag: list[str] = []
@@ -739,6 +935,29 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
     for nid, spec in npcs_def.items():
         if spec.get("once", True):
             diag.append(f"npcs.{nid}.once=true：触发后自毁（v2 状态语义）")
+    if states_def:
+        # 状态触发图可达性（包 16）：边 = 无守卫 enter（任意态可发）或
+        # require==当前态的守卫 enter；不可达非初始态 = 诊断（非硬错误）
+        smap = states_def["map"]
+        edges_from: dict[str, set] = {s: set() for s in smap}
+        for sid, sspec in smap.items():
+            if "enter" not in sspec:
+                continue
+            req = sspec.get("require")
+            for other in smap:
+                if req is None or req == other:
+                    edges_from[other].add(sid)
+        seen_states = {states_def["initial"]}
+        stack = [states_def["initial"]]
+        while stack:
+            cur = stack.pop()
+            for nxt in sorted(edges_from[cur] - seen_states):
+                seen_states.add(nxt)
+                stack.append(nxt)
+        unreachable_states = sorted(set(smap) - seen_states)
+        if unreachable_states:
+            diag.append(f"从 initial '{states_def['initial']}' 不可达的状态: "
+                        f"{unreachable_states}（检查 enter/require 声明）")
     if defn.get("cjk"):
         diag.append("cjk=true：构建链先注入 CJK 字体栈（包 15 整包复用）")
     diag.append("flag 声明保留（v2 状态写入为独立候选——包 18）")
@@ -749,6 +968,8 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
     semantic = {"patch_id": defn["patch_id"],
                 "rooms": plan["rooms"], "npcs": npc_plan,
                 "doors": door_plan, "ops": ops, "cjk": plan["cjk"]}
+    if states_def:
+        semantic["states"] = plan["states"]
     plan["semantic_sha256"] = hashlib.sha256(
         json.dumps(semantic, sort_keys=True, ensure_ascii=False)
         .encode("utf-8")).hexdigest()
@@ -757,8 +978,8 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
                     "note": "v2 状态写入为独立候选（包 18），模板不写入"}
     plan["unverified"] = [
         "构建/应用接入（包 11–15，第三周）",
-        "状态模型与存读档轨迹（包 16–17，第四周）",
-        "游戏侧状态写入候选（包 18；缺实机时主样例交模拟轨迹+待验卡）",
+        "状态机轨迹为声明层模型（包 16）；产物守卫/写入不接线（包 18 候选）",
+        "存档投影与旗标映射（包 17，第四周）",
         "渲染/按键/真实存读档（游戏前台，16 §7 附录）"]
     return plan
 
