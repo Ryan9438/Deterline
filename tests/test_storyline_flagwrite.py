@@ -34,8 +34,13 @@ class TestResolveFlagWrites(unittest.TestCase):
     def test_session_carrier_resolved(self):
         writes = resolve_flag_writes(_defn(SESSION_CARRIER))
         self.assertEqual(writes, [{"npc": "receiver", "state": "delivered",
-                                   "code": 4,
+                                   "code": 4, "require": "carrying",
                                    "line": "global.flag[520] = 4;"}])
+
+    def test_require_surfaced_for_guard_divergence(self):
+        # R-161720 P2：产物写入不受 require 门控——receipt 必须可见守卫声明
+        writes = resolve_flag_writes(_defn(SESSION_CARRIER))
+        self.assertEqual(writes[0]["require"], "carrying")
 
     def test_requires_states(self):
         with self.assertRaises(StorylineError) as cm:

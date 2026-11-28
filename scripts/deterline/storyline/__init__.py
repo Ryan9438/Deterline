@@ -1003,7 +1003,10 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
             "persisted": 500 <= fid <= _projection.PERSISTED_FLAG_MAX,
             "note": (f"flag {fid} 被游戏代码引用（占用普查，包 17）"
                      if occ else
-                     f"flag {fid} 无静态引用（513-999 空带；本基线普查）"),
+                     (f"flag {fid} 无静态引用（513-999 空带；本基线普查）"
+                      if fid > _projection.PERSISTED_FLAG_MAX else
+                      f"flag {fid} 无静态引用（本基线普查；持久区空槽 = "
+                      "异常，请复核占用表）")),
         }
         if occ:
             diag.append(f"flag {fid} 被游戏代码占用: {occ[:4]}——接线前请换旗标"

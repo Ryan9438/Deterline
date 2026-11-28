@@ -378,7 +378,11 @@ def resolve_flag_writes(defn: dict) -> list[dict]:
     写入点 = talk npc 触发（对话框创建后无条件写——2026-11-07 矩阵：
     条件门控必失效，只生成无条件形态）；选择 npc 的答案分派在
     obj_dialoguer 内部，触发点写不出答案条件值——带 code enter 的选择
-    npc 整体拒绝（登记限制）。返回 [{"npc","state","code","line"}]。
+    npc 整体拒绝（登记限制）。**写入不受 require 守卫门控**（守卫需
+    条件读取 = 死形族；本候选是写入点探针而非状态机实现——乱序触发
+    即写 code，与 QuestMachine 轨迹在乱序输入下分叉，已在
+    receipt/实录/待验卡登记，R-161720 P2 清偿口径）。返回
+    [{"npc","state","code","require","line"}]。
     """
     st = defn.get("states")
     if not st:
@@ -421,6 +425,7 @@ def resolve_flag_writes(defn: dict) -> list[dict]:
                 "（产物无状态读取），编码歧义拒绝")
         sid, code_val = coded[0]
         writes.append({"npc": oid, "state": sid, "code": code_val,
+                       "require": smap[sid].get("require"),
                        "line": f"global.flag[{fid}] = {code_val};"})
     if refused:
         raise _pkg().StorylineError(
@@ -615,8 +620,11 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                 "persistence": defn["states"]["persistence"],
                 "ops": flag_writes,
                 "scope_note": "会话级运行时载体（不入存档）；仅 talk npc "
-                              "无条件写（2026-11-07 矩阵口径）；选择答案分派"
-                              "在 dialoguer 内部不可接线（登记）；候选形态"
+                              "无条件写（2026-11-07 矩阵口径）；**写入不受 "
+                              "require 守卫门控**——乱序触发即写 code，与模型"
+                              "轨迹分叉（守卫需条件读取=死形族，本候选不实现；"
+                              "R-161720 P2 登记，待验卡含乱序对照）；选择答案"
+                              "分派在 dialoguer 内部不可接线（登记）；候选形态"
                               "待实机复验——待验卡见 16 实录包 18",
             }} if flag_write else {}),
             **({"view_track": {
