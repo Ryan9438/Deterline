@@ -443,10 +443,18 @@ def _validate_states(doc: dict, npcs: dict) -> dict:
                     f"守卫相撞（{sorted(sids)} require={requires}）——"
                     "同触发键的多状态分派要求 require 互异")
     if persistence == "flag":
-        if not doc.get("flag_id"):
+        fid = doc.get("flag_id")
+        if not fid:
             raise StorylineError(
                 "states.persistence=flag 需要 flag_id 声明（存档投影槽位；"
                 "flag_id 缺省 = 无投影槽——包 17/18 接线）")
+        if not (500 <= fid <= 511):
+            # 包 17 映射依据：scr_saveprocess 只持久化 flag[0..511]；
+            # 512+ 为运行时旗标不入存档——持久化承诺必须落在可持久区
+            raise StorylineError(
+                f"states.persistence=flag 的 flag_id 必须在 500-511（收到 "
+                f"{fid}）——scr_saveprocess 只持久化 flag[0..511]，512+ "
+                "为运行时旗标不入存档（包 17 反编译映射依据）")
         missing = sorted(s for s in ids if "code" not in state_map[s])
         if missing:
             raise StorylineError(
@@ -976,6 +984,25 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
     plan["flag"] = {"id": defn.get("flag_id"), "status": "declared-only",
                     "conflicts": _flag_conflicts(defn, game_file),
                     "note": "v2 状态写入为独立候选（包 18），模板不写入"}
+    if defn.get("flag_id") is not None:
+        # 包 17 占用普查进计划（诊断级，非闸门；普查口径 = 反编译字面量
+        # 扫描，计算索引访问不可归因——登记限制）
+        fid = defn["flag_id"]
+        from . import projection as _projection
+        occ = _projection.check_flag_occupancy(fid)
+        plan["flag"]["occupancy"] = {
+            "scripts": occ,
+            "persisted": 500 <= fid <= _projection.PERSISTED_FLAG_MAX,
+            "note": (f"flag {fid} 被游戏代码引用（占用普查，包 17）"
+                     if occ else
+                     f"flag {fid} 无静态引用（513-999 空带；本基线普查）"),
+        }
+        if occ:
+            diag.append(f"flag {fid} 被游戏代码占用: {occ[:4]}——接线前请换旗标"
+                        "（普查详情见 16 实录包 17）")
+        elif fid > _projection.PERSISTED_FLAG_MAX:
+            diag.append(f"flag {fid} 为运行时旗标（不入存档）——仅支持 "
+                        "session 级状态，persistence=flag 不可用（包 17）")
     plan["unverified"] = [
         "构建/应用接入（包 11–15，第三周）",
         "状态机轨迹为声明层模型（包 16）；产物守卫/写入不接线（包 18 候选）",

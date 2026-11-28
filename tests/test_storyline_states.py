@@ -103,10 +103,11 @@ states:
     require: carrying
 """
 
-# flag 持久化夹具：全状态 code（0-4 唯一），flag_id 512 声明
+# flag 持久化夹具：全状态 code（0-4 唯一），flag_id 511（持久区上限——
+# 包 17：scr_saveprocess 只持久化 flag[0..511]）
 FLAG_V2 = MAIN_V2.replace(
     "persistence: session", "persistence: flag").replace(
-    "patch_id: det_t1", "patch_id: det_t1\nflag_id: 512").replace(
+    "patch_id: det_t1", "patch_id: det_t1\nflag_id: 511").replace(
     "  not_started:\n", "  not_started:\n    code: 0\n").replace(
     "      answer: yes\n    require: not_started\n",
     "      answer: yes\n    require: not_started\n    code: 1\n", 1).replace(
@@ -269,10 +270,19 @@ class TestStatesContract(unittest.TestCase):
         self.assertIn("carrying_alt", st["map"])
 
     def test_flag_persistence_requires_flag_id(self):
-        text = FLAG_V2.replace("flag_id: 512\n", "")
+        text = FLAG_V2.replace("flag_id: 511\n", "")
         with self.assertRaises(StorylineError) as cm:
             _defn(text)
         self.assertIn("需要 flag_id", str(cm.exception))
+
+    def test_flag_persistence_requires_persisted_range(self):
+        # 包 17：flag≥512 不入存档（scr_saveprocess 上界）——持久化承诺
+        # 必须落在 500-511；512 本身还被游戏代码占用
+        for fid in (512, 520, 999):
+            text = FLAG_V2.replace("flag_id: 511", f"flag_id: {fid}")
+            with self.assertRaises(StorylineError) as cm:
+                _defn(text)
+            self.assertIn("500-511", str(cm.exception))
 
     def test_flag_persistence_requires_full_codes(self):
         text = FLAG_V2.replace("    code: 3\n", "")
@@ -506,7 +516,7 @@ class TestStatesPlanIntegration(unittest.TestCase):
     def test_states_flag_encoding_in_plan(self):
         plan = self._plan(FLAG_V2)
         enc = plan["states"]["flag_encoding"]
-        self.assertEqual(enc["flag_id"], 512)
+        self.assertEqual(enc["flag_id"], 511)
         self.assertEqual(enc["codes"]["delivered"], 4)
 
     def test_unreachable_state_diagnosed(self):

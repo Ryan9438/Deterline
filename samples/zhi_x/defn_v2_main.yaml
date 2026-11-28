@@ -1,11 +1,13 @@
 # 16 号计划包 06 · 主样例「纸星回信」（v2 合同，声明层）
 # 三房间两分支：接任务(start) → 取纸星(pickup) → 递交(turn_in)；拒绝线收束。
-# 门为单向（回访路径由反向门显式声明）；flag 声明保留（状态写入为包 18 候选）。
+# 门为单向（回访路径由反向门显式声明）；flag 520 = 运行时旗标载体
+# （包 17 普查：500-512 被游戏代码占用且 512+ 不入存档——513-999 为
+# 无静态引用空带；session 级接线载体，存档持久无净空槽，见投影模块）。
 # states（包 16）= 声明层状态机：persistence=session——旗标接线为包 18
 # 候选，接线前不冒领存档持久语义（模型层 flag 持久化由测试夹具覆盖）。
 schema: deterline.storyline/v2
 patch_id: det_zhi_x
-flag_id: 512
+flag_id: 520
 cjk: true
 rooms:
   start: room_ruins1
