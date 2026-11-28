@@ -264,6 +264,7 @@ python install.py --yes       # 配合以上命令自动确认所有提示
 > ⚠️ `storyline-build`: 中断不触原文件——失败只留可识别临时材料
 > ⚠️ `storyline-build`: --flag-write 产物形态未经实机复验（候选）；不带它时产物与既有构建逐字节一致
 > ⚠️ `storyline-build`: --view-track 产物形态未经实机复验（候选）；不带它时产物与既有构建逐字节一致
+> ⚠️ `storyline-build`: --json 的 stdout 含内层进度行——机器可读以 build.json 回执为准（R-40 双席 P3 登记口径）
 > ⚠️ `storyline-apply`: 默认预览零动作；--commit 执行（含目标备份 undo --file data_win --value data_win）
 > ⚠️ `storyline-apply`: 幂等/漂移/同 ID 异内容三种出口全在写前裁决；证据等级 sandbox（B5/R2 实机证据待窗口）
 > ⚠️ `storyline-apply`: 回执含 before/after sha256 + undo 指引；重复执行同定义 = 已应用 no-op

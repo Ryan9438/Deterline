@@ -174,6 +174,15 @@ class TestStatesContract(unittest.TestCase):
             _defn(text)
         self.assertIn("规格不能为空", str(cm.exception))
 
+    def test_unknown_npc_field_rejected(self):
+        # R-40（双席 A M03 存活变异）：npc 未知字段必须拒绝
+        text = MAIN_V2.replace(
+            '    no_text: "* No./%%"\n    once: false\n  star:',
+            '    no_text: "* No./%%"\n    once: false\n    evil: 1\n  star:')
+        with self.assertRaises(StorylineError) as cm:
+            _defn(text)
+        self.assertIn("未知字段", str(cm.exception))
+
     def test_enter_unknown_npc(self):
         text = MAIN_V2.replace("      npc: requester", "      npc: ghost", 1)
         with self.assertRaises(StorylineError) as cm:

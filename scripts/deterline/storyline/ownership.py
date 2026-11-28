@@ -206,5 +206,34 @@ def compose_definitions(a: dict, b: dict) -> dict:
             kind, _, oid = ref.partition(":")
             table = npc_ids if kind == "npc" else door_ids
             merged["order"].append(f"{kind}:{table[oid]}")
+    # 单射断言（R-40 P2-3）：合并数必须恰等于两侧之和（id 合同已禁 '__'，
+    # 此处为纵深防御——任何撞名直接拒绝而非静默覆盖）
+    for key in ("rooms", "npcs", "doors"):
+        want = len(a.get(key) or {}) + len(b.get(key) or {})
+        if len(merged[key]) != want:
+            raise _pkg().StorylineError(
+                f"合成拒绝：{key} 合并后数量 {len(merged[key])} ≠ 两侧之和 "
+                f"{want}——id/别名撞名（R-40 P2-3）")
+    # states（R-40 P2-3 邻接）：单状态机合同——仅一方声明时携带并重写
+    # enter.npc/require 引用；双方皆声明 → 拒绝（多状态机合成未支持）
+    sa, sb = a.get("states"), b.get("states")
+    if sa and sb:
+        raise _pkg().StorylineError(
+            "合成拒绝：双方均声明 states（两个状态机合成未支持）——"
+            "人工合并为一个状态机后再合成")
+    via = a if sa else (b if sb else None)
+    if via is not None:
+        st = copy.deepcopy(via["states"])
+        pfx = via["patch_id"]
+        fixed_map: dict[str, dict] = {}
+        for sid, spec in st["map"].items():
+            spec = dict(spec)
+            if "enter" in spec:
+                ent = dict(spec["enter"])
+                ent["npc"] = f"{pfx}__{ent['npc']}"
+                spec["enter"] = ent
+            fixed_map[sid] = spec
+        st["map"] = fixed_map
+        merged["states"] = st
     merged["_composed_of"] = [first["patch_id"], second["patch_id"]]
     return merged

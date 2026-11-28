@@ -159,6 +159,15 @@ class TestDeclaredAssertions(unittest.TestCase):
                             and "requester_choice" in r
                             for r in refusals), refusals)
 
+    def test_instance_moved_refused(self):
+        # R-40（双席 A M23 存活变异）：INST moved 非空必须拒绝
+        self.structured["instances"]["moved"].append(
+            ["room_ruins1", 113928, "obj_npc_marker", 100, 200,
+             "(100,200)→(120,220)"])
+        refusals = _v2_declared_assertions(self.structured, self.defn, PLAN)
+        self.assertTrue(any("INST moved 非空" in r for r in refusals),
+                        refusals)
+
     def test_room_inst_delta_mismatch_named(self):
         self.structured["rooms"]["inst_delta"]["room_ruins2"] = 3
         refusals = _v2_declared_assertions(self.structured, self.defn, PLAN)

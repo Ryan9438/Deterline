@@ -188,10 +188,22 @@ def _read_definition_v2(text: str) -> dict:
         if not isinstance(name, str) or not name:
             raise StorylineError(f"rooms.{alias} 必须是非空字符串（房间名）")
     npcs = doc.get("npcs") or {}
-    doors = doc.get("doors") or {}
+    doors = doc.get("doors")
+    if doors is None:
+        doors = {}
+    if not isinstance(doors, dict):
+        raise StorylineError(
+            f"doors 必须是映射（door id → 连接；收到 {type(doors).__name__}）"
+            "——类型错误合同拒绝（R-40 P2-1：此前 AttributeError traceback）")
     if not isinstance(npcs, dict) or not npcs:
         raise StorylineError("npcs 必须是非空映射（npc id → 规格）")
     for nid, spec in npcs.items():
+        if not isinstance(nid, str) or not V2_STATE_ID_RE.fullmatch(nid) \
+                or "__" in nid:
+            raise StorylineError(
+                f"npcs id 必须是标识符且不含 '__'（[A-Za-z_][A-Za-z0-9_]{{0,63}}，"
+                f"收到 {nid!r}）——合成前缀 <patch>__<id> 需单射"
+                "（R-40 P2-3：撞名会静默覆盖）")
         if not isinstance(spec, dict):
             raise StorylineError(f"npcs.{nid} 必须是映射")
         unknown_npc = set(spec) - V2_NPC_FIELDS
@@ -247,6 +259,11 @@ def _read_definition_v2(text: str) -> dict:
                         f"npcs.{nid}.{k} 含非 ASCII 字符——默认合同为 ASCII；"
                         "中文组合请在定义顶层声明 cjk: true")
     for did, spec in doors.items():
+        if not isinstance(did, str) or not V2_STATE_ID_RE.fullmatch(did) \
+                or "__" in did:
+            raise StorylineError(
+                f"doors id 必须是标识符且不含 '__'（[A-Za-z_][A-Za-z0-9_]{{0,63}}，"
+                f"收到 {did!r}）——合成前缀单射（R-40 P2-3）")
         if not isinstance(spec, dict):
             raise StorylineError(f"doors.{did} 必须是映射")
         unknown_door = set(spec) - V2_DOOR_FIELDS

@@ -44,8 +44,11 @@ def _load_composed(defn_path: str, value2: str) -> tuple[dict, dict, dict]:
     b = _pkg().load_definition(Path(value2))
     from . import ownership
     comp = ownership.compose_definitions(a, b)
+    # R-40（双席 P2）：组件 sha 排序后哈希——调换 --value/--value2 恒同
+    # defn_sha（合成计划本身已顺序无关；apply/undo 侧可稳定复算）
     comp["_sha256"] = _pkg().hashlib.sha256(
-        f"compose:{a['_sha256']}:{b['_sha256']}".encode()).hexdigest()
+        f"compose:{':'.join(sorted([a['_sha256'], b['_sha256']]))}"
+        .encode()).hexdigest()
     return comp, a, b
 
 
@@ -91,16 +94,20 @@ def cmd_storyline_start(dir_override: str | None = None,
     except Exception as exc:
         add("基线游戏文件", False, str(exc), fatal=False)
         game_hint = '--dir "/path/to/game.ios"'
+    py = "python3 -m modify_save"
     route = [
         f"cp {samples / 'defn_v2_main.yaml'} my_story.yaml   # 复制样例",
         "编辑 my_story.yaml（patch_id/文本/坐标；ASCII 起步可 cjk: false）",
-        f"storyline-plan --value my_story.yaml {game_hint}",
-        f"storyline-build --value my_story.yaml --workspace my_ws {game_hint}",
-        f"storyline-apply --value my_story.yaml --workspace my_ws "
-        f"{game_hint} --commit",
-        f"storyline-undo --value my_story.yaml {game_hint}",
-        f"storyline-compose --value a.yaml --value2 b.yaml {game_hint}"
-        "   # 双补丁组合预览",
+        f"{py} --action storyline-plan --file data_win "
+        f"--value my_story.yaml {game_hint}",
+        f"{py} --action storyline-build --file data_win "
+        f"--value my_story.yaml --workspace my_ws {game_hint}",
+        f"{py} --action storyline-apply --file data_win "
+        f"--value my_story.yaml --workspace my_ws {game_hint} --commit",
+        f"{py} --action storyline-undo --file data_win "
+        f"--value my_story.yaml {game_hint}",
+        f"{py} --action storyline-compose --file data_win "
+        f"--value a.yaml --value2 b.yaml {game_hint}",
     ]
     fatal_missing = [c for c in checks if c["fatal"] and not c["ok"]]
     out = {
@@ -695,7 +702,8 @@ def _validate_build_receipt_meta(build_rcpt: dict, defn: dict) -> None:
 
 
 def _v2_declared_assertions(structured: dict, defn: dict,
-                            plan: dict) -> list[str]:
+                            plan: dict, view_track: bool = False
+                            ) -> list[str]:
     """包 21：v2 声明的逐对象断言（纯函数——结构化 O7 结果 → 拒绝清单）。
 
     **类别计数相同而对象不同**在此识别：实例集合按 (room, object, x, y)
@@ -760,30 +768,62 @@ def _v2_declared_assertions(structured: dict, defn: dict,
             refusals.append(f"INST {op} 非空: "
                             f"{structured['instances'][op][:4]}")
 
-    # —— 代码：名称白名单（样例模板实证集）+ 逐条归属 ——
+    # —— 代码：**条件化**名称白名单（R-40 双席 P2：门/守卫条目仅当
+    # 计划确有 door op / native 对象时允许——无门计划出现门脚本即拒绝；
+    # 另要求每个 npc op 至少一条对象代码证据） ——
+    has_doors = any(op["op"] == "door" for op in plan["ops"])
     npc_objs = {n["object"] for n in plan["npcs"].values()}
-    allowed_patterns = [
-        re.compile(r"gml_Object_(" + "|".join(
-            re.escape(o) for o in sorted(npc_objs))
-            + r")_(Step_0|Create_0|Alarm_0)") if npc_objs else None,
-        re.compile(r"gml_Object_obj_deterline_door_\w+"),
-        re.compile(r"gml_Script_deterline_door_back"),
-        re.compile(r"gml_Script_textdata_en"),
-    ]
+    native_objs = {n["object"] for n in plan["npcs"].values()
+                   if n.get("native")}
+    allowed = []
+    if npc_objs:
+        allowed.append(re.compile(
+            r"gml_Object_(" + "|".join(re.escape(o) for o in sorted(npc_objs))
+            + r")_(Step_0|Create_0)"))
+    if native_objs:
+        allowed.append(re.compile(
+            r"gml_Object_(" + "|".join(
+                re.escape(o) for o in sorted(native_objs)) + r")_Alarm_0"))
+    if has_doors:
+        allowed.append(re.compile(r"gml_Object_obj_deterline_door_\w+"))
+        allowed.append(re.compile(r"gml_Script_deterline_door_back"))
+    allowed.append(re.compile(r"gml_Script_textdata_en"))
     if defn.get("cjk"):
-        allowed_patterns += [
-            re.compile(r"gml_Script_scr_setfont"),
-            re.compile(r"gml_Script_scr_preload_textures"),
-        ]
-    allowed = [p for p in allowed_patterns if p is not None]
+        allowed += [re.compile(r"gml_Script_scr_setfont"),
+                    re.compile(r"gml_Script_scr_preload_textures")]
     for kind in ("added", "changed"):
         for name in structured["code"][kind]:
             if not any(p.fullmatch(name) for p in allowed):
                 refusals.append(
                     f"CODE {kind} 未声明条目: {name}（名称不匹配任何计划"
-                    "对象/脚本白名单）")
+                    "对象/脚本白名单；门/守卫条目按计划条件化）")
     if structured["code"]["removed"]:
         refusals.append(f"CODE removed 非空: {structured['code']['removed'][:4]}")
+    # 逐 op 代码证据：每个 npc op 的对象须在 added/changed 中至少有一条
+    code_names = structured["code"]["added"] + structured["code"]["changed"]
+    for op in plan["ops"]:
+        if op["op"] != "npc":
+            continue
+        obj = op["npc"]["object"]
+        if not any(nm.startswith(f"gml_Object_{obj}_") for nm in code_names):
+            refusals.append(
+                f"npc:{op['ref']} 产物中无对象代码证据（gml_Object_{obj}_* "
+                "未出现在 added/changed）")
+    # —— deterline 变量白名单（R-40 双席 P2：未声明变量拒绝） ——
+    door_vars = {"deterline_pending_x", "deterline_pending_y",
+                 "deterline_lastroom", "deterline_lastx",
+                 "deterline_lasty", "deterline_lastdir"}
+    allowed_vars = {"deterline_state"}
+    if has_doors:
+        allowed_vars |= door_vars
+    if view_track:
+        allowed_vars |= {"deterline_wy", "deterline_wy0"}
+    for entry in structured["vardeterline"]["b"]:
+        name = entry.split(":", 1)[0]
+        if name not in allowed_vars:
+            refusals.append(
+                f"VAR 未声明变量: {name}（白名单 "
+                f"{sorted(allowed_vars)}——R-40 闸门反向断言）")
 
     # —— 字体：cjk ⇒ 恰 fnt_ja_maintext changed；否则全空 ——
     fonts = structured["fonts"]
@@ -983,10 +1023,6 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                                                if op["ref"] in write_by_npc else {})})
                     else:
                         d = op["door"]
-                        if op["op"] not in ("npc", "door"):
-                            raise _pkg().StorylineError(
-                                f"未知 op 类型: {op['op']}（V2_ORDER_KINDS "
-                                "之外的 kind 不进构建——合同层应已拒绝）")
                         # ensure 幂等（R-1215：per-op 记录实际值，不缓存失真）
                         door_ready = door_mod.ensure_deterline_door_object(
                             game_file)
@@ -1032,7 +1068,8 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
                 f"INST add {cats.get('INST add', 0)}（声明 {n_inst}："
                 "每个 npc/door op 恰 1 实例）")
         # 包 21：逐对象断言（计数相同而对象不同在此识别；O7 结构化）
-        refusals.extend(_v2_declared_assertions(structured, defn, plan))
+        refusals.extend(_v2_declared_assertions(structured, defn, plan,
+                                                 view_track=view_track))
         # 包 22：逐 op 产物对应证据（缺失即拒绝——见 _correlate_ops）
         if not refusals:
             op_evidence = _correlate_ops(plan, op_evidence, structured, defn)
@@ -1153,9 +1190,19 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
         if defn.get("_version") == "v2":
             # 包 12–15：v2 构建链（op 序 npc/door → 工作区；闸门不变量口径）
             # 包 18：flag_write=True 时接运行时载体写入（候选，默认禁用）
+            # R-40（双席 P3 登记口径）：--json 的 stdout 含内层进度行——
+            # 机器可读**以 build.json 回执为准**（样例 prepare.sh 同口径）；
+            # 不在 cmd 层重定向（回执 JSON 亦由 _build_v2 打印，重定向会
+            # 一并吞掉）。
             return _build_v2(defn, plan, game_file, workspace, base_sha,
                              json_out, flag_write=flag_write,
                              view_track=view_track)
+        if flag_write or view_track:
+            # R-40（双席 P3）：v1 定义无 states/模板跟踪语义——显式拒绝，
+            # 不静默忽略候选开关
+            raise _pkg().StorylineError(
+                "--flag-write/--view-track 需要 v2 定义（states/模板跟踪"
+                "仅在 v2 构建链可用）——v1 构建请去掉该开关")
         # 域生成器构建（写入有名工作区，不触原文件）——自管 game_edit 上下文：
         # 批量提交在上下文**退出**时落盘（data_win 包装内读产物 = 基线副本，
         # C4 CLI 实测教训），指纹/O7 比对必须在其后
@@ -1247,9 +1294,11 @@ def cmd_storyline_build(game_file: Path, defn_path: str, workspace: str,
                 "发现未声明资源/结构变更，拒绝出候选（12 §C3）: "
                 + "; ".join(undeclared) + f"（允许: {allowed}）")
     except (_pkg().StorylineError, errors.DeterlineError, FileNotFoundError,
-            OSError, RuntimeError) as exc:
+            OSError, RuntimeError, ValueError) as exc:
         # JSON 错误壳按定义版本（R-1215 P3：v2 计划阶段失败不再挂 v1 壳；
         # defn 未及载入时落 v1——与既有 v1 拒绝形态一致）
+        # R-40（双席 P3）：ValueError 入壳——YAML 层拒绝（yaml_min）在
+        # --json 下也产出结构化错误，不再只落 stderr
         shell = (_pkg().BUILD_SCHEMA_V2
                  if defn is not None and defn.get("_version") == "v2"
                  else _pkg().BUILD_SCHEMA)
@@ -1340,6 +1389,10 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
         prior = None
         if apply_rcpt_path.is_file():
             prior = json.loads(apply_rcpt_path.read_text(encoding="utf-8"))
+            if not isinstance(prior, dict):
+                raise _pkg().StorylineError(
+                    f"应用回执形状不符（应为对象）: {apply_rcpt_path}——"
+                    "人工核查后再处置（R-40 P3：此前 AttributeError）")
         product_sha = _ws_product_sha(game_file, workspace)
         refusals = []
         if build_rcpt is None:
@@ -1551,7 +1604,13 @@ def cmd_storyline_undo(game_file: Path, defn_path: str,
         before = rcpt.get("before_sha256")
         after = rcpt.get("after_sha256") or rcpt.get("product_sha256")
         current = transactions.fingerprint(game_file)
-        if rcpt.get("status") == "undone" or current == before:
+        if current == before:
+            # 真回前态：若回执未记账（恢复完成但回执写失败的崩溃窗口）补账
+            if rcpt.get("status") != "undone":
+                rcpt["status"] = "undone"
+                rcpt["undo_after_sha256"] = current
+                transactions._write_json_atomic(  # noqa: SLF001 原子写复用
+                    rcpt_path, rcpt)
             if json_out:
                 print(json.dumps({"schema": _pkg().APPLY_SCHEMA,
                                   "patch_id": defn["patch_id"],
@@ -1561,6 +1620,20 @@ def cmd_storyline_undo(game_file: Path, defn_path: str,
                 print(f"✅ {defn['patch_id']} 已撤销（目标 == 前态）——"
                       "幂等 no-op")
             return 0
+        if rcpt.get("status") == "undone":
+            # R-40（双席 P2）：已撤销回执 + 目标不再等于前态 → 撤销后被
+            # 第三方修改，不得宣称"目标 == 前态"
+            msg = (f"撤销后目标被修改（回执 status=undone，当前 "
+                   f"{str(current)[:12]}… ≠ 前态 {str(before)[:12]}…）——"
+                   "拒绝，目标与回执保留；人工核查后再处置")
+            if json_out:
+                print(json.dumps({"schema": _pkg().APPLY_SCHEMA,
+                                  "patch_id": defn["patch_id"],
+                                  "error": msg},
+                                 ensure_ascii=False, indent=2))
+            else:
+                print(f"✗ 拒绝: {msg}", file=sys.stderr)
+            return 1
         refusals = []
         if current != after:
             refusals.append(
