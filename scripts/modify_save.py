@@ -117,7 +117,8 @@ from deterline.cmds.save_cmds import (cmd_backup_index,  # noqa: E402,F401
                                       cmd_prune_purge, cmd_sandbox_restore)
 from deterline.storyline.commands import (cmd_storyline_apply,  # noqa: E402,F401
                                           cmd_storyline_build,
-                                          cmd_storyline_plan)
+                                          cmd_storyline_plan,
+                                          cmd_storyline_undo)
 from deterline.cli import main  # noqa: E402
 
 if __name__ == "__main__":

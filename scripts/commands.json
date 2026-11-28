@@ -865,6 +865,18 @@
         "幂等/漂移/同 ID 异内容三种出口全在写前裁决；证据等级 sandbox（B5/R2 实机证据待窗口）",
         "回执含 before/after sha256 + undo 指引；重复执行同定义 = 已应用 no-op"
       ]
+    },
+    {
+      "action": "storyline-undo",
+      "group": "safety",
+      "verify": "sandbox",
+      "summary": "支线编排·前态撤销（16 号计划包 25）：读应用回执 → 拒绝链（无回执/目标被修改/备份缺席——全部保留目标与回执）→ 按 before 指纹匹配备份（.bak/.bak.<ts> 最新优先，不按'最新备份'猜）→ 恢复并原子更新回执（status=undone）；已撤销 = no-op",
+      "example": "storyline-undo --value storyline.yaml --dir /path/game.ios --json",
+      "notes": [
+        "正例恢复回本次前态（回执 before_sha256）；重复撤销为可识别 no-op",
+        "目标被修改或备份缺席 → 拒绝，目标与回执保留（人工核查后再处置）",
+        "证据等级 sandbox（副本实测正例/重复/漂移/备份缺席四臂）"
+      ]
     }
   ]
 }

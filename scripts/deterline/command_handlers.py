@@ -34,6 +34,17 @@ def _storyline_build_any(args, parser, target):
         sys.exit(rc)
 
 
+def _storyline_undo_any(args, parser, target):
+    # 包 25：前态撤销入口（应用回执 + 指纹匹配备份；写前全裁决）
+    if args.value is None:
+        parser.error("storyline-undo 需要 --value (定义 YAML 路径)")
+    rc = storyline.cmd_storyline_undo(
+        paths.resolve_game_data_file(args.dir), args.value,
+        json_out=args.json)
+    if rc:
+        sys.exit(rc)
+
+
 def _storyline_apply_any(args, parser, target):
     # any 路由（对齐 recovery 执行入口）：自解析游戏文件（无回退），
     # 整包应用直走事务层（EditPlan + journal），不经工作区编辑包装
@@ -920,6 +931,7 @@ COMMANDS = {
     "storyline-plan": {"data_win": _storyline_plan_data_win},
     "storyline-build": {"any": _storyline_build_any},
     "storyline-apply": {"any": _storyline_apply_any},
+    "storyline-undo": {"any": _storyline_undo_any},
 }
 
 # Query commands keep reading the source by default; --sandbox/--workspace select a copy.

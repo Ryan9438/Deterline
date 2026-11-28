@@ -1167,6 +1167,39 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
             # 无应用回执：目标须等于构建时基线，产物须与构建回执一致，
             # 且构建回执必须对应**当前定义**（R13 P1-2：陈旧构建 + 新定义
             # 曾可上盘且回执 defn_sha 失真——首次 apply 的同 ID 异内容出口）
+            #
+            # 包 24 失败窗口 ①（提交完成、回执未写完）：目标 == 构建回执
+            # product → 已应用可对账——从构建回执 + 当前指纹重建应用回执
+            # （无前态备份信息缺失问题：before = baseline_sha，after = 当前的
+            # product_sha，二者皆有据）；preview 零动作仅报告。
+            if (build_rcpt.get("target") in (None, str(game_file))
+                    and build_rcpt.get("defn_sha256") == defn["_sha256"]
+                    and current == build_rcpt.get("product_sha256")
+                    and current != build_rcpt.get("baseline_sha256")):
+                rec = {
+                    "schema": _pkg().APPLY_SCHEMA,
+                    "patch_id": defn["patch_id"],
+                    "defn_sha256": defn["_sha256"],
+                    "baseline_sha256": build_rcpt.get("baseline_sha256"),
+                    "product_sha256": build_rcpt.get("product_sha256"),
+                    "after_sha256": current,
+                    "before_sha256": build_rcpt.get("baseline_sha256"),
+                    "tool_version": build_rcpt.get("tool_version"),
+                    "status": "recovered-unrecorded",
+                    "note": "提交完成但应用回执未写完（包 24 窗口①）——"
+                            "由构建回执 + 当前指纹对账重建",
+                }
+                if commit:
+                    transactions._write_json_atomic(  # noqa: SLF001 原子写复用
+                        apply_rcpt_path, rec)
+                if json_out:
+                    print(json.dumps(rec, ensure_ascii=False, indent=2))
+                else:
+                    verb = "已对账并重建回执" if commit else \
+                        "preview：检测到已应用未记账（--commit 对账）"
+                    print(f"✅ {defn['patch_id']} 已应用（目标 == 构建产物）"
+                          f"——{verb}")
+                return 0
             if build_rcpt.get("target") not in (None, str(game_file)):
                 refusals.append(
                     f"构建回执属于其他游戏文件（target={build_rcpt.get('target')}"
@@ -1250,6 +1283,112 @@ def cmd_storyline_apply(save_dir, game_file: Path, defn_path: str,
                              ensure_ascii=False, indent=2))
         else:
             print(f"✗ storyline-apply 拒绝: {exc}", file=sys.stderr)
+        return 1
+
+
+def _find_restore_backup(game_file: Path, before_sha: str) -> Path | None:
+    """包 25：按前态指纹解析恢复备份（.bak / .bak.<ts>，最新优先）。
+
+    备份只认指纹匹配（回执登记的本次前态）——不按"最新备份"猜测，
+    防叠加补丁场景下撤销错代。
+    """
+    cands: list[Path] = []
+    plain = game_file.with_suffix(game_file.suffix + ".bak")
+    if plain.is_file():
+        cands.append(plain)
+    cands.extend(sorted(game_file.parent.glob(game_file.name + ".bak.*"),
+                        key=lambda x: x.name, reverse=True))
+    for p in cands:
+        if transactions.fingerprint(p) == before_sha:
+            return p
+    return None
+
+
+def cmd_storyline_undo(game_file: Path, defn_path: str,
+                       json_out: bool = False) -> int:
+    """包 25：v2 补丁前态撤销入口（按应用回执 + 既有备份机制）。
+
+    拒绝链（全部保留目标与回执）：无应用回执 / 目标被修改（当前既非
+    after 也非 before）/ 备份缺席（无指纹 == before 的备份）。
+    可识别出口：已撤销（回执 status=undone 或当前 == before）→ no-op；
+    正例 → 恢复回 before 并原子更新回执（status=undone + undo_after）。
+    """
+    try:
+        game_file = Path(game_file).resolve()
+        defn = _pkg().load_definition(Path(defn_path))
+        rcpt_path = _pkg().receipt_path(game_file, defn["patch_id"])
+        if not rcpt_path.is_file():
+            raise _pkg().StorylineError(
+                f"无应用回执（{rcpt_path} 不存在）——无可撤销记录；"
+                "拒绝按猜测恢复")
+        rcpt = json.loads(rcpt_path.read_text(encoding="utf-8"))
+        if not isinstance(rcpt, dict):
+            raise _pkg().StorylineError(
+                f"应用回执形状不符（应为对象）: {rcpt_path}")
+        before = rcpt.get("before_sha256")
+        after = rcpt.get("after_sha256") or rcpt.get("product_sha256")
+        current = transactions.fingerprint(game_file)
+        if rcpt.get("status") == "undone" or current == before:
+            if json_out:
+                print(json.dumps({"schema": _pkg().APPLY_SCHEMA,
+                                  "patch_id": defn["patch_id"],
+                                  "status": "already-undone"},
+                                 ensure_ascii=False, indent=2))
+            else:
+                print(f"✅ {defn['patch_id']} 已撤销（目标 == 前态）——"
+                      "幂等 no-op")
+            return 0
+        refusals = []
+        if current != after:
+            refusals.append(
+                f"目标被修改（当前 {str(current)[:12]}… 既非回执 after "
+                f"{str(after)[:12]}… 也非 before）——拒绝撤销，目标与回执"
+                "保留；人工核查后再处置")
+        if not before:
+            refusals.append("回执缺 before_sha256——无法定位前态，拒绝")
+        backup = _find_restore_backup(game_file, before) if before else None
+        if backup is None:
+            refusals.append(
+                f"备份缺席（无指纹 == before {str(before)[:12]}… 的 "
+                ".bak/.bak.<ts>）——拒绝，回执保留；重新应用或沿用通用 "
+                "undo 前先人工核查")
+        if refusals:
+            if json_out:
+                print(json.dumps({"schema": _pkg().APPLY_SCHEMA,
+                                  "patch_id": defn["patch_id"],
+                                  "error": "; ".join(refusals)},
+                                 ensure_ascii=False, indent=2))
+            else:
+                for r in refusals:
+                    print(f"✗ 拒绝: {r}", file=sys.stderr)
+            return 1
+        transactions.write_one(game_file, backup)
+        restored = transactions.fingerprint(game_file)
+        rcpt["status"] = "undone"
+        rcpt["undo_after_sha256"] = restored
+        rcpt["undo_backup"] = str(backup)
+        transactions._write_json_atomic(rcpt_path, rcpt)  # noqa: SLF001
+        if json_out:
+            print(json.dumps({"schema": _pkg().APPLY_SCHEMA,
+                              "patch_id": defn["patch_id"],
+                              "status": "undone",
+                              "before_sha256": before,
+                              "undo_after_sha256": restored,
+                              "backup": str(backup)},
+                             ensure_ascii=False, indent=2))
+        else:
+            print(f"✅ {defn['patch_id']} 已撤销：{str(after)[:12]}… → "
+                  f"{str(restored)[:12]}…（备份 {backup.name}）")
+            print(f"   回执已更新: {rcpt_path}")
+        return 0
+    except (_pkg().StorylineError, errors.DeterlineError, FileNotFoundError,
+            OSError, ValueError) as exc:
+        if json_out:
+            print(json.dumps({"schema": _pkg().APPLY_SCHEMA,
+                              "error": str(exc)},
+                             ensure_ascii=False, indent=2))
+        else:
+            print(f"✗ storyline-undo 拒绝: {exc}", file=sys.stderr)
         return 1
 
 

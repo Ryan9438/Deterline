@@ -342,6 +342,7 @@ FROZEN_EXPORTS = [
     "cmd_storyline_apply",
     "cmd_storyline_build",
     "cmd_storyline_plan",
+    "cmd_storyline_undo",
     "cmd_strg_add",
     "cmd_strg_delete",
     "cmd_strg_get",
