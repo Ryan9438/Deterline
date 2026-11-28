@@ -17,6 +17,7 @@ apply：构建回执 → 目标基线核对 + 幂等（同 ID 同内容且目标
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -370,6 +371,170 @@ def _run_cjk_font_pipeline(game_file: Path, chars: list) -> None:
                 "工作区不产出候选")
 
 
+def _categories_from_structured(structured: dict) -> dict:
+    """包 21：结构化 O7 → 旧口径 parsed（counts/str_ops/struct）。
+
+    回执字段与既有消费者（闸门/收据 declared_diff/declared_structure）
+    形状不变；差异来源从文本解析切到结构化结果——类别计数相同而对象
+    不同由 _v2_declared_assertions 逐对象识别。
+    """
+    counts: dict[str, int] = {}
+    if "STRGCOUNT" in structured["counts"]:
+        counts["STR total"] = structured["counts"]["STRGCOUNT"]["delta"]
+    counts["INST add"] = len(structured["instances"]["added"])
+    counts["INST remove"] = len(structured["instances"]["removed"])
+    counts["INST move"] = len(structured["instances"]["moved"])
+    counts["CODEF changed"] = len(structured["code"]["changed"])
+    counts["CODEF added"] = len(structured["code"]["added"])
+    counts["CODEF removed"] = len(structured["code"]["removed"])
+    counts["FONT changed"] = len(structured["fonts"]["changed"])
+    counts["FONT added"] = len(structured["fonts"]["added"])
+    counts["FONT removed"] = len(structured["fonts"]["removed"])
+    vd = structured["vardeterline"]
+    struct = {
+        "count_deltas": {k: v["delta"] for k, v in
+                         structured["counts"].items()},
+        "vardeterline": (vd["a"], vd["b"]) if vd["a"] != vd["b"] else None,
+        "room_inst": dict(structured["rooms"]["inst_delta"]),
+        "room_removed": list(structured["rooms"]["removed"]),
+        "room_added": list(structured["rooms"]["added"]),
+        "room_changed": sorted(structured["rooms"]["changed"]),
+        "code_removed": list(structured["code"]["removed"]),
+        "code_added": list(structured["code"]["added"]),
+        "code_changed": list(structured["code"]["changed"]),
+        "unclassified": [],
+    }
+    return {"counts": counts,
+            "str_ops": [op for op, _e in structured["strings"]["ops"]],
+            "struct": struct}
+
+
+def _v2_declared_assertions(structured: dict, defn: dict,
+                            plan: dict) -> list[str]:
+    """包 21：v2 声明的逐对象断言（纯函数——结构化 O7 结果 → 拒绝清单）。
+
+    **类别计数相同而对象不同**在此识别：实例集合按 (room, object, x, y)
+    逐项比对；代码条目按名称白名单（样例模板实证集）逐条比对；字符串按
+    声明键/内容的 (len, sha1) 签名逐项比对。cjk 构建的文本内容经预折行
+    改写（内容签名不可预计算）——内容断言仅 ASCII 构建，键名恒断言
+    （登记口径）。空返回 = 全部声明变化在产物上有对应证据。
+    """
+    import hashlib as _hashlib
+    refusals: list[str] = []
+    npcs = defn.get("npcs") or {}
+
+    def _sig(text: str) -> tuple:
+        raw = text.encode("utf-8")
+        return (len(raw), _hashlib.sha1(raw).hexdigest())
+
+    # —— 字符串：声明键（恒）+ 内容（非 cjk）必须出现在 added 集合 ——
+    added_str = {(e[0], e[1]) for op, e in
+                 ((op, entry) for op, entry in structured["strings"]["ops"])
+                 if op == "add"}
+    declared_str: dict[str, tuple] = {}
+    for ref, spec in npcs.items():
+        suffix = ("_choice", "_yes", "_no") if "\\C" in spec["prompt"] else ("",)
+        for sfx in suffix:
+            key = f"det_{defn['patch_id']}_{ref}{sfx}"
+            declared_str[key] = _sig(key)
+        if not defn.get("cjk"):
+            declared_str[f"{ref}.prompt"] = _sig(spec["prompt"])
+            if "\\C" in spec["prompt"]:
+                declared_str[f"{ref}.yes_text"] = _sig(spec["yes_text"])
+                declared_str[f"{ref}.no_text"] = _sig(spec["no_text"])
+    for label, sig in sorted(declared_str.items()):
+        if sig not in added_str:
+            refusals.append(
+                f"STR 声明签名缺失: {label}（len={sig[0]} "
+                f"sha1={sig[1][:12]}…）——产物字符串与声明不符")
+
+    # —— 实例：集合精确比对（npc 房间内实例 + door 门实例） ——
+    expected_inst: list[tuple] = []
+    for op in plan["ops"]:
+        if op["op"] == "npc":
+            n = op["npc"]
+            expected_inst.append((plan["rooms"][n["room"]]["name"],
+                                  n["object"], n["x"], n["y"]))
+        else:
+            d = op["door"]
+            expected_inst.append((d["from"]["name"], "obj_deterline_door",
+                                  d["x"], d["y"]))
+    actual_added = [tuple(row) for row in
+                    structured["instances"]["added"]]
+    from collections import Counter as _Counter
+    exp_c = _Counter(expected_inst)
+    act_c = _Counter((room, obj, x, y) for room, _id, obj, x, y
+                     in actual_added)
+    for row, n in (act_c - exp_c).items():
+        refusals.append(f"INST 未声明新增: {(row, n)}（(room, object, x, y) "
+                        "逐项比对）")
+    for row, n in (exp_c - act_c).items():
+        refusals.append(f"INST 声明实例缺失: {(row, n)}——产物与计划不符")
+    for op in ("removed", "moved"):
+        if structured["instances"][op]:
+            refusals.append(f"INST {op} 非空: "
+                            f"{structured['instances'][op][:4]}")
+
+    # —— 代码：名称白名单（样例模板实证集）+ 逐条归属 ——
+    npc_objs = {n["object"] for n in plan["npcs"].values()}
+    allowed_patterns = [
+        re.compile(r"gml_Object_(" + "|".join(
+            re.escape(o) for o in sorted(npc_objs))
+            + r")_(Step_0|Create_0|Alarm_0)") if npc_objs else None,
+        re.compile(r"gml_Object_obj_deterline_door_\w+"),
+        re.compile(r"gml_Script_deterline_door_back"),
+        re.compile(r"gml_Script_textdata_en"),
+    ]
+    if defn.get("cjk"):
+        allowed_patterns += [
+            re.compile(r"gml_Script_scr_setfont"),
+            re.compile(r"gml_Script_scr_preload_textures"),
+        ]
+    allowed = [p for p in allowed_patterns if p is not None]
+    for kind in ("added", "changed"):
+        for name in structured["code"][kind]:
+            if not any(p.fullmatch(name) for p in allowed):
+                refusals.append(
+                    f"CODE {kind} 未声明条目: {name}（名称不匹配任何计划"
+                    "对象/脚本白名单）")
+    if structured["code"]["removed"]:
+        refusals.append(f"CODE removed 非空: {structured['code']['removed'][:4]}")
+
+    # —— 字体：cjk ⇒ 恰 fnt_ja_maintext changed；否则全空 ——
+    fonts = structured["fonts"]
+    if defn.get("cjk"):
+        if fonts["changed"] != ["fnt_ja_maintext"] or fonts["added"] \
+                or fonts["removed"]:
+            refusals.append(f"FONT 变更不符声明: {fonts}")
+    elif fonts["changed"] or fonts["added"] or fonts["removed"]:
+        refusals.append(f"FONT 非声明构建不得变化: {fonts}")
+
+    # —— 房间：无增删/尺寸/瓦片/背景变化；inst 增量 = 计划逐房 op 计数 ——
+    rooms = structured["rooms"]
+    if rooms["removed"] or rooms["added"]:
+        refusals.append(
+            f"ROOM 增删非声明: removed={rooms['removed']} "
+            f"added={rooms['added']}")
+    exp_inst_delta: dict[str, int] = {}
+    for op in plan["ops"]:
+        if op["op"] == "npc":
+            rn = plan["rooms"][op["npc"]["room"]]["name"]
+        else:
+            rn = op["door"]["from"]["name"]
+        exp_inst_delta[rn] = exp_inst_delta.get(rn, 0) + 1
+    for name, delta in sorted(rooms["inst_delta"].items()):
+        if exp_inst_delta.get(name) != delta:
+            refusals.append(
+                f"ROOM inst {name}: Δ{delta} ≠ 计划 op 计数 "
+                f"{exp_inst_delta.get(name, 0)}")
+    for name, pair in sorted(rooms["changed"].items()):
+        a, b = pair["a"], pair["b"]
+        if (a[0], a[2], a[3]) != (b[0], b[2], b[3]):
+            refusals.append(
+                f"ROOM 变化: {name}: {a} → {b}（inst 计数外的分量变化）")
+    return refusals
+
+
 def resolve_flag_writes(defn: dict) -> list[dict]:
     """包 18：解析 --flag-write 接线点（纯函数，fail-closed）。
 
@@ -555,14 +720,11 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
         if not product.is_file():
             raise _pkg().StorylineError(f"工作区产物缺失: {product}")
         product_sha = transactions.fingerprint(product)
-        # O7 差异采集（v2 闸门 = 不变量 + 组成计数，非逐项总数）
+        # O7 差异采集（包 21：结构化结果直采——v2 闸门不再解析终端行
+        # 文本；cmd_diff_snapshots 文本形态保留给既有使用者/显示）
         from ..cmds import verify
-        import io as _io
-        import contextlib as _ctx
-        buf = _io.StringIO()
-        with _ctx.redirect_stdout(buf):
-            verify.cmd_diff_snapshots(game_file, product, detail=True)
-        parsed = _parse_diff_categories(buf.getvalue())
+        structured = verify.diff_snapshots_structured(game_file, product)
+        parsed = _categories_from_structured(structured)
         cats = parsed["counts"]
         n_inst = sum(1 for o in plan["ops"] if o["op"] in ("npc", "door"))
         refusals = []
@@ -584,6 +746,8 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
             refusals.append(
                 f"INST add {cats.get('INST add', 0)}（声明 {n_inst}："
                 "每个 npc/door op 恰 1 实例）")
+        # 包 21：逐对象断言（计数相同而对象不同在此识别；O7 结构化）
+        refusals.extend(_v2_declared_assertions(structured, defn, plan))
         if refusals:
             raise _pkg().StorylineError(
                 "发现未声明资源/结构变更，拒绝出候选（12 §C3）: "
@@ -603,6 +767,7 @@ def _build_v2(defn: dict, plan: dict, game_file: Path, workspace: str,
             "declared_diff": cats,
             "declared_str_ops": parsed["str_ops"],
             "declared_structure": parsed["struct"],
+            "o7_structured": structured,
             "ops_evidence": op_evidence,
             "cjk": bool(defn.get("cjk", False)),
             "cjk_chars": (sorted({ch for spec in (defn.get("npcs") or {})

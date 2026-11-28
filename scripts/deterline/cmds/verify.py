@@ -535,6 +535,71 @@ def _diff_detail_resources(a: dict, b: dict) -> dict:
     return out
 
 
+O7_DIFF_SCHEMA = "deterline.o7-diff/v1"
+
+
+def diff_snapshots_structured(file_a: Path, file_b: Path,
+                              utmt_timeout: int = 300) -> dict:
+    """包 21：O7 结构化差异结果（versioned schema，零打印）。
+
+    与 cmd_diff_snapshots 共用采集层（_dump_structure_signature +
+    _diff_detail_resources）——旧文本输出与其使用者不受影响。返回
+    JSON 可序列化 dict：类别计数的 A/B 值与差值、逐对象明细（字符串
+    (len,sha1) 序列 / 实例 (room,id,obj,x,y) / 代码条目名与指纹 /
+    字体）。**类别计数相同而对象不同**可经逐对象集合比较识别。
+    """
+    for f in (file_a, file_b):
+        if not f.exists():
+            raise errors.NotFoundError(f"文件不存在: {f}")
+    a = _dump_structure_signature(file_a, timeout=utmt_timeout)
+    b = _dump_structure_signature(file_b, timeout=utmt_timeout)
+    detail = _diff_detail_resources(a, b)
+    rooms_a, rooms_b = a["rooms"], b["rooms"]
+    room_inst_delta = {}
+    for name in sorted(set(rooms_a) & set(rooms_b)):
+        ia = _inst_count(rooms_a[name])
+        ib = _inst_count(rooms_b[name])
+        if ia != ib:
+            room_inst_delta[name] = ib - ia
+    counts = {}
+    for k in sorted(set(a["counts"]) | set(b["counts"])):
+        va, vb = a["counts"].get(k), b["counts"].get(k)
+        if va != vb:
+            counts[k] = {"a": va, "b": vb, "delta": (vb - va)
+                         if isinstance(va, int) and isinstance(vb, int) else None}
+    return {
+        "schema": O7_DIFF_SCHEMA,
+        "counts": counts,
+        "rooms": {
+            "removed": sorted(set(rooms_a) - set(rooms_b)),
+            "added": sorted(set(rooms_b) - set(rooms_a)),
+            "changed": {name: {"a": list(rooms_a[name]),
+                               "b": list(rooms_b[name])}
+                        for name in sorted(set(rooms_a) & set(rooms_b))
+                        if rooms_a[name] != rooms_b[name]},
+            "inst_delta": room_inst_delta,
+        },
+        "vardeterline": {"a": list(a["vardeterline"]),
+                         "b": list(b["vardeterline"])},
+        "strings": {"ops": [[op, list(entry)]
+                            for op, entry in detail["strings"]]},
+        "instances": {
+            "added": [list(x) for x in detail["instances"]["added"]],
+            "removed": [list(x) for x in detail["instances"]["removed"]],
+            "moved": [list(x) for x in detail["instances"]["moved"]],
+        },
+        "code": detail["code"],
+        "fonts": detail["fonts"],
+    }
+
+
+def _inst_count(room_tuple: tuple) -> int:
+    """房间元组 = (size, "inst=N", "tiles=N", bg) → 实例计数。"""
+    inst = room_tuple[1]
+    return int(inst.split("=", 1)[1]) if isinstance(inst, str) and "=" in inst \
+        else int(inst)
+
+
 def _validate_expected(expected: dict) -> None:
     """--expected 形状校验（审核席 B P3-1）：错形状干净报错，不抛 AttributeError。"""
     if not isinstance(expected, dict):
