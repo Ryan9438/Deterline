@@ -11,6 +11,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -43,11 +44,23 @@ def _engine(doc_text: str):
 class TestSampleDefnGateContract(unittest.TestCase):
 
     def _variant(self, name: str, text: str) -> Path:
-        """临时目录中的定义变体。"""
+        """临时目录中的定义变体（测试结束清理）。"""
         td = tempfile.mkdtemp(prefix="c1_gate_")
+        self.addCleanup(shutil.rmtree, td, True)
         p = Path(td) / name
         p.write_text(text, encoding="utf-8")
         return p
+
+    def _engine_reject(self, variant_text: str, why: str) -> str:
+        """引擎必须拒绝 variant_text，返回其错误消息（防 self.fail 被吞）。"""
+        try:
+            _engine(variant_text)
+        except AssertionError:
+            raise
+        except Exception as exc:
+            return str(exc)
+        self.fail(why)
+        raise AssertionError("unreachable")
 
     def test_ascii_sample_matches_engine(self):
         text = (SAMPLE / "defn_ascii.yaml").read_text(encoding="utf-8")
@@ -74,11 +87,7 @@ class TestSampleDefnGateContract(unittest.TestCase):
     def test_duplicate_key_rejected_like_engine(self):
         text = (SAMPLE / "defn_ascii.yaml").read_text(encoding="utf-8")
         dup = text + "\npatch_id: det_other\n"
-        try:
-            _engine(dup)
-            self.fail("引擎应拒绝重复键")
-        except Exception as exc:
-            engine_msg = str(exc)
+        engine_msg = self._engine_reject(dup, "引擎应拒绝重复键")
         rc, _, err = _gate(self._variant("dup.yaml", dup))
         self.assertEqual(rc, 1)
         self.assertIn("重复键", engine_msg)
@@ -87,11 +96,7 @@ class TestSampleDefnGateContract(unittest.TestCase):
     def test_field_case_rejected_like_engine(self):
         text = (SAMPLE / "defn_ascii.yaml").read_text(encoding="utf-8")
         variant = text.replace("patch_id:", "Patch_ID:", 1)
-        try:
-            _engine(variant)
-            self.fail("引擎应拒绝大小写漂移键")
-        except Exception as exc:
-            engine_msg = str(exc)
+        engine_msg = self._engine_reject(variant, "引擎应拒绝大小写漂移键")
         rc, _, err = _gate(self._variant("case.yaml", variant))
         self.assertEqual(rc, 1)
         self.assertIn("未知字段", engine_msg)
@@ -100,11 +105,7 @@ class TestSampleDefnGateContract(unittest.TestCase):
     def test_quoted_bool_rejected_like_engine(self):
         text = (SAMPLE / "defn_cjk.yaml").read_text(encoding="utf-8")
         variant = text.replace("cjk: true", 'cjk: "true"', 1)
-        try:
-            _engine(variant)
-            self.fail("引擎应拒绝引号布尔")
-        except Exception as exc:
-            engine_msg = str(exc)
+        engine_msg = self._engine_reject(variant, "引擎应拒绝引号布尔")
         rc, _, err = _gate(self._variant("quoted.yaml", variant))
         self.assertEqual(rc, 1)
         self.assertIn("cjk 必须是布尔", engine_msg)
@@ -113,11 +114,7 @@ class TestSampleDefnGateContract(unittest.TestCase):
     def test_bad_patch_id_rejected_like_engine(self):
         text = (SAMPLE / "defn_ascii.yaml").read_text(encoding="utf-8")
         variant = text.replace("patch_id: det_c1_ascii", "patch_id: Det-X", 1)
-        try:
-            _engine(variant)
-            self.fail("引擎应拒绝非法 patch_id")
-        except Exception as exc:
-            engine_msg = str(exc)
+        engine_msg = self._engine_reject(variant, "引擎应拒绝非法 patch_id")
         rc, _, err = _gate(self._variant("badid.yaml", variant))
         self.assertEqual(rc, 1)
         self.assertIn("patch_id 须匹配", engine_msg)
