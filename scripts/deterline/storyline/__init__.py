@@ -169,7 +169,15 @@ def _read_definition_v2(text: str) -> dict:
     rooms = doc["rooms"]
     if not isinstance(rooms, dict) or not rooms:
         raise StorylineError("rooms 必须是非空映射（别名 → 房间名）")
+    import re as _re
     for alias, name in rooms.items():
+        # yaml_min 键恒为字符串；仍要求标识符形态（R-0610 P3-3：数字形键
+        # "1" 可作引用键无诊断——别名是 npcs/doors/order 的引用键，收紧）
+        if not isinstance(alias, str) or not alias \
+                or not _re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", alias):
+            raise StorylineError(
+                f"rooms 别名必须是标识符（[A-Za-z_][A-Za-z0-9_]{{0,63}}，"
+                f"收到 {alias!r}）——别名是 npcs/doors/order 的引用键")
         if not isinstance(name, str) or not name:
             raise StorylineError(f"rooms.{alias} 必须是非空字符串（房间名）")
     npcs = doc.get("npcs") or {}
@@ -660,7 +668,8 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
             ops.append({"op": "door", "ref": oid,
                         "door": door_plan[oid]})
     plan["ops"] = ops
-    # 图诊断（包 09）：从首 npc 房间 BFS 门图；不可达/死路为诊断（非硬错误）
+    # 图诊断（包 09）：从首 npc 房间做可达性遍历（栈式 DFS——queue.pop()；
+    # R-0610 P3-1 订正命名）；不可达/死路为诊断（非硬错误）
     diag: list[str] = []
     first_npc = next((o["ref"] for o in ops if o["op"] == "npc"), None)
     if first_npc is not None:
@@ -669,13 +678,13 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
         for spec in doors_def.values():
             adj[spec["from"]].add(spec["to"])
         seen_rooms = {start_alias}
-        queue = [start_alias]
-        while queue:
-            cur = queue.pop()
+        stack = [start_alias]
+        while stack:
+            cur = stack.pop()
             for nxt in sorted(adj.get(cur, ())):
                 if nxt not in seen_rooms:
                     seen_rooms.add(nxt)
-                    queue.append(nxt)
+                    stack.append(nxt)
         unreachable = sorted(set(resolved) - seen_rooms)
         if unreachable:
             diag.append(f"从首 npc 房间 '{start_alias}' 不可达的房间: "
@@ -691,9 +700,10 @@ def build_plan_v2(defn: dict, game_file: Path) -> dict:
         diag.append("cjk=true：构建链先注入 CJK 字体栈（包 15 整包复用）")
     diag.append("flag 声明保留（v2 状态写入为独立候选——包 18）")
     plan["diagnostics"] = diag
-    # 语义指纹（包 08）：规范化（sort_keys）哈希——内容变更可定位
+    # 语义指纹（包 08）：规范化（sort_keys）哈希——**不含 defn_sha256**
+    # （原始文本哈希；等价映射重排/注释差异必须产出同一指纹——R-0610 P2-1
+    # 清偿；内容变更通过 ops/rooms/npcs/doors 中的实际值进入指纹）。
     semantic = {"patch_id": defn["patch_id"],
-                "defn_sha256": defn["_sha256"],
                 "rooms": plan["rooms"], "npcs": npc_plan,
                 "doors": door_plan, "ops": ops, "cjk": plan["cjk"]}
     plan["semantic_sha256"] = hashlib.sha256(
